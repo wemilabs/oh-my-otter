@@ -4,7 +4,7 @@ Implementation plan for coding agent · October 10, 2026
 
 ## 1. What we are building
 
-**Oh My Otter** is an open-source toolkit that shows you what to fix in your repo so Devin needs fewer corrections, and measures whether those fixes actually help.
+**Oh My Otter** is an open-source benchmark and optimization toolkit for seamless Devin integration.
 
 It has three parts:
 
