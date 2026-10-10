@@ -1,6 +1,6 @@
 # Oh My Otter
 
-An open-source toolkit that shows you what to fix in your repo so Devin needs fewer corrections, and measures whether those fixes actually help.
+An open-source benchmark and optimization toolkit for seamless Devin integration.
 
 ## What it does
 
