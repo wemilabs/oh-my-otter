@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { execa } from "execa";
@@ -54,6 +55,21 @@ export async function runGit(
     throw new Error(`git ${args.join(" ")} failed: ${detail}`);
   }
   return String(result.stdout);
+}
+
+async function fileFingerprint(
+  root: string,
+  file: string,
+): Promise<string | null> {
+  try {
+    return createHash("sha256")
+      .update(await readFile(path.join(root, file)))
+      .digest("hex");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw error;
+  }
 }
 
 /** Resolves the git work-tree root that contains `target`. */
@@ -233,15 +249,30 @@ export function createPrepareContext(
             await repo.git(["status", "--porcelain", "--untracked-files=all"]),
           ),
         );
+        const fingerprints = new Map<string, string | null>();
+        for (const file of existingPaths) {
+          fingerprints.set(file, await fileFingerprint(root, file));
+        }
         for (const name of options.scripts ?? []) {
           if (!repo.hasScript(name)) continue;
           repo.log(`Running ${name} at the baseline...`);
           const result = await repo.runScript(name);
           if (result !== null) results[name] = result;
         }
-        const changedPaths = paths(
-          await repo.git(["status", "--porcelain", "--untracked-files=all"]),
-        ).filter((file) => !existingPaths.has(file));
+        const currentPaths = new Set(
+          paths(
+            await repo.git(["status", "--porcelain", "--untracked-files=all"]),
+          ),
+        );
+        const changedPaths: string[] = [];
+        for (const file of new Set([...existingPaths, ...currentPaths])) {
+          if (
+            !existingPaths.has(file) ||
+            fingerprints.get(file) !== (await fileFingerprint(root, file))
+          ) {
+            changedPaths.push(file);
+          }
+        }
         if (changedPaths.length > 0) {
           throw new TaskPreconditionError(
             `Baseline scripts changed the working tree: ${summarizeList(changedPaths)}. Add these to .gitignore (or commit them), then run bench start again.`,

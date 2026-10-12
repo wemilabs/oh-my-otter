@@ -103,6 +103,18 @@ const coverageFixture = {
       },
     }) + "\n",
 };
+const changedGitignoreFixture = {
+  ...fixture,
+  "package.json":
+    JSON.stringify({
+      name: "f",
+      private: true,
+      type: "module",
+      scripts: {
+        test: `node -e "require('node:fs').appendFileSync('.gitignore', 'coverage/\\n')"`,
+      },
+    }) + "\n",
+};
 const addTest = `import { test } from "node:test";
 import assert from "node:assert/strict";
 import { add } from "../src/math.mjs";
@@ -216,7 +228,7 @@ describe("bench start and verify", () => {
     const run = await runFile(root);
     expect(run).toMatchObject({
       schema_version: 2,
-      task: { id: "add-unit-test", version: 3 },
+      task: { id: "add-unit-test", version: 4 },
       params: { file: "src/math.mjs", function: "add" },
       agent: "claude-code",
       baseline: { commit: head },
@@ -244,7 +256,7 @@ describe("bench start and verify", () => {
       { cwd: root },
     );
     expect(verified.code).toBe(0);
-    expect(verified.stdout).toContain("PASS add-unit-test v3");
+    expect(verified.stdout).toContain("PASS add-unit-test v4");
     expect(verified.stdout).toContain("(attempt 1)");
     expect(verified.stdout).toContain("Baseline health recorded");
     expect(verified.stderr).toContain("Nothing was sent anywhere.");
@@ -361,6 +373,29 @@ test("add", () => assert.equal(add(1, 2), 3));
     );
     await expect(access(path.join(root, "coverage.txt"))).rejects.toThrow();
     expect((await runFile(root)).baseline.scripts).toBeUndefined();
+  });
+
+  it("rejects baseline scripts that modify a pre-dirty .gitignore", async () => {
+    const root = await repo(changedGitignoreFixture);
+    await writeFile(path.join(root, ".gitignore"), "node_modules\n.omot/\n");
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Baseline scripts changed the working tree: .gitignore.",
+    );
+    expect(await readFile(path.join(root, ".gitignore"), "utf8")).toContain(
+      "coverage/",
+    );
+  });
+
+  it("allows baseline scripts when a pre-dirty .gitignore is unchanged", async () => {
+    const root = await repo(fixture);
+    await writeFile(path.join(root, ".gitignore"), "node_modules\n.omot/\n");
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(0);
+    expect(await runFile(root)).toMatchObject({
+      task: { id: "add-unit-test", version: 4 },
+    });
   });
 
   it("asks before touching .gitignore and leaves it alone when declined", async () => {

@@ -82,11 +82,49 @@ const destructuredImportPattern =
   /\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:await\s+)?(?:require|import)\s*\(/g;
 const identifierPattern = /^[A-Za-z_$][\w$]*$/;
 
+function quotedSpecifierAt(
+  source: string,
+  masked: string,
+  start: number,
+  pattern: RegExp,
+): string | undefined {
+  const match = pattern.exec(masked.slice(start));
+  if (!match) return undefined;
+  const quote = match[1] as string;
+  const open = start + match.index + match[0].length - 1;
+  const close = source.indexOf(quote, open + 1);
+  if (close === -1) return undefined;
+  const specifier = source.slice(open + 1, close);
+  return specifier.includes("\n") ? undefined : specifier;
+}
+
+function isInScope(
+  specifier: string | undefined,
+  scope: { fromFile: string; target: string } | undefined,
+): boolean {
+  return (
+    scope === undefined ||
+    (specifier !== undefined &&
+      resolvesTo(specifier, scope.fromFile, scope.target))
+  );
+}
+
 /** Local bindings for imports of `name`, including common aliases. */
-export function localNames(source: string, name: string): string[] {
+export function localNames(
+  source: string,
+  name: string,
+  scope?: { fromFile: string; target: string },
+): string[] {
   const masked = maskNonCode(source);
   const aliases: string[] = [];
   for (const match of masked.matchAll(namedImportPattern)) {
+    const specifier = quotedSpecifierAt(
+      source,
+      masked,
+      match.index + match[0].length,
+      /^\s*from\s*(["'])/,
+    );
+    if (!isInScope(specifier, scope)) continue;
     for (const binding of (match[1] ?? "").split(",")) {
       if (/^\s*type\b/.test(binding)) continue;
       const alias = /^\s*([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)\s*$/.exec(
@@ -100,6 +138,13 @@ export function localNames(source: string, name: string): string[] {
     `^\\s*${escaped}\\s*:\\s*([A-Za-z_$][\\w$]*)\\s*$`,
   );
   for (const match of masked.matchAll(destructuredImportPattern)) {
+    const specifier = quotedSpecifierAt(
+      source,
+      masked,
+      match.index + match[0].length,
+      /^\s*(["'])/,
+    );
+    if (!isInScope(specifier, scope)) continue;
     for (const binding of (match[1] ?? "").split(",")) {
       const alias = destructuredAlias.exec(binding);
       if (alias && identifierPattern.test(alias[1] as string)) {
@@ -124,8 +169,12 @@ const declarationPatterns = [
  * and so are import/require declarations, so importing a function without
  * using it does not count. Member access (`mod.name`) counts.
  */
-export function referencesIdentifier(source: string, name: string): boolean {
-  const names = localNames(source, name);
+export function referencesIdentifier(
+  source: string,
+  name: string,
+  scope?: { fromFile: string; target: string },
+): boolean {
+  const names = localNames(source, name, scope);
   let masked = maskNonCode(source);
   for (const pattern of declarationPatterns) {
     for (const match of masked.matchAll(pattern)) {

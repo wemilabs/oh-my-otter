@@ -91,6 +91,22 @@ test("placeholder", () => {});
     expect(result.reasons.join("\n")).toContain("but never use add");
   });
 
+  it("does not count an alias imported from an unrelated module", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "test/other.mjs": "export function add(a, b) { return a + b; }\n",
+      "test/add.test.mjs": `import { test } from "node:test";
+import { add } from "../src/math.mjs";
+import { add as sum } from "./other.mjs";
+test("x", () => sum(1, 2));
+`,
+    });
+    expect(result.outcome).toBe("fail");
+    expect(result.reasons.join("\n")).toContain(
+      "import src/math.mjs but never use add",
+    );
+  });
+
   it("is partial when source files change too", async () => {
     const started = await startTask(task, base, params);
     const result = await verifyTask(task, started, params, {

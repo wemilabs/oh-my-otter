@@ -87,6 +87,30 @@ describe("module imports", () => {
       ),
     ).toBe(false);
   });
+
+  it("scopes aliases to imports that resolve to the target module", () => {
+    const scope = { fromFile: "test/add.test.mjs", target: "src/math.mjs" };
+    const source = `
+      import { add } from "../src/math.mjs";
+      import { add as sum } from "./other.mjs";
+      test("x", () => sum(1, 2));
+    `;
+    expect(localNames(source, "add", scope)).toEqual(["add"]);
+    expect(referencesIdentifier(source, "add", scope)).toBe(false);
+
+    const targetAlias = `
+      import { add as sum } from "../src/math.mjs";
+      test("x", () => sum(1, 2));
+    `;
+    expect(referencesIdentifier(targetAlias, "add", scope)).toBe(true);
+
+    const requireAlias = `
+      const { add: sum } = require("./other.mjs");
+      test("x", () => sum(1, 2));
+    `;
+    expect(localNames(requireAlias, "add", scope)).toEqual(["add"]);
+    expect(referencesIdentifier(requireAlias, "add", scope)).toBe(false);
+  });
 });
 
 describe("test case counting", () => {

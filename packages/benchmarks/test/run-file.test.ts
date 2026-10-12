@@ -129,7 +129,7 @@ describe("run file migration", () => {
     });
     await writeRunFile(root, {
       schema_version: 2,
-      task: { id: "add-unit-test", version: 3 },
+      task: { id: "add-unit-test", version: 4 },
       params: {},
       agent: "cursor",
       baseline: {
@@ -165,7 +165,7 @@ describe("run file migration", () => {
     });
     const run: RunFile = {
       schema_version: 2,
-      task: { id: "add-unit-test", version: 3 },
+      task: { id: "add-unit-test", version: 4 },
       params: {},
       agent: "cursor",
       baseline: {
