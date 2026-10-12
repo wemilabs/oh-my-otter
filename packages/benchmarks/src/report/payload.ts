@@ -45,12 +45,16 @@ export function looksLikeSecret(value: string): boolean {
   ) {
     return true;
   }
-  const mixed = value
-    .split(/[._-]/)
-    .filter(
-      (segment) =>
-        segment.length >= 4 && /[a-z]/i.test(segment) && /\d/.test(segment),
-    );
+  const mixed = value.split(/[._-]/).filter((segment) => {
+    if (segment.length < 4) return false;
+    let transitions = 0;
+    for (let i = 1; i < segment.length; i += 1) {
+      if (/\d/.test(segment[i]!) !== /\d/.test(segment[i - 1]!)) {
+        transitions += 1;
+      }
+    }
+    return transitions >= 2;
+  });
   return mixed.length >= 3;
 }
 

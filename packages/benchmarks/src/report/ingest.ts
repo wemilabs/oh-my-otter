@@ -110,10 +110,19 @@ function leaksUsername(payload: ReportPayload, agents: AgentsFile, h: string) {
     ),
   );
   if (agentTokens.has(h)) return false;
+  const hs = h.split(/[._-]/).filter((segment) => segment !== "");
+  const aligned = (field: string) => {
+    const fs = field.toLowerCase().split(/[._-]/);
+    return fs.some(
+      (_, i) =>
+        i + hs.length <= fs.length &&
+        hs.every((segment, j) => fs[i + j] === segment),
+    );
+  };
   return [payload.agent, payload.agent_version, payload.model].some(
     (field) =>
       field !== undefined &&
-      field.toLowerCase().includes(h) &&
+      aligned(field) &&
       !(field === payload.agent && canonical.has(field)),
   );
 }

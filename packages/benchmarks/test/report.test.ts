@@ -164,6 +164,7 @@ describe("report payload schema", () => {
       "claude-sonnet-4-5-20250929-thinking",
       "gpt-4o-mini-2024-07-18",
       "qwen2.5-coder-32b",
+      "2.0.0-alpha1-beta2-rc03",
     ]) {
       for (const field of ["agent", "agent_version", "model"] as const) {
         expect(
@@ -561,16 +562,22 @@ describe("ingestIssue", () => {
 
   it("ignores canonical agent names but catches hyphenated handles", async () => {
     const agents = await agentsFile();
-    const accepted = ingestIssue({
-      body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, model: "gpt-5-codex" }),
-      author: "codex",
-      agents,
-      now: new Date(),
-      random: "abcd1234",
-    });
-    expect(accepted.ok).toBe(true);
+    for (const [author, model] of [
+      ["codex", "gpt-5-codex"],
+      ["ode", "gpt-5-codex"],
+    ] as const) {
+      const accepted = ingestIssue({
+        body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, model }),
+        author,
+        agents,
+        now: new Date(),
+        random: "abcd1234",
+      });
+      expect(accepted.ok).toBe(true);
+    }
     for (const [author, model] of [
       ["jdoe42", "jdoe42-model"],
+      ["jdoe42", "x-jdoe42"],
       ["claude-fan", "claude-fan-build"],
     ] as const) {
       const rejected = ingestIssue({
