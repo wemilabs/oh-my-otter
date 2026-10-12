@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -6,6 +7,27 @@ import { applyFixPlan, createCheckContext, planFixes } from "../src/node";
 import { RunDisabledError } from "../src/runner";
 
 const tempDirs: string[] = [];
+
+function probeSymlinkCreation(): boolean {
+  const root = mkdtempSync(path.join(os.tmpdir(), "omot-symlink-probe-"));
+  try {
+    symlinkSync(
+      root,
+      path.join(root, "link"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    return true;
+  } catch (error) {
+    return (
+      process.platform !== "win32" ||
+      (error as NodeJS.ErrnoException).code !== "EPERM"
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const canCreateSymlinks = probeSymlinkCreation();
 
 async function tempDir(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "omot-core-"));
@@ -35,6 +57,19 @@ describe("createCheckContext", () => {
     await writeFile(path.join(root, "src.js"), "");
     await writeFile(path.join(root, "node_modules/pkg/hidden.js"), "");
     expect(await createCheckContext(root).glob("**/*.js")).toEqual(["src.js"]);
+  });
+
+  it.each([
+    "/outside/**/*.js",
+    "C:\\outside\\*.js",
+    "\\\\server\\share\\*.js",
+    "../outside/**/*.js",
+    "src/../outside/**/*.js",
+  ])("rejects unsafe glob pattern %s", async (pattern) => {
+    const root = await tempDir();
+    await expect(createCheckContext(root).glob(pattern)).rejects.toThrow(
+      "Path escapes repository root",
+    );
   });
 
   it("loads package.json lazily, freezes it, and returns null when invalid or missing", async () => {
@@ -106,4 +141,28 @@ describe("fix plans", () => {
       applyFixPlan(root, [{ path: "../escape.txt", contents: "no" }]),
     ).rejects.toThrow("Path escapes repository root");
   });
+
+  it.skipIf(process.platform === "win32" && !canCreateSymlinks)(
+    "rejects fix paths through a symlinked directory outside the root",
+    async () => {
+      const root = await tempDir();
+      const outside = await tempDir();
+      symlinkSync(
+        outside,
+        path.join(root, "linked"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      const plan = [{ path: "linked/file.txt", contents: "outside" }];
+
+      await expect(planFixes(root, plan)).rejects.toThrow(
+        "Path escapes repository root",
+      );
+      await expect(applyFixPlan(root, plan)).rejects.toThrow(
+        "Path escapes repository root",
+      );
+      await expect(
+        readFile(path.join(outside, "file.txt"), "utf8"),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
 });

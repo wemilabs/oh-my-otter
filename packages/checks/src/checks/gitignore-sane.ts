@@ -11,21 +11,39 @@ const buildOutputs = [
   ".nuxt",
 ];
 
-function ignoredEntries(contents: string): string[] {
+interface IgnoreRule {
+  pattern: string;
+  negated: boolean;
+}
+
+function ignoreRules(contents: string): IgnoreRule[] {
   return contents
     .split(/\r?\n/)
     .map((line) => line.split("#", 1)[0]?.trim() ?? "")
-    .filter((line) => Boolean(line) && !line.startsWith("!"));
+    .filter(Boolean)
+    .map((line) => {
+      const negated = line.startsWith("!");
+      return {
+        pattern: negated ? line.slice(1).trim() : line,
+        negated,
+      };
+    });
 }
 
-function ignoresName(patterns: string[], name: string): boolean {
-  return patterns.some((pattern) =>
-    pattern
-      .replace(/^\//, "")
-      .replace(/\/$/, "")
-      .split("/")
-      .some((part) => part === name),
-  );
+function matchesName(pattern: string, name: string): boolean {
+  return pattern
+    .replace(/^\//, "")
+    .replace(/\/$/, "")
+    .split("/")
+    .some((part) => part === name);
+}
+
+function ignoresName(rules: IgnoreRule[], name: string): boolean {
+  let ignored = false;
+  for (const rule of rules) {
+    if (matchesName(rule.pattern, name)) ignored = !rule.negated;
+  }
+  return ignored;
 }
 
 export default defineCheck({
@@ -43,9 +61,9 @@ export default defineCheck({
         fix: "Add a .gitignore for dependencies, build outputs, and local environment files.",
       };
     }
-    const patterns = ignoredEntries(contents);
-    const hasNodeModules = ignoresName(patterns, "node_modules");
-    const output = buildOutputs.find((name) => ignoresName(patterns, name));
+    const rules = ignoreRules(contents);
+    const hasNodeModules = ignoresName(rules, "node_modules");
+    const output = buildOutputs.find((name) => ignoresName(rules, name));
     if (hasNodeModules && output) {
       return {
         status: "pass",

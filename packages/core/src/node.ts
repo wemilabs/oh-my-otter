@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
@@ -17,6 +17,34 @@ function resolveInside(root: string, relativePath: string): string {
     throw new Error(`Path escapes repository root: ${relativePath}`);
   }
   return absolute;
+}
+
+async function assertTargetInsideRoot(
+  realRoot: string,
+  target: string,
+  relativePath: string,
+): Promise<void> {
+  let ancestor = path.dirname(target);
+  while (true) {
+    try {
+      const realAncestor = await realpath(ancestor);
+      const relative = path.relative(realRoot, realAncestor);
+      if (
+        relative === ".." ||
+        relative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relative)
+      ) {
+        throw new Error(`Path escapes repository root: ${relativePath}`);
+      }
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) throw error;
+      ancestor = parent;
+    }
+  }
 }
 
 function deepFreeze<T>(value: T): T {
@@ -62,6 +90,14 @@ export function createCheckContext(
       }
     },
     async glob(pattern) {
+      if (
+        path.isAbsolute(pattern) ||
+        /^[A-Za-z]:[\\/]/.test(pattern) ||
+        pattern.startsWith("\\\\") ||
+        pattern.replace(/\\/g, "/").split("/").includes("..")
+      ) {
+        throw new Error(`Path escapes repository root: ${pattern}`);
+      }
       return (
         await fastGlob(pattern, {
           cwd: absoluteRoot,
@@ -124,10 +160,12 @@ export async function planFixes(
   files: FixPlan,
 ): Promise<{ created: string[]; skipped: string[] }> {
   const absoluteRoot = path.resolve(root);
+  const realRoot = await realpath(absoluteRoot);
   const created: string[] = [];
   const skipped: string[] = [];
   for (const file of files) {
     const target = resolveInside(absoluteRoot, file.path);
+    await assertTargetInsideRoot(realRoot, target, file.path);
     try {
       await access(target);
       skipped.push(file.path);
@@ -147,12 +185,15 @@ export async function applyFixPlan(
   files: FixPlan,
 ): Promise<{ created: string[]; skipped: string[] }> {
   const absoluteRoot = path.resolve(root);
+  const realRoot = await realpath(absoluteRoot);
   const created: string[] = [];
   const skipped: string[] = [];
   for (const file of files) {
     const target = resolveInside(absoluteRoot, file.path);
+    await assertTargetInsideRoot(realRoot, target, file.path);
     try {
       await mkdir(path.dirname(target), { recursive: true });
+      await assertTargetInsideRoot(realRoot, target, file.path);
       await writeFile(target, file.contents, { flag: "wx" });
       created.push(file.path);
     } catch (error) {

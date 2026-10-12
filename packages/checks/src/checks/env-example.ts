@@ -7,7 +7,14 @@ const envPatterns = [
   /import\s*\.\s*meta\s*\.\s*env\s*\.\s*([A-Za-z_][\w]*)/g,
   /import\s*\.\s*meta\s*\.\s*env\s*\[\s*(['"])([A-Za-z_][\w]*)\1\s*\]/g,
 ];
-const dynamicEnvPattern = /process\s*\.\s*env\s*\[\s*(?!["'])[^)\]]+\]/;
+const envDestructuringPatterns = [
+  /\{([^{}]*)\}\s*=\s*process\s*\.\s*env\b/g,
+  /\{([^{}]*)\}\s*=\s*import\s*\.\s*meta\s*\.\s*env\b/g,
+];
+const dynamicEnvPattern =
+  /(?:process\s*\.\s*env|import\s*\.\s*meta\s*\.\s*env)\s*\[\s*(?!["'])[^)\]]+\]/;
+const bareEnvPattern =
+  /(?:process\s*\.\s*env|import\s*\.\s*meta\s*\.\s*env)\b(?!\s*(?:\.|\[))/;
 const ignoredDirectories = new Set([
   "node_modules",
   "dist",
@@ -55,6 +62,18 @@ async function collectEnvUsage(
     const contents = await ctx.read(file);
     if (contents === null || Buffer.byteLength(contents, "utf8") > 1_000_000)
       continue;
+    let bareSearchContents = contents;
+    for (const pattern of envDestructuringPatterns) {
+      for (const match of contents.matchAll(pattern)) {
+        for (const property of (match[1] ?? "").split(",")) {
+          const trimmed = property.trim();
+          if (!trimmed || trimmed.startsWith("...")) continue;
+          const name = /^([A-Za-z_][\w]*)/.exec(trimmed)?.[1];
+          if (name) hasUsage = addVariable(name, names) || hasUsage;
+        }
+      }
+      bareSearchContents = bareSearchContents.replace(pattern, "");
+    }
     for (const pattern of envPatterns) {
       for (const match of contents.matchAll(pattern)) {
         const name = match[2] ?? match[1];
@@ -62,6 +81,7 @@ async function collectEnvUsage(
       }
     }
     if (dynamicEnvPattern.test(contents)) hasUsage = true;
+    if (bareEnvPattern.test(bareSearchContents)) hasUsage = true;
   }
 
   return { names, hasUsage };

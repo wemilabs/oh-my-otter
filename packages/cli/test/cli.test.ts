@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -124,7 +124,9 @@ describe("scan command", () => {
   it("produces a human report for a scan", async () => {
     const result = await invoke(["scan", fixture("monorepo")]);
     expect(result.stdout).toContain("Score: 81 · B (scoring v1)");
-    expect(result.stdout).toContain("✗ ci-config");
+    expect(
+      result.stdout.replaceAll("\u001b[31m", "").replaceAll("\u001b[39m", ""),
+    ).toContain("✗ ci-config");
     expect(result.stdout).toContain("Hint: use --fix");
   });
 });
@@ -179,15 +181,44 @@ describe("fix flow", () => {
     await writeFile(path.join(root, ".nvmrc"), "custom\n");
     const result = await invoke(["scan", root, "--fix", "--yes", "--json"]);
     const report = JSON.parse(result.stdout) as {
-      fixes: { planned: string[]; created: string[]; skipped: string[] };
+      fixes: {
+        planned: string[];
+        created: string[];
+        skipped: string[];
+        applied: boolean;
+      };
     };
     expect(result.code).toBe(0);
     expect(report.fixes.planned).not.toContain(".nvmrc");
     expect(await readFile(path.join(root, ".nvmrc"), "utf8")).toBe("custom\n");
     expect(report.fixes.created.length).toBeGreaterThan(0);
+    expect(report.fixes.applied).toBe(true);
     expect(await readFile(path.join(root, "AGENTS.md"), "utf8")).toContain(
       "Agent instructions",
     );
+  });
+
+  it("reports JSON fix plans as unapplied without --yes", async () => {
+    const root = await bareCopy();
+    const result = await invoke(["scan", root, "--fix", "--json"]);
+    const report = JSON.parse(result.stdout) as {
+      fixes: {
+        planned: string[];
+        created: string[];
+        skipped: string[];
+        applied: boolean;
+      };
+    };
+
+    expect(report.fixes.planned.length).toBeGreaterThan(0);
+    expect(report.fixes.created).toEqual([]);
+    expect(report.fixes.applied).toBe(false);
+    expect(result.stderr).toBe(
+      "Fixes not applied in --json mode; re-run with --yes to create them.\n",
+    );
+    await expect(
+      readFile(path.join(root, "AGENTS.md"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not apply fixes when a TTY confirmation is declined", async () => {
@@ -236,6 +267,40 @@ describe("fix flow", () => {
 });
 
 describe("plugins and config", () => {
+  it("resolves ESM-only plugin packages", async () => {
+    const root = await tempDir();
+    const pluginRoot = path.join(root, "node_modules/esm-only-plugin");
+    await mkdir(pluginRoot, { recursive: true });
+    await writeFile(
+      path.join(pluginRoot, "package.json"),
+      JSON.stringify({
+        name: "esm-only-plugin",
+        type: "module",
+        exports: { ".": { import: "./index.js" } },
+      }),
+    );
+    await writeFile(
+      path.join(pluginRoot, "index.js"),
+      `export default [{id:"esm-plugin-check",title:"ESM plugin",category:"docs",weight:1,why:"It helps agents.",run:async()=>({status:"pass"})}];\n`,
+    );
+
+    const result = await invoke([
+      "scan",
+      root,
+      "--plugin",
+      "esm-only-plugin",
+      "--json",
+    ]);
+    const output = JSON.parse(result.stdout) as {
+      checks: Array<{ id: string }>;
+    };
+
+    expect(result.code).toBe(0);
+    expect(output.checks.some((check) => check.id === "esm-plugin-check")).toBe(
+      true,
+    );
+  });
+
   it("loads .ts and .mjs plugins", async () => {
     const root = await tempDir();
     const typescriptPlugin = path.join(root, "plugin.ts");

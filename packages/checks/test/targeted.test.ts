@@ -8,6 +8,7 @@ import installDocumented from "../src/checks/install-documented";
 import packageManagerLockfile from "../src/checks/package-manager-lockfile";
 import testsPass from "../src/checks/tests-pass";
 import typecheckScript from "../src/checks/typecheck-script";
+import ciConfig from "../src/checks/ci-config";
 import envExample from "../src/checks/env-example";
 import gitignoreSane from "../src/checks/gitignore-sane";
 import { describe, expect, it } from "vitest";
@@ -78,6 +79,60 @@ describe("targeted checks", () => {
     });
   });
 
+  it("collects named destructured environment variables", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/index.js"),
+        "const { API_URL, TOKEN: authToken, NODE_ENV, ...rest } = process.env;\n" +
+          "const { PUBLIC_KEY: value } = import.meta.env;\n",
+      );
+      const context = createCheckContext(root);
+
+      expect((await envExample.run(context)).status).toBe("fail");
+      expect((await envExample.fix!(context))[0]?.contents).toBe(
+        "API_URL=\nPUBLIC_KEY=\nTOKEN=\n",
+      );
+    });
+  });
+
+  it.each(["consume(process.env);", "consume(import.meta.env);"])(
+    "counts a bare %s reference as usage without inventing names",
+    async (source) => {
+      await withTempRepo(async (root) => {
+        await mkdir(path.join(root, "src"));
+        await writeFile(path.join(root, "src/index.js"), source);
+        const context = createCheckContext(root);
+
+        expect((await envExample.run(context)).status).toBe("fail");
+        expect((await envExample.fix!(context))[0]?.contents).toBe("");
+      });
+    },
+  );
+
+  it("adds a pnpm setup version only when packageManager is absent", async () => {
+    await withTempRepo(async (root) => {
+      await writeFile(
+        path.join(root, "package.json"),
+        JSON.stringify({ packageManager: "pnpm@10.1.0" }),
+      );
+      const plan = await ciConfig.fix!(createCheckContext(root));
+      expect(plan[0]?.contents).not.toContain("version: 10");
+    });
+
+    await withTempRepo(async (root) => {
+      await writeFile(path.join(root, "package.json"), "{}");
+      await writeFile(
+        path.join(root, "pnpm-lock.yaml"),
+        "lockfileVersion: '9.0'\n",
+      );
+      const plan = await ciConfig.fix!(createCheckContext(root));
+      expect(plan[0]?.contents).toContain(
+        "      - uses: pnpm/action-setup@v4\n        with:\n          version: 10\n",
+      );
+    });
+  });
+
   it.each([
     [0, "pass"],
     [1, "fail"],
@@ -114,6 +169,18 @@ describe("targeted checks", () => {
   it("warns when .gitignore has dependencies but no build output", async () => {
     await withTempRepo(async (root) => {
       await writeFile(path.join(root, ".gitignore"), "node_modules/\n");
+      expect((await gitignoreSane.run(createCheckContext(root))).status).toBe(
+        "warn",
+      );
+    });
+  });
+
+  it("honors a later .gitignore negation for node_modules", async () => {
+    await withTempRepo(async (root) => {
+      await writeFile(
+        path.join(root, ".gitignore"),
+        "node_modules/\n!node_modules\ndist/\n",
+      );
       expect((await gitignoreSane.run(createCheckContext(root))).status).toBe(
         "warn",
       );

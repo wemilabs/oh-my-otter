@@ -16,10 +16,18 @@ const ciPatterns = [
   ".drone.yml",
 ];
 
-function workflow(manager: string, scripts: string[]): string {
+function workflow(
+  manager: string,
+  scripts: string[],
+  hasDeclaredPackageManager: boolean,
+): string {
   const setup =
     manager === "pnpm"
-      ? "      - uses: pnpm/action-setup@v4\n"
+      ? `      - uses: pnpm/action-setup@v4\n${
+          hasDeclaredPackageManager
+            ? ""
+            : "        with:\n          version: 10\n"
+        }`
       : manager === "bun"
         ? "      - uses: oven-sh/setup-bun@v2\n"
         : "";
@@ -67,6 +75,9 @@ export default defineCheck({
   async fix(ctx) {
     const manager = await detectPackageManager(ctx);
     const scripts = packageScripts(ctx);
+    const hasDeclaredPackageManager =
+      typeof ctx.packageJson?.packageManager === "string" &&
+      ctx.packageJson.packageManager.length > 0;
     return [
       {
         path: ".github/workflows/ci.yml",
@@ -75,6 +86,7 @@ export default defineCheck({
           ["lint", "typecheck", "test", "build"].filter((name) =>
             Boolean(scripts[name]),
           ),
+          hasDeclaredPackageManager,
         ),
       },
     ];

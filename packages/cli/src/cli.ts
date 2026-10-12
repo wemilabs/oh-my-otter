@@ -1,5 +1,6 @@
 import { access, stat } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { createRequire } from "node:module";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout, stderr } from "node:process";
@@ -118,6 +119,13 @@ async function existsOnDisk(file: string): Promise<boolean> {
 function resolvePackage(specifier: string, roots: string[]): string {
   const errors: string[] = [];
   for (const root of roots) {
+    try {
+      return createJiti(
+        pathToFileURL(path.join(root, "package.json")).href,
+      ).esmResolve(specifier);
+    } catch (error) {
+      errors.push(errorText(error));
+    }
     try {
       return createRequire(path.join(root, "package.json")).resolve(specifier);
     } catch (error) {
@@ -420,6 +428,7 @@ async function fixReport(
   planned: string[];
   created: string[];
   skipped: string[];
+  applied: boolean;
 }> {
   const plans = await collectFixPlans(report.outcomes, ctx);
   const files: FixPlan = plans.flatMap((plan) => plan.files);
@@ -443,6 +452,11 @@ async function fixReport(
       io.stdout("Fixes not applied; re-run with --yes to create the files.\n");
     }
   }
+  if (jsonMode && !yes && plan.created.length > 0) {
+    io.stderr(
+      "Fixes not applied in --json mode; re-run with --yes to create them.\n",
+    );
+  }
 
   let applied = { created: [] as string[], skipped: [] as string[] };
   if (shouldApply && plan.created.length > 0) {
@@ -456,6 +470,7 @@ async function fixReport(
     planned: paths,
     created: applied.created,
     skipped,
+    applied: applied.created.length > 0,
   };
 }
 
@@ -493,6 +508,7 @@ async function scan(
         planned: string[];
         created: string[];
         skipped: string[];
+        applied: boolean;
       }
     | undefined;
   if (options.fix) {
