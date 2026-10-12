@@ -1,6 +1,6 @@
 {
   "name": "@oh-my-otter/checks",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Built-in repository readiness checks for Oh My Otter",
   "license": "MIT",
   "type": "module",
@@ -26,6 +26,7 @@
     }
   },
   "scripts": {
+    "prepack": "node ../../scripts/copy-package-files.mjs LICENSE",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

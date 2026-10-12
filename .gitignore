@@ -6,3 +6,5 @@ coverage
 .env.local
 .env.*.local
 .omot/
+packages/*/LICENSE
+packages/cli/README.md
