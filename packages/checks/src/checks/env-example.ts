@@ -129,17 +129,81 @@ function maskStringsAndComments(contents: string): string {
     return end;
   };
 
+  const regexAllowedPrevious = new Set("(,=:[!&|?{};+-*%<>~^".split(""));
+  const regexKeywords = new Set([
+    "return",
+    "typeof",
+    "case",
+    "do",
+    "else",
+    "in",
+    "of",
+    "new",
+    "delete",
+    "void",
+    "throw",
+    "instanceof",
+    "yield",
+    "await",
+  ]);
+
+  const scanRegex = (start: number): number | null => {
+    let index = start + 1;
+    let inClass = false;
+    while (index < contents.length) {
+      const char = contents[index];
+      if (char === "\n") return null;
+      if (char === "\\") {
+        index += 2;
+        continue;
+      }
+      if (inClass) {
+        if (char === "]") inClass = false;
+        index++;
+        continue;
+      }
+      if (char === "[") {
+        inClass = true;
+        index++;
+        continue;
+      }
+      if (char === "/") {
+        index++;
+        while (index < contents.length && /[a-z]/.test(contents[index]!))
+          index++;
+        return index;
+      }
+      index++;
+    }
+    return null;
+  };
+
   const scanCode = (start: number, untilCloseBrace: boolean): number => {
     let index = start;
     let depth = 0;
+    let previous = "";
+    let previousIndex = -1;
+    const startsRegex = (): boolean => {
+      if (previous === "") return true;
+      if (regexAllowedPrevious.has(previous)) return true;
+      if (previousIndex < 0 || !/[A-Za-z0-9_$]/.test(previous)) return false;
+      let wordStart = previousIndex;
+      while (wordStart > 0 && /[A-Za-z0-9_$]/.test(contents[wordStart - 1]!))
+        wordStart--;
+      return regexKeywords.has(contents.slice(wordStart, previousIndex + 1));
+    };
     while (index < contents.length) {
-      const char = contents[index];
+      const char = contents[index]!;
       if (char === "'" || char === '"') {
         index = scanString(index);
+        previous = "x";
+        previousIndex = -1;
         continue;
       }
       if (char === "`") {
         index = scanTemplate(index);
+        previous = "x";
+        previousIndex = -1;
         continue;
       }
       if (char === "/" && contents[index + 1] === "/") {
@@ -156,10 +220,24 @@ function maskStringsAndComments(contents: string): string {
         index = end;
         continue;
       }
+      if (char === "/" && startsRegex()) {
+        const end = scanRegex(index);
+        if (end !== null) {
+          blank(index, end);
+          index = end;
+          previous = "x";
+          previousIndex = -1;
+          continue;
+        }
+      }
       if (char === "{") depth++;
       if (char === "}") {
         if (untilCloseBrace && depth === 0) return index;
         depth--;
+      }
+      if (!/\s/.test(char)) {
+        previous = char;
+        previousIndex = index;
       }
       index++;
     }

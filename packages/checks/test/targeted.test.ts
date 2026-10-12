@@ -669,10 +669,56 @@ describe("targeted checks", () => {
     });
   });
 
+  it("extracts schema env keys after a regex with a brace in its class", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const text = `${/[}]/.test(input) ? z.object({ DATABASE_URL: z.string() }).parse(process.env) : ''}`;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: DATABASE_URL");
+    });
+  });
+
+  it("ignores braces in top-level regex literals before schemas", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const re = /[{]/;\nconst env = z.object({ API_URL: z.string() }).parse(process.env);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
+  it("treats slashes after values as division, not regex starts", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const t = `${total / count} ${z.object({ API_KEY: z.string() }).parse(process.env)}`;\nconst r = (a) / 2 / (b);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_KEY");
+    });
+  });
+
   it.each([
     "consume(process.env);\nconst doc = `z.object({ SECRET_TOKEN: z.string() })`;\n",
     'consume(process.env);\nconst doc = "z.object({ SECRET_TOKEN: z.string() })";\n',
     "consume(process.env);\nconst name = 'x';\nconst s = `${name} z.object({ SECRET_TOKEN: 1 })`;\n",
+    "consume(process.env);\nconst re = /z.object({ SECRET_TOKEN: 1 })/;\n",
   ])("ignores schema text that is not code: %s", async (source) => {
     await withTempRepo(async (root) => {
       await mkdir(path.join(root, "src"));
