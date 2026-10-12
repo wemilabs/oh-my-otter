@@ -67,9 +67,11 @@ function requireTask(id: string): Task {
   return task;
 }
 
-function paramUsage(task: Task): string {
+function paramUsage(task: Task, values: Record<string, string> = {}): string {
   return task.manifest.params
-    .map((param) => `--param ${param.name}=${param.example}`)
+    .map(
+      (param) => `--param ${param.name}=${values[param.name] ?? param.example}`,
+    )
     .join(" ");
 }
 
@@ -140,7 +142,7 @@ function showTask(id: string, options: ShowOptions, io: BenchIO): number {
     `  partial: ${manifest.criteria.partial}`,
     `  fail: ${manifest.criteria.fail}`,
     "",
-    `Start: omot bench start ${manifest.id} ${paramUsage(task)}`.trimEnd(),
+    `Start: omot bench start ${manifest.id} ${paramUsage(task, params)}`.trimEnd(),
     "",
     PASTE_HEADING,
     "",

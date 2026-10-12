@@ -124,6 +124,9 @@ describe("bench list and show", () => {
     expect(result.code).toBe(0);
     expect(result.stdout).toContain("Paste this into your coding agent:");
     expect(result.stdout).toContain("Update the npm dependency `zod`");
+    expect(result.stdout).toContain(
+      "Start: omot bench start dep-patch-bump --param package=zod",
+    );
     expect(result.stdout).not.toMatch(/devin/i);
   });
 
