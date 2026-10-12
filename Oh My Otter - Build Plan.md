@@ -20,8 +20,8 @@ The project is **unofficial and independent**. It is not affiliated with or endo
 
 - Language: TypeScript everywhere, Node 20+.
 - Monorepo: pnpm workspaces + Turborepo.
-- CLI: `commander`, `picocolors`, `zod`, `execa`, `fast-glob`. Bundle with `tsup`. Test with `vitest`.
-- Website: Next.js (App Router), TypeScript, Tailwind CSS/shadcn ui, fully static export where possible, deployed on Vercel. Docs with Fumadocs, which pairs well with Next.js.
+- CLI: `commander`, `picocolors`, `zod`, `execa`, `fast-glob`, `clipboardy` (clipboard fallback for `omot report`). Bundle with `tsup`. Test with `vitest`.
+- Website: Next.js (App Router), TypeScript, Tailwind CSS/shadcn ui, statically generated (SSG, not `output: 'export'`; see 8.1), deployed on Vercel. Docs with Fumadocs, which pairs well with Next.js.
 - Data: plain JSON files in the repo (`dataset/`). No database in the MVP.
 - License: MIT.
 
@@ -76,16 +76,28 @@ export interface Check {
   run(ctx: CheckContext): Promise<CheckResult>;
   fix?(ctx: CheckContext): Promise<FixPlan>;  // optional, powers --fix
 }
+
+export interface FixPlan {
+  files: Array<{
+    path: string;         // repo-relative; created only if it does not exist
+    contents: string;     // full file contents to write
+  }>;
+}
 ```
 
-A `FixPlan` is a list of files to create (never overwrite) with their contents.
+A `FixPlan` is a list of files to create (never overwrite) with their contents. It is create-only: the `--fix` applier skips any `path` that already exists and reports it as skipped, and a `FixPlan` has no way to express edits, appends, or deletions.
 
 ### 4.2 Scoring
 
-- Score = 100 × (sum of weights of passing checks) ÷ (sum of weights of all non-`na` checks), rounded.
-- `warn` counts as half weight.
-- Grades: 90 and above = A, 75 to 89 = B, 60 to 74 = C, below 60 = D.
-- Scoring lives in `core` with unit tests. The algorithm is documented on the methodology page and versioned (`scoring_version: 1`).
+- Score = 100 × (sum of earned weight) ÷ (sum of possible weight), where each non-`na` check contributes:
+  - `pass`: its full weight to both the numerator and the denominator.
+  - `warn`: half its weight to **both** the numerator and the denominator.
+  - `fail`: 0 to the numerator and its full weight to the denominator.
+  - `na`: nothing to either.
+- If the denominator is 0 (every check is `na`), the score is 100.
+- The raw percentage is rounded with `Math.round` (round half up, so 89.5 becomes 90) to an integer from 0 to 100. The grade is computed from this rounded integer, never from the raw value.
+- Grades (on the rounded integer score): A = 90 to 100, B = 75 to 89, C = 60 to 74, D = 0 to 59.
+- Scoring lives in `core` with unit tests. The tests must include explicit cases for `warn` half-weighting (numerator and denominator), and for each grade boundary: 89/90 (B/A), 74/75 (C/B), and 59/60 (D/C), including a raw value that rounds across a boundary. The algorithm is documented on the methodology page and versioned (`scoring_version: 1`).
 
 ### 4.3 Built-in checks (ship these 14)
 
@@ -110,11 +122,13 @@ A `FixPlan` is a list of files to create (never overwrite) with their contents.
 - `omot init [path]`: hidden alias of `scan` kept for backward compatibility, same flags. Commander's `.alias()` shows aliases in help, so register `init` as a separate command with `{ hidden: true }` that reuses the `scan` options and action. Register `scan` with `{ isDefault: true }`.
 - `omot checks`: list all loaded checks with weights.
 - Exit code is always 0 unless the tool itself errors. A `--min-score <n>` flag exits 1 below the threshold, for CI use.
-- **The scanner makes zero network calls.** Enforce with a test that fails if `fetch`, `http`, or `https` is invoked during a scan.
+- **The scanner makes zero network calls.** Enforce with a vitest test that runs a full scan of a fixture repo with all network entry points stubbed to throw: replace `globalThis.fetch`, and `vi.mock` `node:http`, `node:https` (`request`, `get`, `Agent`), and `node:net` (`connect`, `createConnection`, `Socket.prototype.connect`). Any attempted call throws, and the test also asserts the stubs were called zero times, so a swallowed error still fails the test.
 
 ### 4.5 Plugin loading
 
 A plugin is an ES module whose default export is `Check[]`. Load via `--plugin` or an `omot.config.ts` in the repo root (`{ plugins: [...] }`). Load `.ts` configs and plugins with `jiti`, and also accept `.js` and `.mjs`. Validate every loaded check against a zod schema and refuse malformed ones with a clear error. Document in `docs/writing-a-check.md` with a template.
+
+**Execution safety:** loading `omot.config.ts` or a `--plugin` module through `jiti` executes arbitrary local code with the user's privileges, at the same trust level as running a local build script. The zod validation checks shape only, not safety, and it runs after the module's code has already executed. Plugins are not sandboxed, and the no-network guarantee covers built-in checks only. `docs/writing-a-check.md` and the `/docs` plugins section must warn users to only load plugins and configs they trust, the same as any dependency they install.
 
 ### 4.6 Badge
 
@@ -170,8 +184,8 @@ Tasks that need parameters (a named dependency, function, or file) take them via
 For the MVP, reports are submitted through a **public GitHub issue**, so there is no server, no database, and no secrets, and the user sees everything.
 
 - `omot report` reads `.omot/run.json`, builds the payload, **prints the exact JSON**, and asks for explicit confirmation (`y/N`). `--dry-run` prints and exits.
-- On confirmation, it opens the browser to a prefilled new-issue URL using the `report` issue template with the JSON in the body. If the payload is too long for a URL, it copies the JSON to the clipboard and instructs the user to paste it.
-- The `ingest-report` GitHub Action triggers on issues labeled `report`: it extracts the JSON, validates it with the shared zod schema (strict, no extra fields allowed), rejects with a comment if invalid, otherwise commits `dataset/reports/<timestamp>-<random>.json` and closes the issue. **The committed file does not include the submitter's username.**
+- On confirmation, it opens the browser to a prefilled new-issue URL using the `report` issue template with the JSON in the body. If the payload is too long for a URL, it copies the JSON to the clipboard with `clipboardy` and instructs the user to paste it. If clipboard access fails (for example, a headless session), it prints the JSON and tells the user to copy it manually.
+- The `ingest-report` GitHub Action triggers on issues labeled `report`: it extracts the JSON, validates it with the shared zod schema (strict, no extra fields allowed), rejects with a comment if invalid, otherwise commits `dataset/reports/<timestamp>-<random>.json` and closes the issue. **The committed file does not include the submitter's username.** The Action builds the file only from the validated payload fields, never from issue metadata (author, issue number, URLs).
 - Basic abuse control: one report per issue, schema-strict, maintainers can delete bad files, and a `dataset/blocklist` of issue authors is optional later.
 
 ### 6.2 Aggregation
@@ -182,6 +196,7 @@ The website computes aggregates **at build time** from `dataset/reports/*.json`:
 
 - A malformed payload is rejected by the Action with a helpful comment.
 - A valid payload results in exactly one new dataset file and a rebuilt site.
+- A test runs the ingest logic on a sample issue from a known author and asserts the committed `dataset/reports/*.json` file never contains the submitter's GitHub username/handle (case-insensitive substring search over the whole file), including when the handle also appears in the issue title or body. This is in addition to the strict schema validation.
 - The dataset is downloadable as raw JSON from the repo and from `/results/data.json`.
 
 ## 7. Privacy: exactly what is sent
@@ -243,7 +258,7 @@ Repo name, remote URL, owner, branch or commit hashes, file names or paths, file
 1. Scaffold with `create-next-app` (App Router, TypeScript, Tailwind/shadcn ui, ESLint) inside `apps/web`; wire it to the workspace.
 2. Import `@oh-my-otter/core`, `@oh-my-otter/checks`, and `@oh-my-otter/benchmarks` so the site renders from the same source of truth as the CLI.
 3. Create a build-time data loader that reads `dataset/reports/*.json`, validates each with the shared schema (skip and log invalid files), and exposes aggregates.
-4. Use static generation for all pages (`generateStaticParams` for dynamic routes). Add on-push rebuild on Vercel.
+4. Use static generation for all pages (`generateStaticParams` for dynamic routes), deployed on Vercel **without** `output: 'export'`. A true static export conflicts with runtime OG image generation (`opengraph-image`/`ImageResponse`), the `sitemap.ts`/`robots.ts` metadata routes, and some dynamic-route features, so SSG on Vercel is the default. Pre-generating OG images at build time for a true static export is the fallback only if the site ever has to leave Vercel. Add on-push rebuild on Vercel.
 5. Add an OG image, sitemap, robots, and a dark/light theme.
 
 ### 8.2 Pages
@@ -262,6 +277,7 @@ Repo name, remote URL, owner, branch or commit hashes, file names or paths, file
 - Lighthouse 95 and above on performance, accessibility, and SEO on `/` and `/checks`.
 - No third-party analytics scripts or cookies. If analytics are wanted later, use a cookieless privacy-first option and document it on `/privacy`.
 - Site builds with an empty dataset and shows "no reports yet" states.
+- `next.config` does not set `output: 'export'`; every page is prerendered at build time (no route is dynamically server-rendered), and the OG image, `/sitemap.xml`, and `/robots.txt` are served correctly on the Vercel deployment.
 
 ## 9. Quality, CI, and release
 
