@@ -16,7 +16,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12"
   },
   "types": "./dist/index.d.ts",
   "exports": {
@@ -38,8 +38,8 @@
   "dependencies": {
     "@oh-my-otter/checks": "workspace:*",
     "@oh-my-otter/core": "workspace:*",
-    "commander": "^14.0.3",
-    "execa": "^9.6.1",
+    "commander": "^15.0.0",
+    "execa": "^10.1.0",
     "fast-glob": "^3.3.3",
     "jiti": "^2.7.0",
     "picocolors": "^1.1.1",

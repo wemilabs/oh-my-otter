@@ -2,5 +2,13 @@ packages:
   - packages/*
   - apps/*
 
-onlyBuiltDependencies:
-  - esbuild
+overrides:
+  esbuild: ^0.28.1
+
+allowBuilds:
+  esbuild: true
+
+minimumReleaseAgeExclude:
+  - "@vitest/mocker@5.0.4"
+  - "@vitest/spy@5.0.4"
+  - vitest@5.0.4

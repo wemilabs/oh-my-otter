@@ -187,7 +187,7 @@ function addPluginChecks(
     try {
       check = validateCheck(value, `${source} (index ${index})`);
     } catch (error) {
-      throw new Error(errorText(error));
+      throw new Error(errorText(error), { cause: error });
     }
     const previousSource = seen.get(check.id);
     if (previousSource) {
@@ -229,6 +229,7 @@ async function loadChecks(
     } catch (error) {
       throw new Error(
         `Failed to load config "${configPath}": ${errorText(error)}`,
+        { cause: error },
       );
     }
     const parsed = configSchema.safeParse(configValue);
@@ -247,6 +248,7 @@ async function loadChecks(
         } catch (error) {
           throw new Error(
             `Failed to load plugin "${plugin}" from ${configPath}: ${errorText(error)}`,
+            { cause: error },
           );
         }
         if (!Array.isArray(value)) {
@@ -269,6 +271,7 @@ async function loadChecks(
     } catch (error) {
       throw new Error(
         `Failed to resolve plugin "${specifier}": ${errorText(error)}`,
+        { cause: error },
       );
     }
     let value: unknown;
@@ -277,6 +280,7 @@ async function loadChecks(
     } catch (error) {
       throw new Error(
         `Failed to load plugin "${specifier}" (${file}): ${errorText(error)}`,
+        { cause: error },
       );
     }
     if (!Array.isArray(value)) {
