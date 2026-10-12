@@ -1,4 +1,8 @@
-import type { AgentGroup, Group } from "@oh-my-otter/benchmarks/report";
+import {
+  MIN_SAMPLE,
+  type AgentGroup,
+  type Group,
+} from "@oh-my-otter/benchmarks/report";
 
 export function formatRate(rate: number | null): string {
   if (rate === null) return "—";
@@ -12,6 +16,29 @@ export function formatNumber(value: number | null): string {
 
 export function NotEnough() {
   return <span className="text-muted-foreground">Not enough data yet</span>;
+}
+
+export function NotEnoughBar({ n }: { n: number }) {
+  const filled = Math.min(n, MIN_SAMPLE);
+  return (
+    <div className="flex items-center gap-3 text-[13px] text-muted-foreground">
+      <div className="flex gap-1" aria-hidden>
+        {Array.from({ length: MIN_SAMPLE }, (_, i) => (
+          <span
+            key={i}
+            className={
+              i < filled
+                ? "h-1.5 w-5 rounded-full bg-brand"
+                : "h-1.5 w-5 rounded-full bg-foreground/10"
+            }
+          />
+        ))}
+      </div>
+      <span>
+        Not enough data yet · {filled}/{MIN_SAMPLE} reports
+      </span>
+    </div>
+  );
 }
 
 export function StatsTable({
@@ -29,23 +56,33 @@ export function StatsTable({
         {title}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs tracking-wider text-muted-foreground uppercase">
-              <th className="px-5 py-3 font-medium">Group</th>
-              {showN ? <th className="px-5 py-3 font-medium">n</th> : null}
-              <th className="px-5 py-3 font-medium">Pass</th>
-              <th className="px-5 py-3 font-medium">Partial</th>
-              <th className="px-5 py-3 font-medium">Fail</th>
-              <th className="px-5 py-3 font-medium">Median corrections</th>
-              <th className="px-5 py-3 font-medium">Median minutes</th>
-              <th className="px-5 py-3 font-medium">Median attempts</th>
+              <th className="px-5 py-3 font-medium whitespace-nowrap">Group</th>
+              {showN ? (
+                <th className="px-5 py-3 font-medium whitespace-nowrap">n</th>
+              ) : null}
+              <th className="px-5 py-3 font-medium whitespace-nowrap">Pass</th>
+              <th className="px-5 py-3 font-medium whitespace-nowrap">
+                Partial
+              </th>
+              <th className="px-5 py-3 font-medium whitespace-nowrap">Fail</th>
+              <th className="px-5 py-3 font-medium whitespace-nowrap">
+                Median corrections
+              </th>
+              <th className="px-5 py-3 font-medium whitespace-nowrap">
+                Median minutes
+              </th>
+              <th className="px-5 py-3 font-medium whitespace-nowrap">
+                Median attempts
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {groups.map((group) => (
               <tr key={group.key}>
-                <td className="px-5 py-3 font-mono text-[13px]">
+                <td className="px-5 py-3 font-mono text-[13px] whitespace-nowrap">
                   {group.label}
                 </td>
                 {showN ? (
@@ -53,28 +90,42 @@ export function StatsTable({
                     {group.stats.n}
                   </td>
                 ) : null}
-                {(
-                  [
-                    group.stats.pass_rate,
-                    group.stats.partial_rate,
-                    group.stats.fail_rate,
-                  ] as const
-                ).map((rate, i) => (
-                  <td key={i} className="px-5 py-3 font-mono text-[13px]">
-                    {group.stats.enough ? formatRate(rate) : <NotEnough />}
+                {group.stats.enough ? (
+                  <>
+                    {(
+                      [
+                        group.stats.pass_rate,
+                        group.stats.partial_rate,
+                        group.stats.fail_rate,
+                      ] as const
+                    ).map((rate, i) => (
+                      <td
+                        key={`r${i}`}
+                        className="px-5 py-3 font-mono text-[13px]"
+                      >
+                        {formatRate(rate)}
+                      </td>
+                    ))}
+                    {(
+                      [
+                        group.stats.median_corrections,
+                        group.stats.median_minutes,
+                        group.stats.median_attempts,
+                      ] as const
+                    ).map((value, i) => (
+                      <td
+                        key={`m${i}`}
+                        className="px-5 py-3 font-mono text-[13px]"
+                      >
+                        {formatNumber(value)}
+                      </td>
+                    ))}
+                  </>
+                ) : (
+                  <td colSpan={6} className="px-5 py-3">
+                    <NotEnoughBar n={group.stats.n} />
                   </td>
-                ))}
-                {(
-                  [
-                    group.stats.median_corrections,
-                    group.stats.median_minutes,
-                    group.stats.median_attempts,
-                  ] as const
-                ).map((value, i) => (
-                  <td key={i} className="px-5 py-3 font-mono text-[13px]">
-                    {group.stats.enough ? formatNumber(value) : <NotEnough />}
-                  </td>
-                ))}
+                )}
               </tr>
             ))}
           </tbody>
