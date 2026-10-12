@@ -689,6 +689,10 @@ describe("targeted checks", () => {
     "## Installation\n\nWe use `yarn` workspaces. See the team for setup details.\n",
     "## Setup\n\nThis repo uses `npx` scripts and `pnpm`.\n",
     "## Installation\n\nRun pnpm install first.\n",
+    "## Installation\n\n```sh\nyarn --version\n```\n",
+    "## Installation\n\n```sh\nyarn -v\n```\n",
+    "## Installation\n\n```sh\n# npm install\n```\n",
+    "## Installation\n\n    # pnpm install\n",
   ])("warns when install commands only appear in prose: %s", async (readme) => {
     await withTempRepo(async (root) => {
       await writeFile(path.join(root, "README.md"), readme);
@@ -706,6 +710,8 @@ describe("targeted checks", () => {
     "## Installation\n\n~~~bash\n$ bun install\n~~~\n",
     "## Installation\n\n<pre>yarn install</pre>\n",
     "## Installation\n\n```sh\ncd app && yarn\n```\n",
+    "## Installation\n\n```sh\nnpm install # deps\n```\n",
+    "## Installation\n\n```sh\nyarn --frozen-lockfile\n```\n",
   ])("recognizes install commands in code: %s", async (readme) => {
     await withTempRepo(async (root) => {
       await writeFile(path.join(root, "README.md"), readme);

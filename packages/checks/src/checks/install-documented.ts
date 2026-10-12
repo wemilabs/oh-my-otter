@@ -9,7 +9,9 @@ const packageManagerInstallPattern =
 const yarnInstallPattern = /\byarn\s+(?:install|add)\b/i;
 const anchoredInstallPattern = /^(?:pnpm|npm|bun)\s+(?:install|i|ci|add)\b/i;
 const anchoredYarnInstallPattern = /^yarn\s+(?:install|add)\b/i;
-const yarnOnlyPattern = /^yarn(?:\s+--?[\w-]+(?:=\S+)?)*\s*$/;
+const yarnOnlyPattern =
+  /^yarn(?!.*\s(?:--version|-v|--help|-h)\b)(?:\s+--?[\w-]+(?:=\S+)?)*\s*$/;
+const shellCommentPattern = /(?:^|\s)#.*$/;
 const yarnProsePattern = /\b(?:run|running|execute|executing|type|enter)\s*$/i;
 
 function hasPlainYarn(text: string): boolean {
@@ -21,10 +23,11 @@ function hasPlainYarn(text: string): boolean {
 }
 
 function codeLineHasCommand(line: string): boolean {
+  const uncommented = line.replace(shellCommentPattern, "");
   return (
-    packageManagerInstallPattern.test(line) ||
-    yarnInstallPattern.test(line) ||
-    hasPlainYarn(line)
+    packageManagerInstallPattern.test(uncommented) ||
+    yarnInstallPattern.test(uncommented) ||
+    hasPlainYarn(uncommented)
   );
 }
 
@@ -34,7 +37,9 @@ function codeTextHasCommand(text: string): boolean {
 
 function plainTextHasCommand(contents: string): boolean {
   for (const line of contents.split(/\r?\n/)) {
-    const stripped = line.replace(/^\s*(?:[$>]\s+)?/, "");
+    const stripped = line
+      .replace(shellCommentPattern, "")
+      .replace(/^\s*(?:[$>]\s+)?/, "");
     if (
       anchoredInstallPattern.test(stripped) ||
       anchoredYarnInstallPattern.test(stripped) ||
