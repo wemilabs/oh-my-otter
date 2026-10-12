@@ -16,8 +16,8 @@ const dynamicEnvPattern =
   /(?:process\s*\.\s*env|import\s*\.\s*meta\s*\.\s*env)\s*\[\s*(?!["'])[^)\]]+\]/;
 const bareEnvPattern =
   /(?:process\s*\.\s*env|import\s*\.\s*meta\s*\.\s*env)\b(?!\s*(?:\.|\[))/;
-const schemaEnvKeyPattern = /(?:^|[,{])\s*([A-Z][A-Z0-9_]*)\s*:/g;
 const envExampleKeyPattern = /^\s*#?\s*(?:export\s+)?([A-Za-z_]\w*)\s*=/;
+const schemaCallPattern = /\b(?:(?:z|v|t)\s*\.\s*object|createEnv)\s*\(/g;
 const ignoredDirectories = new Set([
   "node_modules",
   "dist",
@@ -102,6 +102,163 @@ function documentedVariables(contents: string): Set<string> {
   return names;
 }
 
+function maskStringsAndComments(contents: string): string {
+  const masked = contents.split("");
+  const blank = (start: number, end: number) => {
+    for (let index = start; index < end; index++) {
+      if (masked[index] !== "\n" && masked[index] !== "\r") masked[index] = " ";
+    }
+  };
+
+  for (let index = 0; index < contents.length;) {
+    const char = contents[index];
+    if (char === "'" || char === '"' || char === "`") {
+      let end = index + 1;
+      while (end < contents.length) {
+        if (contents[end] === "\\") {
+          end += 2;
+          continue;
+        }
+        if (contents[end] === char) {
+          end++;
+          break;
+        }
+        end++;
+      }
+      blank(index, end);
+      index = end;
+      continue;
+    }
+    if (char === "/" && contents[index + 1] === "/") {
+      let end = index + 2;
+      while (end < contents.length && contents[end] !== "\n") end++;
+      blank(index, end);
+      index = end;
+      continue;
+    }
+    if (char === "/" && contents[index + 1] === "*") {
+      const close = contents.indexOf("*/", index + 2);
+      const end = close < 0 ? contents.length : close + 2;
+      blank(index, end);
+      index = end;
+      continue;
+    }
+    index++;
+  }
+
+  return masked.join("");
+}
+
+function matchingBrace(contents: string, openIndex: number): number | null {
+  if (contents[openIndex] !== "{") return null;
+  let depth = 0;
+  for (let index = openIndex; index < contents.length; index++) {
+    if (contents[index] === "{") depth++;
+    if (contents[index] === "}" && --depth === 0) return index;
+  }
+  return null;
+}
+
+function findTopLevelComma(
+  contents: string,
+  start: number,
+  end: number,
+): number {
+  let braces = 0;
+  let brackets = 0;
+  let parentheses = 0;
+  for (let index = start; index < end; index++) {
+    const char = contents[index];
+    if (char === "{") braces++;
+    else if (char === "}") braces--;
+    else if (char === "[") brackets++;
+    else if (char === "]") brackets--;
+    else if (char === "(") parentheses++;
+    else if (char === ")") parentheses--;
+    else if (
+      char === "," &&
+      braces === 0 &&
+      brackets === 0 &&
+      parentheses === 0
+    )
+      return index;
+  }
+  return end;
+}
+
+function objectProperties(
+  contents: string,
+  openIndex: number,
+  closeIndex: number,
+): Array<{ name: string; valueStart: number }> {
+  const properties: Array<{ name: string; valueStart: number }> = [];
+  let cursor = openIndex + 1;
+  while (cursor < closeIndex) {
+    while (cursor < closeIndex && /[\s,]/.test(contents[cursor] ?? ""))
+      cursor++;
+    if (cursor >= closeIndex) break;
+    const key = /^[A-Za-z_$][\w$]*/.exec(contents.slice(cursor));
+    if (!key) {
+      const comma = findTopLevelComma(contents, cursor, closeIndex);
+      cursor = comma < closeIndex ? comma + 1 : closeIndex;
+      continue;
+    }
+    const name = key[0];
+    cursor += name.length;
+    while (cursor < closeIndex && /\s/.test(contents[cursor] ?? "")) cursor++;
+    if (contents[cursor] !== ":") {
+      const comma = findTopLevelComma(contents, cursor, closeIndex);
+      cursor = comma < closeIndex ? comma + 1 : closeIndex;
+      continue;
+    }
+    cursor++;
+    while (cursor < closeIndex && /\s/.test(contents[cursor] ?? "")) cursor++;
+    properties.push({ name, valueStart: cursor });
+    const comma = findTopLevelComma(contents, cursor, closeIndex);
+    cursor = comma < closeIndex ? comma + 1 : closeIndex;
+  }
+  return properties;
+}
+
+function addObjectKeys(
+  contents: string,
+  openIndex: number,
+  closeIndex: number,
+  names: Set<string>,
+): void {
+  for (const { name } of objectProperties(contents, openIndex, closeIndex)) {
+    if (/^[A-Z][A-Z0-9_]*$/.test(name)) addVariable(name, names);
+  }
+}
+
+function collectSchemaEnvKeys(contents: string, names: Set<string>): void {
+  const code = maskStringsAndComments(contents);
+  for (const match of code.matchAll(schemaCallPattern)) {
+    const openParen = (match.index ?? 0) + match[0].lastIndexOf("(");
+    let objectStart = openParen + 1;
+    while (/\s/.test(code[objectStart] ?? "")) objectStart++;
+    const objectEnd = matchingBrace(code, objectStart);
+    if (objectEnd === null) continue;
+
+    if (match[0].includes("createEnv")) {
+      for (const property of objectProperties(code, objectStart, objectEnd)) {
+        if (
+          !["server", "client", "shared"].includes(property.name) ||
+          code[property.valueStart] !== "{"
+        ) {
+          continue;
+        }
+        const nestedEnd = matchingBrace(code, property.valueStart);
+        if (nestedEnd !== null) {
+          addObjectKeys(code, property.valueStart, nestedEnd, names);
+        }
+      }
+    } else {
+      addObjectKeys(code, objectStart, objectEnd, names);
+    }
+  }
+}
+
 async function collectEnvUsage(
   ctx: CheckContext,
 ): Promise<{ names: Set<string>; hasUsage: boolean }> {
@@ -142,10 +299,7 @@ async function collectEnvUsage(
     if (dynamicEnvPattern.test(contents)) hasUsage = true;
     if (bareEnvPattern.test(bareSearchContents)) {
       hasUsage = true;
-      for (const match of contents.matchAll(schemaEnvKeyPattern)) {
-        const name = match[1];
-        if (name) addVariable(name, names);
-      }
+      collectSchemaEnvKeys(contents, names);
     }
   }
 
@@ -166,21 +320,37 @@ export default defineCheck({
         detail: "No environment variable usage was found.",
       };
     }
-    const exampleFiles: string[] = [];
-    const documented = new Set<string>();
+    const exampleFiles: Array<{
+      file: string;
+      ignored: boolean;
+      contents: string;
+    }> = [];
     for (const file of envFiles) {
       if (await ctx.exists(file)) {
-        exampleFiles.push(file);
-        for (const name of documentedVariables((await ctx.read(file)) ?? "")) {
-          documented.add(name);
-        }
+        exampleFiles.push({
+          file,
+          ignored: await isGitignored(ctx, file),
+          contents: (await ctx.read(file)) ?? "",
+        });
       }
     }
     if (exampleFiles.length > 0) {
+      const visibleFiles = exampleFiles.filter((example) => !example.ignored);
+      const documentedFiles =
+        visibleFiles.length > 0 ? visibleFiles : exampleFiles;
+      const documented = new Set<string>();
+      for (const example of documentedFiles) {
+        for (const name of documentedVariables(example.contents)) {
+          documented.add(name);
+        }
+      }
       const missing = [...names].filter((name) => !documented.has(name)).sort();
-      const allIgnored = (
-        await Promise.all(exampleFiles.map((file) => isGitignored(ctx, file)))
-      ).every(Boolean);
+      const allIgnored = visibleFiles.length === 0;
+      const firstDocumentedFile =
+        documentedFiles[0]?.file ?? exampleFiles[0]!.file;
+      const firstIgnoredFile =
+        exampleFiles.find((example) => example.ignored)?.file ??
+        firstDocumentedFile;
       if (missing.length > 0 || allIgnored) {
         const listed = missing.slice(0, 10).join(", ");
         const additional = missing.length - 10;
@@ -188,15 +358,17 @@ export default defineCheck({
         const fix = [];
         if (missing.length > 0) {
           detail.push(
-            `${exampleFiles[0]} is missing: ${listed}${
+            `${firstDocumentedFile} is missing: ${listed}${
               additional > 0 ? `, and ${additional} more` : ""
             }`,
           );
-          fix.push(`Add the missing variable names to ${exampleFiles[0]}.`);
+          fix.push(`Add the missing variable names to ${firstDocumentedFile}.`);
         }
         if (allIgnored) {
-          detail.push(`${exampleFiles[0]} is ignored by .gitignore`);
-          fix.push("Add !.env.example to .gitignore so it can be committed.");
+          detail.push(`${firstIgnoredFile} is ignored by .gitignore`);
+          fix.push(
+            `Add !${firstIgnoredFile} to .gitignore so it can be committed.`,
+          );
         }
         return {
           status: "warn",

@@ -119,6 +119,37 @@ describe("targeted checks", () => {
     });
   });
 
+  it("uses visible examples instead of keys from ignored examples", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(path.join(root, "src/index.js"), "process.env.API_KEY;");
+      await writeFile(path.join(root, ".gitignore"), ".env.sample\n");
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+      await writeFile(path.join(root, ".env.sample"), "API_KEY=\n");
+
+      expect(await envExample.run(createCheckContext(root))).toMatchObject({
+        status: "warn",
+        detail: ".env.example is missing: API_KEY",
+        fix: "Add the missing variable names to .env.example.",
+      });
+    });
+  });
+
+  it("uses the first ignored example name in its remediation", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(path.join(root, "src/index.js"), "process.env.API_KEY;");
+      await writeFile(path.join(root, ".gitignore"), ".env*\n");
+      await writeFile(path.join(root, ".env.sample"), "API_KEY=\n");
+
+      expect(await envExample.run(createCheckContext(root))).toMatchObject({
+        status: "warn",
+        detail: ".env.sample is ignored by .gitignore",
+        fix: "Add !.env.sample to .gitignore so it can be committed.",
+      });
+    });
+  });
+
   it("warns after creating an environment example ignored by git", async () => {
     await withTempRepo(async (root) => {
       await mkdir(path.join(root, "src"));
@@ -163,7 +194,10 @@ describe("targeted checks", () => {
       await mkdir(path.join(root, "lib"));
       await writeFile(
         path.join(root, "lib/env.ts"),
-        "const envSchema = z.object({ DATABASE_URL: z.string(), NEON_AUTH_BASE_URL: z.string().url(), NODE_ENV: z.enum(['dev', 'prod']) });\n" +
+        "const MAP = { FOO_BAR: 1 };\n" +
+          'const TEXT = "z.object({ STRING_KEY: z.string() })";\n' +
+          "// z.object({ COMMENT_KEY: z.string() })\n" +
+          "const envSchema = z.object({ DATABASE_URL: z.string(), NEON_AUTH_BASE_URL: z.string().url(), NODE_ENV: z.enum(['dev', 'prod']) });\n" +
           "export const env = envSchema.parse(process.env);\n",
       );
 
@@ -171,6 +205,31 @@ describe("targeted checks", () => {
       expect((await envExample.run(context)).status).toBe("fail");
       expect((await envExample.fix!(context))[0]?.contents).toBe(
         "DATABASE_URL=\nNEON_AUTH_BASE_URL=\n",
+      );
+    });
+  });
+
+  it("extracts createEnv server, client, and shared keys but not runtimeEnv", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "lib"));
+      await writeFile(
+        path.join(root, "lib/env.ts"),
+        "createEnv({\n" +
+          "  server: { DB_URL: z.string() },\n" +
+          "  client: { PUBLIC_KEY: z.string() },\n" +
+          "  shared: { SHARED_TOKEN: z.string() },\n" +
+          "  runtimeEnv: {\n" +
+          "    RAW_RUNTIME_KEY: process.env.RAW_RUNTIME_KEY,\n" +
+          "    NOT_A_SCHEMA_KEY: 'ignored',\n" +
+          "  },\n" +
+          "});\n" +
+          "const rawEnv = process.env;\n",
+      );
+
+      const context = createCheckContext(root);
+      expect((await envExample.run(context)).status).toBe("fail");
+      expect((await envExample.fix!(context))[0]?.contents).toBe(
+        "DB_URL=\nPUBLIC_KEY=\nRAW_RUNTIME_KEY=\nSHARED_TOKEN=\n",
       );
     });
   });
@@ -451,6 +510,7 @@ describe("targeted checks", () => {
   it.each([
     "## Installation\n\nRun `npx drizzle-kit generate`.\n",
     "## Installation\n\nWe use yarn for package management.\n",
+    "## Installation\n\nWe use yarn workspaces for package management.\n",
     "## Installation\n\n```sh\ncorepack enable\n```\n",
   ])(
     "does not treat non-install mentions as install commands",
@@ -471,6 +531,8 @@ describe("targeted checks", () => {
     "yarn",
     "$ yarn",
     "yarn install --frozen-lockfile",
+    "Run `yarn install` to set up",
+    "run yarn install first",
     "corepack enable\npnpm install",
   ])("recognizes install command %s", async (command) => {
     await withTempRepo(async (root) => {

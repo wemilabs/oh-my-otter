@@ -6,12 +6,16 @@ const setupHeading =
   /^#{1,6}\s+.*(?:install|setup|set up|getting started|quick ?start|development)/im;
 const packageManagerInstallPattern =
   /\b(?:pnpm|npm|bun)\s+(?:install|i|ci|add)\b/i;
-const yarnCommandPattern = /^\s*(?:\$\s*)?yarn(?:\s+install(?:\s+.*)?)?\s*$/i;
+const yarnInstallPattern = /\byarn\s+(?:install|add)\b/i;
+const yarnCommandPattern = /^\s*(?:\$\s*)?yarn\s*$/im;
+const inlineYarnPattern = /`yarn`/i;
 
 function hasInstallCommand(contents: string): boolean {
   return (
     packageManagerInstallPattern.test(contents) ||
-    contents.split(/\r?\n/).some((line) => yarnCommandPattern.test(line))
+    yarnInstallPattern.test(contents) ||
+    yarnCommandPattern.test(contents) ||
+    inlineYarnPattern.test(contents)
   );
 }
 
