@@ -66,6 +66,24 @@ describe("loadReports", () => {
     expect(String(warn.mock.calls[0]?.[0])).toContain("connection refused");
   });
 
+  it("treats a failing body read as unavailable", async () => {
+    const warn = vi.fn();
+    const load = await loadReports({
+      fetchImpl: vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        text: async () => {
+          throw new Error("stream terminated early");
+        },
+      })) as unknown as typeof fetch,
+      warn,
+    });
+    expect(load.status).toBe("unavailable");
+    expect(String(warn.mock.calls[0]?.[0])).toContain(
+      "stream terminated early",
+    );
+  });
+
   it("skips invalid lines and warns once per line number", async () => {
     const warn = vi.fn();
     const load = await loadReports({ url: fixtureUrl, warn });

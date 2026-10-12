@@ -78,7 +78,14 @@ export async function loadReports(opts?: {
       warn(`fetching ${url} failed with status ${response.status}`);
       return UNAVAILABLE;
     }
-    text = await response.text();
+    try {
+      text = await response.text();
+    } catch (error) {
+      warn(
+        `could not read ${url} body: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return UNAVAILABLE;
+    }
   }
 
   const { reports, invalid } = parseReportsNdjson(text);

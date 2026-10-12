@@ -6,3 +6,4 @@ Oh My Otter - Build Plan.md
 **/.tmp
 **/.next
 **/next-env.d.ts
+test-results/
