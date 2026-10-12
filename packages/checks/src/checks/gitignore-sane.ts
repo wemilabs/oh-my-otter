@@ -38,10 +38,25 @@ function matchesName(pattern: string, name: string): boolean {
     .some((part) => part === name);
 }
 
+function unignoresName(pattern: string, name: string): boolean {
+  return (
+    pattern
+      .replace(/^\//, "")
+      .replace(/^\*\*\//, "")
+      .replace(/\/$/, "") === name
+  );
+}
+
 function ignoresName(rules: IgnoreRule[], name: string): boolean {
   let ignored = false;
   for (const rule of rules) {
-    if (matchesName(rule.pattern, name)) ignored = !rule.negated;
+    if (
+      rule.negated
+        ? unignoresName(rule.pattern, name)
+        : matchesName(rule.pattern, name)
+    ) {
+      ignored = !rule.negated;
+    }
   }
   return ignored;
 }

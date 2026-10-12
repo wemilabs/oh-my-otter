@@ -68,6 +68,8 @@ The command exits nonzero if the score is below the chosen threshold.
 
 Add custom checks with a plugin; see the [plugin authoring guide](docs/writing-a-check.md).
 
+Security: `omot.config.*` files and plugins execute as code when scanning a repository, so only scan repositories you trust, just as you would with ESLint configs. Built-in checks only read files and never execute anything unless you pass `--run`.
+
 ## Badge
 
 Run `omot scan --badge` to print a static Shields.io badge snippet.

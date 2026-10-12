@@ -1,5 +1,5 @@
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -28,6 +28,25 @@ function probeSymlinkCreation(): boolean {
 }
 
 const canCreateSymlinks = probeSymlinkCreation();
+
+function probeFileSymlinkCreation(): boolean {
+  const root = mkdtempSync(path.join(os.tmpdir(), "omot-file-symlink-probe-"));
+  const target = path.join(root, "target.txt");
+  writeFileSync(target, "");
+  try {
+    symlinkSync(target, path.join(root, "link.txt"), "file");
+    return true;
+  } catch (error) {
+    return (
+      process.platform !== "win32" ||
+      (error as NodeJS.ErrnoException).code !== "EPERM"
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const canCreateFileSymlinks = probeFileSymlinkCreation();
 
 async function tempDir(): Promise<string> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "omot-core-"));
@@ -89,6 +108,38 @@ describe("createCheckContext", () => {
     const noPackageRoot = await tempDir();
     expect(createCheckContext(noPackageRoot).packageJson).toBeNull();
   });
+
+  it.skipIf(process.platform === "win32" && !canCreateFileSymlinks)(
+    "treats external symlinks as missing and reads symlinks inside the root",
+    async () => {
+      const root = await tempDir();
+      const outside = await tempDir();
+      await writeFile(path.join(outside, "secret.txt"), "outside");
+      await writeFile(path.join(outside, "package.json"), '{"name":"outside"}');
+      await writeFile(path.join(root, "inside.txt"), "inside");
+      symlinkSync(
+        path.join(outside, "secret.txt"),
+        path.join(root, "secret-link.txt"),
+        "file",
+      );
+      symlinkSync(
+        path.join(outside, "package.json"),
+        path.join(root, "package.json"),
+        "file",
+      );
+      symlinkSync(
+        path.join(root, "inside.txt"),
+        path.join(root, "inside-link.txt"),
+        "file",
+      );
+      const context = createCheckContext(root);
+
+      expect(await context.read("secret-link.txt")).toBeNull();
+      expect(await context.exists("secret-link.txt")).toBe(false);
+      expect(context.packageJson).toBeNull();
+      expect(await context.read("inside-link.txt")).toBe("inside");
+    },
+  );
 
   it("throws when commands are disabled and returns the process exit code when enabled", async () => {
     const root = await tempDir();

@@ -1,5 +1,5 @@
 import { access, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
 import fastGlob from "fast-glob";
@@ -19,6 +19,15 @@ function resolveInside(root: string, relativePath: string): string {
   return absolute;
 }
 
+function isInsideRoot(root: string, target: string): boolean {
+  const relative = path.relative(root, target);
+  return (
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
+}
+
 async function assertTargetInsideRoot(
   realRoot: string,
   target: string,
@@ -28,12 +37,7 @@ async function assertTargetInsideRoot(
   while (true) {
     try {
       const realAncestor = await realpath(ancestor);
-      const relative = path.relative(realRoot, realAncestor);
-      if (
-        relative === ".." ||
-        relative.startsWith(`..${path.sep}`) ||
-        path.isAbsolute(relative)
-      ) {
+      if (!isInsideRoot(realRoot, realAncestor)) {
         throw new Error(`Path escapes repository root: ${relativePath}`);
       }
       return;
@@ -64,13 +68,23 @@ export function createCheckContext(
   const absoluteRoot = path.resolve(root);
   let packageJsonLoaded = false;
   let packageJson: Record<string, unknown> | null = null;
+  let realRoot: string | undefined;
+  const getRealRoot = () => {
+    if (realRoot === undefined) realRoot = realpathSync(absoluteRoot);
+    return realRoot;
+  };
+  const resolveRealPathInsideRoot = async (relativePath: string) => {
+    const target = resolveInside(absoluteRoot, relativePath);
+    const rootRealPath = getRealRoot();
+    const targetRealPath = await realpath(target);
+    return isInsideRoot(rootRealPath, targetRealPath) ? targetRealPath : null;
+  };
 
   const context: CheckContext = {
     root: absoluteRoot,
     async exists(relativePath) {
       try {
-        await access(resolveInside(absoluteRoot, relativePath));
-        return true;
+        return (await resolveRealPathInsideRoot(relativePath)) !== null;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
         if ((error as NodeJS.ErrnoException).code === "ENOTDIR") return false;
@@ -79,10 +93,9 @@ export function createCheckContext(
     },
     async read(relativePath) {
       try {
-        return await readFile(
-          resolveInside(absoluteRoot, relativePath),
-          "utf8",
-        );
+        const target = await resolveRealPathInsideRoot(relativePath);
+        if (target === null) return null;
+        return await readFile(target, "utf8");
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
         if (code === "ENOENT" || code === "EISDIR") return null;
@@ -114,10 +127,13 @@ export function createCheckContext(
       if (!packageJsonLoaded) {
         packageJsonLoaded = true;
         try {
-          const contents = readFileSync(
-            resolveInside(absoluteRoot, "package.json"),
-            "utf8",
-          );
+          const target = resolveInside(absoluteRoot, "package.json");
+          const targetRealPath = realpathSync(target);
+          if (!isInsideRoot(getRealRoot(), targetRealPath)) {
+            packageJson = null;
+            return packageJson;
+          }
+          const contents = readFileSync(targetRealPath, "utf8");
           const parsed: unknown = JSON.parse(contents);
           packageJson =
             parsed !== null &&

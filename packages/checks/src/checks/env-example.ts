@@ -15,6 +15,7 @@ const dynamicEnvPattern =
   /(?:process\s*\.\s*env|import\s*\.\s*meta\s*\.\s*env)\s*\[\s*(?!["'])[^)\]]+\]/;
 const bareEnvPattern =
   /(?:process\s*\.\s*env|import\s*\.\s*meta\s*\.\s*env)\b(?!\s*(?:\.|\[))/;
+const envExampleKeyPattern = /^\s*#?\s*(?:export\s+)?([A-Za-z_]\w*)\s*=/;
 const ignoredDirectories = new Set([
   "node_modules",
   "dist",
@@ -31,6 +32,26 @@ const ignoredVariables = new Set([
   "SSR",
   "BASE_URL",
 ]);
+const platformInjectedVariables = new Set([
+  "CI",
+  "HOME",
+  "PATH",
+  "PWD",
+  "USER",
+  "SHELL",
+  "TERM",
+  "TZ",
+  "LANG",
+  "VERCEL",
+  "NEXT_RUNTIME",
+]);
+const platformInjectedPrefixes = [
+  "VERCEL_",
+  "GITHUB_",
+  "RUNNER_",
+  "NETLIFY",
+  "npm_",
+];
 const envFiles = [
   ".env.example",
   ".env.sample",
@@ -42,9 +63,24 @@ const envFiles = [
 ];
 
 function addVariable(name: string, names: Set<string>): boolean {
-  if (ignoredVariables.has(name)) return false;
+  if (
+    ignoredVariables.has(name) ||
+    platformInjectedVariables.has(name) ||
+    platformInjectedPrefixes.some((prefix) => name.startsWith(prefix))
+  ) {
+    return false;
+  }
   names.add(name);
   return true;
+}
+
+function documentedVariables(contents: string): Set<string> {
+  const names = new Set<string>();
+  for (const line of contents.split(/\r?\n/)) {
+    const name = envExampleKeyPattern.exec(line)?.[1];
+    if (name) names.add(name);
+  }
+  return names;
 }
 
 async function collectEnvUsage(
@@ -67,7 +103,11 @@ async function collectEnvUsage(
       for (const match of contents.matchAll(pattern)) {
         for (const property of (match[1] ?? "").split(",")) {
           const trimmed = property.trim();
-          if (!trimmed || trimmed.startsWith("...")) continue;
+          if (!trimmed) continue;
+          if (trimmed.startsWith("...")) {
+            hasUsage = true;
+            continue;
+          }
           const name = /^([A-Za-z_][\w]*)/.exec(trimmed)?.[1];
           if (name) hasUsage = addVariable(name, names) || hasUsage;
         }
@@ -94,7 +134,7 @@ export default defineCheck({
   weight: 3,
   why: "An environment example tells an agent which local configuration values the project needs.",
   async run(ctx) {
-    const { hasUsage } = await collectEnvUsage(ctx);
+    const { names, hasUsage } = await collectEnvUsage(ctx);
     if (!hasUsage) {
       return {
         status: "na",
@@ -103,6 +143,21 @@ export default defineCheck({
     }
     for (const file of envFiles) {
       if (await ctx.exists(file)) {
+        const documented = documentedVariables((await ctx.read(file)) ?? "");
+        const missing = [...names]
+          .filter((name) => !documented.has(name))
+          .sort();
+        if (missing.length > 0) {
+          const listed = missing.slice(0, 10).join(", ");
+          const additional = missing.length - 10;
+          return {
+            status: "warn",
+            detail: `${file} is missing: ${listed}${
+              additional > 0 ? `, and ${additional} more` : ""
+            }`,
+            fix: `Add the missing variable names to ${file}.`,
+          };
+        }
         return {
           status: "pass",
           detail: `Found ${file} for environment variables.`,

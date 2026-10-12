@@ -79,6 +79,77 @@ describe("targeted checks", () => {
     });
   });
 
+  it("warns when an existing environment example omits used variables", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/index.js"),
+        "process.env.ZED;\nprocess.env.API_KEY;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "# DOCUMENTED=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_KEY, ZED");
+      expect(result.fix).toBe(
+        "Add the missing variable names to .env.example.",
+      );
+    });
+  });
+
+  it("counts commented and exported example keys as documented", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/index.js"),
+        "process.env.ALPHA;\nprocess.env.BETA;\n",
+      );
+      await writeFile(
+        path.join(root, ".env.example"),
+        "# ALPHA=\nexport BETA=\n",
+      );
+
+      expect((await envExample.run(createCheckContext(root))).status).toBe(
+        "pass",
+      );
+    });
+  });
+
+  it("excludes platform-injected variables from warnings and fixes", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      const injected = [
+        "CI",
+        "HOME",
+        "PATH",
+        "PWD",
+        "USER",
+        "SHELL",
+        "TERM",
+        "TZ",
+        "LANG",
+        "VERCEL",
+        "NEXT_RUNTIME",
+        "VERCEL_URL",
+        "GITHUB_ACTIONS",
+        "RUNNER_OS",
+        "NETLIFY_SITE_ID",
+        "npm_config_user_agent",
+      ];
+      await writeFile(
+        path.join(root, "src/index.js"),
+        [...injected, "API_KEY"]
+          .map((name) => `process.env.${name};`)
+          .join("\n"),
+      );
+      await writeFile(path.join(root, ".env.example"), "API_KEY=\n");
+      const context = createCheckContext(root);
+
+      expect((await envExample.run(context)).status).toBe("pass");
+      expect((await envExample.fix!(context))[0]?.contents).toBe("API_KEY=\n");
+    });
+  });
+
   it("collects named destructured environment variables", async () => {
     await withTempRepo(async (root) => {
       await mkdir(path.join(root, "src"));
@@ -98,6 +169,23 @@ describe("targeted checks", () => {
 
   it.each(["consume(process.env);", "consume(import.meta.env);"])(
     "counts a bare %s reference as usage without inventing names",
+    async (source) => {
+      await withTempRepo(async (root) => {
+        await mkdir(path.join(root, "src"));
+        await writeFile(path.join(root, "src/index.js"), source);
+        const context = createCheckContext(root);
+
+        expect((await envExample.run(context)).status).toBe("fail");
+        expect((await envExample.fix!(context))[0]?.contents).toBe("");
+      });
+    },
+  );
+
+  it.each([
+    "const { ...config } = process.env;",
+    "const { ...config } = import.meta.env;",
+  ])(
+    "counts rest-only destructuring as environment usage: %s",
     async (source) => {
       await withTempRepo(async (root) => {
         await mkdir(path.join(root, "src"));
@@ -175,17 +263,32 @@ describe("targeted checks", () => {
     });
   });
 
-  it("honors a later .gitignore negation for node_modules", async () => {
+  it("keeps root node_modules ignored by a nested negation", async () => {
     await withTempRepo(async (root) => {
       await writeFile(
         path.join(root, ".gitignore"),
-        "node_modules/\n!node_modules\ndist/\n",
+        "node_modules/\n!packages/demo/node_modules/\ndist\n",
       );
       expect((await gitignoreSane.run(createCheckContext(root))).status).toBe(
-        "warn",
+        "pass",
       );
     });
   });
+
+  it.each(["!node_modules", "!/node_modules/", "!**/node_modules"])(
+    "lets a root-level .gitignore negation un-ignore node_modules: %s",
+    async (negation) => {
+      await withTempRepo(async (root) => {
+        await writeFile(
+          path.join(root, ".gitignore"),
+          `node_modules/\n${negation}\ndist\n`,
+        );
+        const result = await gitignoreSane.run(createCheckContext(root));
+        expect(result.status).toBe("warn");
+        expect(result.detail).toContain("node_modules");
+      });
+    },
+  );
 
   it("returns valid, create-only fixes for the bare fixture", async () => {
     const fixture = path.resolve(
