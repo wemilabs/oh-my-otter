@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { execa } from "execa";
 import { afterEach, describe, expect, it } from "vitest";
 import { main } from "../src/cli";
@@ -47,7 +48,13 @@ async function invoke(
       stderr += text;
     },
   });
-  return { code, stdout, stderr, asked, confirms };
+  return {
+    code,
+    stdout: stripVTControlCharacters(stdout),
+    stderr: stripVTControlCharacters(stderr),
+    asked,
+    confirms,
+  };
 }
 
 async function git(cwd: string, args: string[]) {
