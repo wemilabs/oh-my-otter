@@ -25,15 +25,36 @@ jobs:
       line: ${{ steps.ingest.outputs.line }}
       comment: ${{ steps.ingest.outputs.comment }}
     steps:
+      - name: Re-check the issue's live state
+        id: live
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -e
+          # Queued runs carry a stale event snapshot; an earlier run may have ingested this issue.
+          if gh issue view "$ISSUE_NUMBER" --repo "$GH_REPO" --json state,labels \
+            --jq '.state == "OPEN" and ([.labels[].name] | index("ingested") | not)' | grep -qx true; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/checkout@v7
+        if: steps.live.outputs.skip == 'false'
       - uses: pnpm/action-setup@v6
+        if: steps.live.outputs.skip == 'false'
       - uses: actions/setup-node@v7
+        if: steps.live.outputs.skip == 'false'
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+        if: steps.live.outputs.skip == 'false'
       - run: pnpm turbo run build --filter=@oh-my-otter/benchmarks...
+        if: steps.live.outputs.skip == 'false'
       - name: Fetch the author's other report issues
+        if: steps.live.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -50,6 +71,7 @@ jobs:
             -f creator="$ISSUE_AUTHOR" -f labels=report -f state=open \
             -f per_page=100 > "$OPEN_ISSUES_FILE"
       - name: Validate the report
+        if: steps.live.outputs.skip == 'false'
         id: ingest
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
