@@ -210,6 +210,21 @@ describe("fix flow", () => {
     ).toBeNull();
   });
 
+  it("prints the scan report and badge before fix previews and created files", async () => {
+    const root = await bareCopy();
+    const result = await invoke(["scan", root, "--fix", "--yes", "--badge"]);
+    const reportIndex = result.stdout.indexOf("Score:");
+    const badgeIndex = result.stdout.indexOf("![agent-ready]");
+    const previewIndex = result.stdout.indexOf("--- /dev/null");
+    const createdIndex = result.stdout.indexOf("Created:");
+
+    expect(result.code).toBe(0);
+    expect(reportIndex).toBeGreaterThanOrEqual(0);
+    expect(reportIndex).toBeLessThan(badgeIndex);
+    expect(badgeIndex).toBeLessThan(previewIndex);
+    expect(previewIndex).toBeLessThan(createdIndex);
+  });
+
   it("does not apply fixes without --yes when output is not a TTY", async () => {
     const root = await bareCopy();
     const result = await invoke(["scan", root, "--fix"], { isTTY: false });

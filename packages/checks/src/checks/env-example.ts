@@ -1,6 +1,13 @@
-import { defineCheck } from "@oh-my-otter/core";
+import { defineCheck, type CheckContext } from "@oh-my-otter/core";
 
 const sourcePattern = "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,vue,svelte,astro}";
+const envPatterns = [
+  /process\s*\.\s*env\s*\.\s*([A-Za-z_][\w]*)/g,
+  /process\s*\.\s*env\s*\[\s*(['"])([A-Za-z_][\w]*)\1\s*\]/g,
+  /import\s*\.\s*meta\s*\.\s*env\s*\.\s*([A-Za-z_][\w]*)/g,
+  /import\s*\.\s*meta\s*\.\s*env\s*\[\s*(['"])([A-Za-z_][\w]*)\1\s*\]/g,
+];
+const dynamicEnvPattern = /process\s*\.\s*env\s*\[\s*(?!["'])[^)\]]+\]/;
 const ignoredDirectories = new Set([
   "node_modules",
   "dist",
@@ -33,6 +40,33 @@ function addVariable(name: string, names: Set<string>): boolean {
   return true;
 }
 
+async function collectEnvUsage(
+  ctx: CheckContext,
+): Promise<{ names: Set<string>; hasUsage: boolean }> {
+  const names = new Set<string>();
+  let hasUsage = false;
+  const files = (await ctx.glob(sourcePattern))
+    .filter(
+      (file) => !file.split("/").some((part) => ignoredDirectories.has(part)),
+    )
+    .slice(0, 5000);
+
+  for (const file of files) {
+    const contents = await ctx.read(file);
+    if (contents === null || Buffer.byteLength(contents, "utf8") > 1_000_000)
+      continue;
+    for (const pattern of envPatterns) {
+      for (const match of contents.matchAll(pattern)) {
+        const name = match[2] ?? match[1];
+        if (name) hasUsage = addVariable(name, names) || hasUsage;
+      }
+    }
+    if (dynamicEnvPattern.test(contents)) hasUsage = true;
+  }
+
+  return { names, hasUsage };
+}
+
 export default defineCheck({
   id: "env-example",
   title: "Environment variable example",
@@ -40,35 +74,7 @@ export default defineCheck({
   weight: 3,
   why: "An environment example tells an agent which local configuration values the project needs.",
   async run(ctx) {
-    const names = new Set<string>();
-    let hasUsage = false;
-    const files = (await ctx.glob(sourcePattern))
-      .filter(
-        (file) => !file.split("/").some((part) => ignoredDirectories.has(part)),
-      )
-      .slice(0, 5000);
-
-    for (const file of files) {
-      const contents = await ctx.read(file);
-      if (contents === null || Buffer.byteLength(contents, "utf8") > 1_000_000)
-        continue;
-      const patterns = [
-        /process\s*\.\s*env\s*\.\s*([A-Za-z_][\w]*)/g,
-        /process\s*\.\s*env\s*\[\s*(['"])([A-Za-z_][\w]*)\1\s*\]/g,
-        /import\s*\.\s*meta\s*\.\s*env\s*\.\s*([A-Za-z_][\w]*)/g,
-        /import\s*\.\s*meta\s*\.\s*env\s*\[\s*(['"])([A-Za-z_][\w]*)\1\s*\]/g,
-      ];
-      for (const pattern of patterns) {
-        for (const match of contents.matchAll(pattern)) {
-          const name = match[2] ?? match[1];
-          if (name) hasUsage = addVariable(name, names) || hasUsage;
-        }
-      }
-      if (/process\s*\.\s*env\s*\[\s*(?!["'])[^)\]]+\]/.test(contents)) {
-        hasUsage = true;
-      }
-    }
-
+    const { hasUsage } = await collectEnvUsage(ctx);
     if (!hasUsage) {
       return {
         status: "na",
@@ -90,29 +96,7 @@ export default defineCheck({
     };
   },
   async fix(ctx) {
-    const names = new Set<string>();
-    const files = (await ctx.glob(sourcePattern))
-      .filter(
-        (file) => !file.split("/").some((part) => ignoredDirectories.has(part)),
-      )
-      .slice(0, 5000);
-    for (const file of files) {
-      const contents = await ctx.read(file);
-      if (contents === null || Buffer.byteLength(contents, "utf8") > 1_000_000)
-        continue;
-      const patterns = [
-        /process\s*\.\s*env\s*\.\s*([A-Za-z_][\w]*)/g,
-        /process\s*\.\s*env\s*\[\s*(['"])([A-Za-z_][\w]*)\1\s*\]/g,
-        /import\s*\.\s*meta\s*\.\s*env\s*\.\s*([A-Za-z_][\w]*)/g,
-        /import\s*\.\s*meta\s*\.\s*env\s*\[\s*(['"])([A-Za-z_][\w]*)\1\s*\]/g,
-      ];
-      for (const pattern of patterns) {
-        for (const match of contents.matchAll(pattern)) {
-          const name = match[2] ?? match[1];
-          if (name) addVariable(name, names);
-        }
-      }
-    }
+    const { names } = await collectEnvUsage(ctx);
     return [
       {
         path: ".env.example",

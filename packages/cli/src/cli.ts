@@ -479,6 +479,15 @@ async function scan(
   const loaded = await loadChecks(root, io.cwd, options.plugin ?? []);
   const ctx = createCheckContext(root, { allowRun: Boolean(options.run) });
   const report = await runChecks(loaded.checks, ctx);
+  const badge = options.badge
+    ? badgeMarkdown(report.score.score, report.score.grade)
+    : undefined;
+
+  if (!options.json) {
+    io.stdout(humanReport(root, report));
+    if (badge) io.stdout(`${badge}\n`);
+  }
+
   let fixes:
     | {
         planned: string[];
@@ -496,14 +505,8 @@ async function scan(
       Boolean(options.yes),
     );
   }
-  const badge = options.badge
-    ? badgeMarkdown(report.score.score, report.score.grade)
-    : undefined;
   if (options.json) {
     io.stdout(jsonReport(report, badge, fixes));
-  } else {
-    io.stdout(humanReport(root, report));
-    if (badge) io.stdout(`${badge}\n`);
   }
 
   if (minScore !== undefined && report.score.score < minScore) {
@@ -591,7 +594,9 @@ export async function main(
   const program = new Command();
   program
     .name("omot")
-    .description("Scan a repository with scan as the default command.")
+    .description(
+      "Check how ready a repository is for Devin. scan is the default command, so plain omot runs it.",
+    )
     .version(packageMetadata.version)
     .addHelpText(
       "after",

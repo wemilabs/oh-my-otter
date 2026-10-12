@@ -1,10 +1,24 @@
-<!-- BEGIN:turborepo-agent-rules -->
+# Oh My Otter repository guide
 
-# This is NOT the Turborepo you know
+## Layout
 
-Turborepo configuration, task behavior, and CLI commands can vary between installed versions and may differ from your training data. Resolve the `turbo` package from this file's directory or relevant workspace; in monorepos, it may not be visible from the repository root. For example, run `node -p "require.resolve('turbo/package.json')"` from a workspace that depends on `turbo`.
+- `packages/core`: shared check types, scoring, validation, and Node helpers.
+- `packages/checks`: built-in checks; fixtures are under `packages/checks/test/fixtures/`.
+- `packages/cli`: the `omot` command-line interface.
 
-Read `docs/README.md` inside that installed package first, then read the relevant pages from its `docs/` directory before changing Turborepo configuration or commands. Heed deprecation notices. These bundled docs match the installed package version and are available without network access.
+## Commands
 
-This block is written and re-added by `turbo` before repository-scoped commands when an AI agent is detected. In the Turborepo source repository, its template is defined in `crates/turborepo-cli/src/cli/agent_guidance.rs`. Removing the managed block while updates are enabled means a later qualifying invocation will add it again. Set `"agentGuidance": false` in the root `turbo.json` or `turbo.jsonc` to opt out; this does not remove an existing block. Keep the block committed with your work to avoid an uncommitted change on the next agent invocation.
-<!-- END:turborepo-agent-rules -->
+- `pnpm install`
+- `pnpm typecheck`
+- `pnpm lint`
+- `pnpm format:check`
+- `pnpm build`
+- `pnpm test`
+
+## Rules
+
+- The scanner makes no network calls; checks are read-only.
+- `--fix` is create-only and must never overwrite existing files.
+- Add a built-in check as one file in `packages/checks/src/checks/`, one line in `packages/checks/src/registry.ts`, and one row in the README check table.
+- `omot scan` is canonical; `init` is a hidden legacy alias.
+- Add a changeset for user-facing changes.
