@@ -371,11 +371,45 @@ describe("omot report", () => {
     expect(result.stdout).toBe("");
   });
 
-  it("refuses to report a legacy run when the baseline has submodules", async () => {
+  it("allows a legacy run when .gitmodules has no gitlinks", async () => {
     const root = await repo({
       ...fixture,
       ".gitmodules": '[submodule "lib"]\n\tpath = lib\n\turl = ./lib\n',
     });
+    await invoke([...start, "--yes"], { cwd: root });
+    await writeFile(
+      path.join(root, "add.test.mjs"),
+      addTest.replace("../src", "./src"),
+    );
+    await invoke(["bench", "verify", "--corrections", "0", "--minutes", "1"], {
+      cwd: root,
+    });
+    const run = JSON.parse(
+      await readFile(path.join(root, ".omot/run.json"), "utf8"),
+    );
+    delete run.baseline.scan;
+    run.schema_version = 2;
+    await writeFile(
+      path.join(root, ".omot/run.json"),
+      `${JSON.stringify(run, null, 2)}\n`,
+    );
+    const result = await invoke(["report", "--dry-run"], { cwd: root });
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain("didn't record readiness at start");
+    reportPayloadSchema.parse(JSON.parse(result.stdout));
+  });
+
+  it("refuses to report a legacy run when the baseline has a gitlink", async () => {
+    const root = await repo(fixture);
+    await git(root, [
+      "update-index",
+      "--add",
+      "--cacheinfo",
+      `160000,${"b".repeat(40)},vendor/x`,
+    ]);
+    await git(root, ["commit", "-qm", "add submodule"]);
+    // An empty dir satisfies the gitlink so the worktree stays clean.
+    await mkdir(path.join(root, "vendor/x"), { recursive: true });
     await invoke([...start, "--yes"], { cwd: root });
     await writeFile(
       path.join(root, "add.test.mjs"),

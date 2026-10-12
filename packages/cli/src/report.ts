@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -60,7 +59,10 @@ async function scanBaselineCommit(
   try {
     await runGit(root, ["worktree", "add", "--detach", dir, commit]);
     try {
-      const hasSubmodules = existsSync(path.join(dir, ".gitmodules"));
+      const tree = await runGit(root, ["ls-tree", "-r", commit]);
+      const hasSubmodules = tree
+        .split("\n")
+        .some((line) => line.startsWith("160000 "));
       return { summary: (await scanBaseline(dir)).summary, hasSubmodules };
     } finally {
       await runGit(root, ["worktree", "remove", "--force", dir]);
