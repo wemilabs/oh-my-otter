@@ -26,3 +26,18 @@ jobs:
       - run: pnpm format:check
       - run: pnpm build
       - run: pnpm test
+
+  benchmark-tasks:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Task version bumps and docs
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node packages/benchmarks/scripts/check-task-versions.mjs

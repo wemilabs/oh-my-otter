@@ -17,11 +17,24 @@ export const sharedConfig: UserConfig = {
         replacement: resolve(root, "packages/core/src/index.ts"),
       },
       {
+        find: /^@oh-my-otter\/benchmarks$/,
+        replacement: resolve(root, "packages/benchmarks/src/index.ts"),
+      },
+      {
         find: /^@oh-my-otter\/checks$/,
         replacement: resolve(root, "packages/checks/src/index.ts"),
       },
     ],
   },
+  plugins: [
+    {
+      name: "omot-markdown-text",
+      transform(code, id) {
+        if (!id.endsWith(".md")) return null;
+        return { code: `export default ${JSON.stringify(code)};`, map: null };
+      },
+    },
+  ],
   test: {
     exclude: ["**/fixtures/**", "**/dist/**", "**/node_modules/**"],
   },

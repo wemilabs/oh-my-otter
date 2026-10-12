@@ -1,0 +1,24 @@
+{
+  "id": "a11y-img-alt",
+  "version": 1,
+  "title": "Add missing alt attributes to images",
+  "category": "accessibility",
+  "estimatedScope": "small",
+  "params": [
+    {
+      "name": "dir",
+      "kind": "path",
+      "description": "The directory to fix, relative to the repository root.",
+      "example": "src/components"
+    }
+  ],
+  "preconditions": [
+    "The directory contains at least one <img> or <Image> tag without an alt attribute.",
+    "A build script (scripts.build)."
+  ],
+  "criteria": {
+    "pass": "No <img> or <Image> tag in the directory is missing alt, no images were removed, and the build script passes.",
+    "partial": "Fewer tags are missing alt but some remain, images were removed, or the build fails.",
+    "fail": "The number of tags missing alt did not drop."
+  }
+}

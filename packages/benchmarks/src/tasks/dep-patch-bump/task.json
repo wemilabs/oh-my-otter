@@ -1,0 +1,25 @@
+{
+  "id": "dep-patch-bump",
+  "version": 1,
+  "title": "Bump a dependency within its major version",
+  "category": "dependencies",
+  "estimatedScope": "small",
+  "params": [
+    {
+      "name": "package",
+      "kind": "package",
+      "description": "The dependency to update, as declared in a package.json.",
+      "example": "zod"
+    }
+  ],
+  "preconditions": [
+    "The package is declared in dependencies, devDependencies, or optionalDependencies of a package.json.",
+    "A committed lockfile (pnpm, npm, yarn, or bun).",
+    "Dependencies are installed locally so build and test scripts can run."
+  ],
+  "criteria": {
+    "pass": "The lockfile changed for the package, its major version (minor for 0.x) is unchanged, no other dependency changed, and the build and test scripts pass.",
+    "partial": "The package was updated within its major version, but the build or tests fail, or other dependencies changed.",
+    "fail": "The lockfile was not updated for the package, the package was removed, or its major version changed."
+  }
+}
