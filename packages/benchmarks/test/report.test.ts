@@ -161,6 +161,9 @@ describe("report payload schema", () => {
       "2.1.0",
       "gemini-2.5-pro",
       "llama-3.1-nemotron-70b-instruct-hf",
+      "claude-sonnet-4-5-20250929-thinking",
+      "gpt-4o-mini-2024-07-18",
+      "qwen2.5-coder-32b",
     ]) {
       for (const field of ["agent", "agent_version", "model"] as const) {
         expect(

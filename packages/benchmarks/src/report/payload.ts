@@ -45,12 +45,13 @@ export function looksLikeSecret(value: string): boolean {
   ) {
     return true;
   }
-  const compact = value.replace(/[._-]/g, "");
-  return (
-    compact.length >= 30 &&
-    (compact.match(/\d/g)?.length ?? 0) >= 6 &&
-    (compact.match(/[a-z]/gi)?.length ?? 0) >= 6
-  );
+  const mixed = value
+    .split(/[._-]/)
+    .filter(
+      (segment) =>
+        segment.length >= 4 && /[a-z]/i.test(segment) && /\d/.test(segment),
+    );
+  return mixed.length >= 3;
 }
 
 const notSecret = (value: string) => !looksLikeSecret(value);
