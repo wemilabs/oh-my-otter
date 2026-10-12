@@ -3,15 +3,16 @@ import path from "node:path";
 import { execa } from "execa";
 import { createCheckContext } from "@oh-my-otter/core/node";
 import { OMOT_DIR, withoutOmotLines } from "./lib/gitignore";
-import { normalizeNewlines } from "./lib/files";
+import { normalizeNewlines, summarizeList } from "./lib/files";
 import { detectPackageManager } from "./lib/package-manager";
-import type {
-  ChangedFile,
-  CommandResult,
-  PackageManager,
-  PrepareContext,
-  RepoContext,
-  VerifyContext,
+import {
+  TaskPreconditionError,
+  type ChangedFile,
+  type CommandResult,
+  type PackageManager,
+  type PrepareContext,
+  type RepoContext,
+  type VerifyContext,
 } from "./types";
 
 export interface ContextOptions {
@@ -219,11 +220,32 @@ export function createPrepareContext(
       baseline ??= (async () => {
         if (options.skipBaselineScripts) return null;
         const results: Record<string, CommandResult> = {};
+        const paths = (status: string) =>
+          status
+            .split(/\r?\n/)
+            .filter((entry) => entry.length > 0)
+            .map((entry) => entry.slice(3))
+            .filter(
+              (file) => file !== OMOT_DIR && !file.startsWith(`${OMOT_DIR}/`),
+            );
+        const existingPaths = new Set(
+          paths(
+            await repo.git(["status", "--porcelain", "--untracked-files=all"]),
+          ),
+        );
         for (const name of options.scripts ?? []) {
           if (!repo.hasScript(name)) continue;
           repo.log(`Running ${name} at the baseline...`);
           const result = await repo.runScript(name);
           if (result !== null) results[name] = result;
+        }
+        const changedPaths = paths(
+          await repo.git(["status", "--porcelain", "--untracked-files=all"]),
+        ).filter((file) => !existingPaths.has(file));
+        if (changedPaths.length > 0) {
+          throw new TaskPreconditionError(
+            `Baseline scripts changed the working tree: ${summarizeList(changedPaths)}. Add these to .gitignore (or commit them), then run bench start again.`,
+          );
         }
         return results;
       })();

@@ -80,17 +80,18 @@ export default defineTask({
     let casesBefore = 0;
     let casesAfter = 0;
     for (const entry of changedTests) {
+      if (entry.status === "deleted") continue;
+      const source = (await readText(ctx, entry.path)) ?? "";
+      if (!importsModule(source, entry.path, file)) continue;
+      importing.push(entry.path);
+      if (!referencesIdentifier(source, name)) continue;
+      exercising.push(entry.path);
+      casesAfter += countTestCases(source);
       if (entry.status !== "added") {
         casesBefore += countTestCases(
           (await ctx.readBaseline(entry.path)) ?? "",
         );
       }
-      if (entry.status === "deleted") continue;
-      const source = (await readText(ctx, entry.path)) ?? "";
-      casesAfter += countTestCases(source);
-      if (!importsModule(source, entry.path, file)) continue;
-      importing.push(entry.path);
-      if (referencesIdentifier(source, name)) exercising.push(entry.path);
     }
     if (importing.length === 0) {
       failed = true;
@@ -114,7 +115,7 @@ export default defineTask({
     } else {
       failed = true;
       reasons.push(
-        `No new test cases: it()/test() calls in changed test files went ${casesBefore} → ${casesAfter}.`,
+        `No new test cases: it()/test() calls in test files that use ${name} went ${casesBefore} → ${casesAfter}.`,
       );
     }
 

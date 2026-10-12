@@ -77,6 +77,39 @@ export function importsModule(
   );
 }
 
+const namedImportPattern = /\bimport\s*\{([^}]*)\}/g;
+const destructuredImportPattern =
+  /\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:await\s+)?(?:require|import)\s*\(/g;
+const identifierPattern = /^[A-Za-z_$][\w$]*$/;
+
+/** Local bindings for imports of `name`, including common aliases. */
+export function localNames(source: string, name: string): string[] {
+  const masked = maskNonCode(source);
+  const aliases: string[] = [];
+  for (const match of masked.matchAll(namedImportPattern)) {
+    for (const binding of (match[1] ?? "").split(",")) {
+      if (/^\s*type\b/.test(binding)) continue;
+      const alias = /^\s*([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)\s*$/.exec(
+        binding,
+      );
+      if (alias?.[1] === name) aliases.push(alias[2] as string);
+    }
+  }
+  const escaped = name.replace(/[$]/g, "\\$");
+  const destructuredAlias = new RegExp(
+    `^\\s*${escaped}\\s*:\\s*([A-Za-z_$][\\w$]*)\\s*$`,
+  );
+  for (const match of masked.matchAll(destructuredImportPattern)) {
+    for (const binding of (match[1] ?? "").split(",")) {
+      const alias = destructuredAlias.exec(binding);
+      if (alias && identifierPattern.test(alias[1] as string)) {
+        aliases.push(alias[1] as string);
+      }
+    }
+  }
+  return [...new Set([name, ...aliases])];
+}
+
 function blankRange(text: string, from: number, to: number): string {
   return text.slice(0, from) + " ".repeat(to - from) + text.slice(to);
 }
@@ -92,14 +125,17 @@ const declarationPatterns = [
  * using it does not count. Member access (`mod.name`) counts.
  */
 export function referencesIdentifier(source: string, name: string): boolean {
+  const names = localNames(source, name);
   let masked = maskNonCode(source);
   for (const pattern of declarationPatterns) {
     for (const match of masked.matchAll(pattern)) {
       masked = blankRange(masked, match.index, match.index + match[0].length);
     }
   }
-  const escaped = name.replace(/[$]/g, "\\$");
-  return new RegExp(`(?<![\\w$])${escaped}(?![\\w$])`).test(masked);
+  return names.some((localName) => {
+    const escaped = localName.replace(/[$]/g, "\\$");
+    return new RegExp(`(?<![\\w$])${escaped}(?![\\w$])`).test(masked);
+  });
 }
 
 const testCasePattern =

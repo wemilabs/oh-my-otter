@@ -44,6 +44,53 @@ describe("add-unit-test", () => {
     });
   });
 
+  it("passes when the function is imported under an alias", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { add as sum } from "../src/math.mjs";
+test("add", () => assert.equal(sum(2, 3), 5));
+`,
+    });
+    expect(result.outcome).toBe("pass");
+  });
+
+  it("passes when a require destructuring alias is used", async () => {
+    const files: Files = {
+      ...base,
+      "package.json": npmPackage({ test: "node --test" }, { type: "commonjs" }),
+      "src/math.js": "exports.add = (a, b) => a + b;\n",
+    };
+    const file = "src/math.js";
+    const started = await startTask(task, files, { file, function: "add" });
+    const result = await verifyTask(
+      task,
+      started,
+      { file, function: "add" },
+      {
+        "test/add.test.js": `const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const { add: sum } = require("../src/math.js");
+test("add", () => assert.equal(sum(2, 3), 5));
+`,
+      },
+    );
+    expect(result.outcome).toBe("pass");
+  });
+
+  it("fails when an imported alias is never called", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": `import { test } from "node:test";
+import { add as sum } from "../src/math.mjs";
+test("placeholder", () => {});
+`,
+    });
+    expect(result.outcome).toBe("fail");
+    expect(result.reasons.join("\n")).toContain("but never use add");
+  });
+
   it("is partial when source files change too", async () => {
     const started = await startTask(task, base, params);
     const result = await verifyTask(task, started, params, {
@@ -180,6 +227,22 @@ test("add", () => assert.equal(add(2, 3), 5));
     });
     expect(result.outcome).toBe("fail");
     expect(result.reasons.join("\n")).toContain("No new test cases");
+  });
+
+  it("ignores unrelated test cases when checking exercising test files", async () => {
+    const files: Files = {
+      ...base,
+      "test/add.test.mjs": addTest,
+    };
+    const started = await startTask(task, files, params);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": `${addTest}// edited without another case\n`,
+      "test/unrelated.test.mjs": passingTest,
+    });
+    expect(result.outcome).toBe("fail");
+    expect(result.reasons).toContain(
+      "No new test cases: it()/test() calls in test files that use add went 1 → 1.",
+    );
   });
 
   it("requires scripts.test and explains how to generate the missing script", async () => {

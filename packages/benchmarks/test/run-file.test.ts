@@ -1,11 +1,13 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   appendVerification,
   readRunFile,
+  updateRunFile,
   writeRunFile,
   type RunFile,
+  type Verification,
 } from "../src/index";
 import { createRepo } from "./helpers";
 
@@ -114,10 +116,81 @@ describe("run file migration", () => {
       "c".repeat(40),
     ]);
     expect(run.result).toMatchObject({
-      outcome: "pass",
+      outcome: "pass" as const,
       reasons: ["Second"],
       verified_at: "2026-10-12T17:00:00.000Z",
       attempts: 2,
+    });
+  });
+
+  it("preserves updates from concurrent writers", async () => {
+    const root = await createRepo({
+      "src/math.ts": "export const add = 1;\n",
+    });
+    await writeRunFile(root, {
+      schema_version: 2,
+      task: { id: "add-unit-test", version: 3 },
+      params: {},
+      agent: "cursor",
+      baseline: {
+        commit: "a".repeat(40),
+        started_at: "2026-10-12T16:00:00.000Z",
+      },
+      verifications: [],
+    });
+    const entries: Verification[] = [1, 2].map((index) => ({
+      verified_at: `2026-10-12T16:3${index}:00.000Z`,
+      head_commit: String(index).repeat(40),
+      outcome: "pass",
+      reasons: [`Attempt ${index}`],
+      human_corrections: 0,
+      human_minutes: 0,
+      agent: "cursor",
+    }));
+
+    await Promise.all(
+      entries.map((entry) =>
+        updateRunFile(root, (run) => appendVerification(run, entry)),
+      ),
+    );
+
+    const saved = await readRunFile(root);
+    expect(saved.verifications).toHaveLength(2);
+    expect(saved.result?.attempts).toBe(2);
+  });
+
+  it("removes stale locks and releases the lock after updater errors", async () => {
+    const root = await createRepo({
+      "src/math.ts": "export const add = 1;\n",
+    });
+    const run: RunFile = {
+      schema_version: 2,
+      task: { id: "add-unit-test", version: 3 },
+      params: {},
+      agent: "cursor",
+      baseline: {
+        commit: "a".repeat(40),
+        started_at: "2026-10-12T16:00:00.000Z",
+      },
+      verifications: [],
+    };
+    await writeRunFile(root, run);
+    const lock = path.join(root, ".omot/run.json.lock");
+    await writeFile(lock, "stale");
+    const stale = new Date(Date.now() - 61_000);
+    await utimes(lock, stale, stale);
+    await updateRunFile(root, (current) => current);
+    await expect(readFile(lock, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+
+    await expect(
+      updateRunFile(root, () => {
+        throw new Error("abort");
+      }),
+    ).rejects.toThrow("abort");
+    await expect(readFile(lock, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
     });
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   countTestCases,
+  localNames,
   moduleSpecifiers,
   referencesIdentifier,
   resolvesTo,
@@ -51,6 +52,40 @@ describe("module imports", () => {
     expect(
       referencesIdentifier(`${source}\nconst total = add(1, 2);`, "add"),
     ).toBe(true);
+  });
+
+  it("finds aliases in named imports and destructured imports", () => {
+    const source = `
+      import { add as sum } from "../src/math.mjs";
+      const { add: requiredSum } = require("../src/math.mjs");
+      const { add: dynamicSum } = await import("../src/math.mjs");
+      // import { add as commentAlias } from "../src/math.mjs";
+      const note = "const { add: stringAlias } = require('../src/math.mjs')";
+      export { add as reExport };
+    `;
+    expect(localNames(source, "add")).toEqual([
+      "add",
+      "sum",
+      "requiredSum",
+      "dynamicSum",
+    ]);
+    expect(
+      localNames("import { type add as typed } from '../src/math.mjs';", "add"),
+    ).toEqual(["add"]);
+  });
+
+  it("recognizes use of an imported alias but not its declaration alone", () => {
+    const source = `
+      import { add as sum } from "../src/math.mjs";
+      test("sum", () => assert.equal(sum(1, 2), 3));
+    `;
+    expect(referencesIdentifier(source, "add")).toBe(true);
+    expect(
+      referencesIdentifier(
+        'import { add as sum } from "../src/math.mjs"; test("x", () => {});',
+        "add",
+      ),
+    ).toBe(false);
   });
 });
 

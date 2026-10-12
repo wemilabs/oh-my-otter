@@ -22,6 +22,7 @@ import {
   renderPrompt,
   resolveRepoRoot,
   appendVerification,
+  updateRunFile,
   writeRunFile,
   TaskPreconditionError,
   type RunFile,
@@ -438,22 +439,24 @@ async function verifyRun(
     "How many minutes of human effort did the task take? ",
     io,
   );
-  const updated = appendVerification(
-    {
-      ...run,
-      ...fields,
-    },
-    {
-      outcome: result.outcome,
-      reasons: result.reasons,
-      verified_at: verifiedAt,
-      head_commit: verifiedCommit,
-      human_corrections: corrections,
-      human_minutes: minutes,
-      ...fields,
-    },
-  );
-  await writeRunFile(root, updated);
+  const entry = {
+    outcome: result.outcome,
+    reasons: result.reasons,
+    verified_at: verifiedAt,
+    head_commit: verifiedCommit,
+    human_corrections: corrections,
+    human_minutes: minutes,
+    ...fields,
+  };
+  const updated = await updateRunFile(root, (fresh) => {
+    if (
+      fresh.task.id !== run.task.id ||
+      fresh.baseline.commit !== run.baseline.commit
+    ) {
+      throw new Error("run.json changed during verify; re-run bench verify");
+    }
+    return appendVerification({ ...fresh, ...fields }, entry);
+  });
   agentNote(options, fields, io);
   if (options.json) {
     io.stdout(`${JSON.stringify(updated, null, 2)}\n`);

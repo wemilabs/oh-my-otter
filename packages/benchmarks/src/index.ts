@@ -49,6 +49,7 @@ export {
   RUN_FILE,
   appendVerification,
   readRunFile,
+  updateRunFile,
   writeRunFile,
 } from "./lib/run-file";
 export { defineTask } from "./task";
