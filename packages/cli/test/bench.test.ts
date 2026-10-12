@@ -178,14 +178,20 @@ describe("bench start and verify", () => {
     expect(await readFile(path.join(root, ".gitignore"), "utf8")).toBe(
       "node_modules\n.omot/\n",
     );
+    expect(started.stderr).toContain(
+      ".gitignore was left uncommitted, and verify ignores the change.",
+    );
     const run = await runFile(root);
     expect(run).toMatchObject({
-      schema_version: 1,
-      task: { id: "add-unit-test", version: 1 },
+      schema_version: 2,
+      task: { id: "add-unit-test", version: 2 },
       params: { file: "src/math.mjs", function: "add" },
       agent: "claude-code",
       baseline: { commit: head },
+      verifications: [],
     });
+    expect(run.baseline.scripts).toEqual({ test: 0 });
+    expect(started.stderr).toContain("Baseline scripts: test exit 0");
     expect(Date.parse(run.baseline.started_at)).not.toBeNaN();
 
     await writeFile(
@@ -206,14 +212,30 @@ describe("bench start and verify", () => {
       { cwd: root },
     );
     expect(verified.code).toBe(0);
-    expect(verified.stdout).toContain("PASS add-unit-test v1");
+    expect(verified.stdout).toContain("PASS add-unit-test v2");
+    expect(verified.stdout).toContain("(attempt 1)");
+    expect(verified.stdout).toContain("Baseline health recorded");
     expect(verified.stderr).toContain("Nothing was sent anywhere.");
-    expect((await runFile(root)).result).toMatchObject({
-      outcome: "pass",
-      human_corrections: 1,
-      human_minutes: 4,
+    expect(await runFile(root)).toMatchObject({
+      verifications: [{ head_commit: head }],
+      result: {
+        outcome: "pass",
+        human_corrections: 1,
+        human_minutes: 4,
+        attempts: 1,
+      },
     });
     expect((await runFile(root)).agent).toBe("cursor");
+
+    const second = await invoke(
+      ["bench", "verify", "--corrections", "0", "--minutes", "1", "--json"],
+      { cwd: root },
+    );
+    expect(second.code).toBe(0);
+    expect(JSON.parse(second.stdout)).toMatchObject({
+      verifications: [{ head_commit: head }, { head_commit: head }],
+      result: { attempts: 2, outcome: "pass" },
+    });
   });
 
   it("asks before touching .gitignore and leaves it alone when declined", async () => {
@@ -247,7 +269,47 @@ describe("bench start and verify", () => {
     expect((await invoke([...start, "--yes"], { cwd: root })).code).toBe(0);
     const again = await invoke(start, { cwd: root });
     expect(again.code).toBe(1);
-    expect(again.stderr).toContain("unverified add-unit-test run");
+    expect(again.stderr).toContain(
+      ".omot/run.json already has a add-unit-test run (0 attempts); re-run with --yes to replace it",
+    );
+
+    const declined = await invoke(start, {
+      cwd: root,
+      isTTY: true,
+      confirm: async () => false,
+    });
+    expect(declined.code).toBe(1);
+    expect(declined.confirms[0]).toContain(
+      ".omot/run.json already has a add-unit-test run (0 attempts)",
+    );
+    const replaced = await invoke([...start, "--yes"], { cwd: root });
+    expect(replaced.code).toBe(0);
+  });
+
+  it("skips baseline scripts and reports unknown baseline health on verify", async () => {
+    const root = await repo(fixture);
+    const started = await invoke(
+      [...start, "--skip-baseline-scripts", "--yes"],
+      {
+        cwd: root,
+      },
+    );
+    expect(started.code).toBe(0);
+    expect(started.stderr).toContain(
+      "Baseline scripts skipped; verify will report baseline health as unknown.",
+    );
+    const run = await runFile(root);
+    expect(run.baseline.scripts).toBeUndefined();
+    await mkdir(path.join(root, "test"), { recursive: true });
+    await writeFile(path.join(root, "test/add.test.mjs"), addTest);
+    const verified = await invoke(
+      ["bench", "verify", "--corrections", "0", "--minutes", "1"],
+      { cwd: root },
+    );
+    expect(verified.code).toBe(0);
+    expect(verified.stdout).toContain(
+      "Baseline health unknown (start ran with --skip-baseline-scripts or an older omot)",
+    );
   });
 
   it("prompts for the self-reported numbers interactively", async () => {
@@ -364,6 +426,23 @@ describe("bench start and verify", () => {
     expect(result.stderr).toContain("not a valid run file");
     expect(await readFile(path.join(root, ".omot/run.json"), "utf8")).toBe(
       "{ nope",
+    );
+  });
+
+  it("prints task precondition failures with the task id", async () => {
+    const root = await repo({
+      ...fixture,
+      "package.json": `${JSON.stringify({
+        name: "f",
+        private: true,
+        type: "module",
+        scripts: {},
+      })}\n`,
+    });
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Cannot start add-unit-test: Precondition not met: no test script (scripts.test)",
     );
   });
 

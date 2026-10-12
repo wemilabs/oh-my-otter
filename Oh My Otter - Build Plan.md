@@ -229,6 +229,7 @@ The website computes aggregates **at build time** from `dataset/reports/*.json`:
   "outcome": "pass",
   "human_corrections": 1,
   "human_minutes": 12,
+  "attempts": 1,
   "readiness_score": 82,
   "checks": {
     "test-script": "pass",
@@ -250,6 +251,7 @@ Field rules:
 - `stack`: coarse enums only (package manager: npm/pnpm/yarn/bun/other; language: typescript/javascript; framework: nextjs/react/vue/svelte/astro/node/other). No versions.
 - `submitted_on`: date only, no time.
 - `human_corrections` and `human_minutes` are self-reported integers.
+- `attempts`: integer verification-attempt count for this run.
 - `agent` (planned for Phase 3): the coding agent slug from `.omot/run.json` (`[a-z0-9._-]`, at most 40 characters, default `"unknown"`). Self-reported via `omot bench start --agent`.
 - `agent_version` (planned for Phase 3, optional): the agent's version, a slug of at most 40 characters from `[a-z0-9._-]`. Self-reported via `--agent-version`.
 - `model` (planned for Phase 3, optional): the model the agent used, a lowercase slug of at most 60 characters from `[a-z0-9._-]`. Self-reported via `--model`.
@@ -281,7 +283,7 @@ Repo name, remote URL, owner, branch or commit hashes, file names or paths, file
 - `/docs`: install, usage, flags, `--fix`, plugins, CI usage (`--min-score`).
 - `/checks` and `/checks/[id]`: catalog with search and category filter; each page shows title, weight, why it matters, how to pass, and fix suggestion. Client-side search with `fuse.js`.
 - `/benchmarks` and `/benchmarks/[id]`: task catalog; each page shows the exact prompt, preconditions, and pass criteria, plus that task's aggregate results.
-- `/results`: aggregate tables and simple bar charts (`recharts`); success rate by readiness band and by task; per-task, per-agent pass/partial/fail rates with median human corrections and minutes (agents canonicalized via `dataset/agents.json` per §6.2, unknown agents grouped as `other` and not ranked, agents under 5 reports marked "insufficient data"); filter or group by `agent_version` and `model`; always show `n`; low-sample cells suppressed; link to raw JSON; banner explaining data is self-reported.
+- `/results`: aggregate tables and simple bar charts (`recharts`); success rate by readiness band and by task; per-task, per-agent pass/partial/fail rates with median human corrections and minutes (agents canonicalized via `dataset/agents.json` per §6.2, unknown agents grouped as `other` and not ranked, agents under 5 reports marked "insufficient data"); show attempts per run; filter or group by `agent_version` and `model`; always show `n`; low-sample cells suppressed; link to raw JSON; banner explaining data is self-reported.
 - `/methodology`: scoring formula, check weights, task design, verification, self-report limits, known biases.
 - `/privacy`: the exact payload and the never-collected list.
 - `/contribute`: how to add a check, a benchmark task, or submit a report.

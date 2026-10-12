@@ -1,8 +1,12 @@
 import { z } from "zod";
-import { commandFailure } from "../../context";
 import { countDisables, isEslintConfig, runEslint } from "../../lib/eslint";
 import { summarizeList } from "../../lib/files";
-import { changedScripts, scriptChangeReason } from "../../lib/scripts";
+import {
+  changedScripts,
+  checkScript,
+  missingScript,
+  scriptChangeReason,
+} from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError } from "../../types";
 import manifest from "./task.json";
@@ -14,10 +18,11 @@ type Data = z.infer<typeof dataSchema>;
 export default defineTask<Data>({
   manifest,
   prompt,
+  scripts: ["test"],
   async prepare(ctx) {
     const rule = ctx.params.rule as string;
     if (!ctx.hasScript("test")) {
-      throw new TaskPreconditionError("No test script (scripts.test) found.");
+      throw new TaskPreconditionError(missingScript("test"));
     }
     let run;
     try {
@@ -81,17 +86,9 @@ export default defineTask<Data>({
       partial = true;
       reasons.push(scriptChangeReason(scripts));
     }
-    const result = await ctx.runScript("test");
-    if (result === null || result.code !== 0) {
-      partial = true;
-      reasons.push(
-        result === null
-          ? "No test script."
-          : commandFailure("test script", result),
-      );
-    } else {
-      reasons.push("test script passed.");
-    }
+    const test = await checkScript(ctx, "test");
+    if (test.result === null || test.counted) partial = true;
+    reasons.push(test.result === null ? "No test script." : test.reason);
     return { outcome: partial ? "partial" : "pass", reasons };
   },
 });

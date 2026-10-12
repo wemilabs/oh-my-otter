@@ -62,6 +62,7 @@ export interface Started {
   root: string;
   commit: string;
   data: unknown;
+  scripts?: Record<string, number>;
 }
 
 export async function startTask(
@@ -71,18 +72,36 @@ export async function startTask(
   options: {
     yes?: boolean;
     isTTY?: boolean;
+    skipBaselineScripts?: boolean;
     confirm?: () => Promise<boolean>;
   } = {},
 ): Promise<Started> {
   const root = await createRepo(files);
   const ctx = createPrepareContext(root, {
     params,
+    scripts: task.scripts,
+    skipBaselineScripts: options.skipBaselineScripts,
     yes: options.yes ?? true,
     isTTY: options.isTTY ?? false,
     ...(options.confirm ? { confirm: options.confirm } : {}),
   });
   const data = task.prepare ? await task.prepare(ctx) : undefined;
-  return { root, commit: await headCommit(root), data };
+  const baseline = await ctx.recordBaseline();
+  return {
+    root,
+    commit: await headCommit(root),
+    data,
+    ...(baseline === null
+      ? {}
+      : {
+          scripts: Object.fromEntries(
+            Object.entries(baseline).map(([name, result]) => [
+              name,
+              result.code,
+            ]),
+          ),
+        }),
+  };
 }
 
 export async function verifyTask(
@@ -97,6 +116,7 @@ export async function verifyTask(
     {
       commit: started.commit,
       data: started.data,
+      ...(started.scripts === undefined ? {} : { scripts: started.scripts }),
     },
     { params },
   );

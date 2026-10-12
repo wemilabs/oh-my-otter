@@ -1,6 +1,11 @@
 import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { runFileSchema, type RunFile } from "../schema";
+import {
+  migrateRunFile,
+  runFileSchema,
+  type RunFile,
+  type Verification,
+} from "../schema";
 import { OMOT_DIR } from "./gitignore";
 
 export const RUN_FILE = `${OMOT_DIR}/run.json`;
@@ -40,13 +45,29 @@ export async function readRunFile(root: string): Promise<RunFile> {
     throw new Error(`${RUN_FILE} is not valid JSON.`, { cause: error });
   }
   const parsed = runFileSchema.safeParse(value);
-  if (!parsed.success) {
-    const issues = parsed.error.issues
-      .map((issue) => `${issue.path.join(".") || "run"}: ${issue.message}`)
-      .join("; ");
-    throw new Error(`Invalid ${RUN_FILE}: ${issues}`);
-  }
-  return parsed.data;
+  if (parsed.success) return parsed.data;
+  const migrated = migrateRunFile(value);
+  if (migrated) return migrated;
+  const issues = parsed.error.issues
+    .map((issue) => `${issue.path.join(".") || "run"}: ${issue.message}`)
+    .join("; ");
+  throw new Error(`Invalid ${RUN_FILE}: ${issues}`);
+}
+
+export function appendVerification(run: RunFile, entry: Verification): RunFile {
+  const verifications = [...run.verifications, entry];
+  return runFileSchema.parse({
+    ...run,
+    verifications,
+    result: {
+      outcome: entry.outcome,
+      reasons: entry.reasons,
+      verified_at: entry.verified_at,
+      human_corrections: entry.human_corrections,
+      human_minutes: entry.human_minutes,
+      attempts: verifications.length,
+    },
+  });
 }
 
 export async function writeRunFile(root: string, run: RunFile): Promise<void> {

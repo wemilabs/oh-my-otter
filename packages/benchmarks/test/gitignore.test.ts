@@ -52,7 +52,7 @@ describe("run file", () => {
     const root = await createRepo({ "a.txt": "a\n" });
     await expect(readRunFile(root)).rejects.toThrow(/No benchmark run found/);
     const run = {
-      schema_version: 1 as const,
+      schema_version: 2 as const,
       task: { id: "add-unit-test", version: 1 },
       params: { file: "a.ts", function: "a" },
       agent: "cursor",
@@ -60,10 +60,11 @@ describe("run file", () => {
         commit: "b".repeat(40),
         started_at: "2026-10-12T16:00:00.000Z",
       },
+      verifications: [],
     };
     await writeRunFile(root, run);
     expect(await readRunFile(root)).toEqual(run);
-    await writeFile(path.join(root, ".omot/run.json"), '{"schema_version":2}');
+    await writeFile(path.join(root, ".omot/run.json"), '{"schema_version":1}');
     await expect(readRunFile(root)).rejects.toThrow(
       /Invalid \.omot\/run\.json/,
     );

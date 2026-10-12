@@ -29,5 +29,6 @@ omot bench start fix-lint-rule --param rule=prefer-const --agent <your-agent>
 - Runs the locally installed ESLint (`node_modules/eslint`) as `eslint . --format json` and counts messages whose `ruleId` is the rule; the baseline count is recorded at start.
 - New `eslint-disable` directives that cover the rule (or disable everything), and changes to ESLint config files, make the result partial.
 - Runs the `test` script.
+- The test exit code is recorded at start. A failure that also occurred at baseline is not counted against the agent; if baseline scripts were skipped, a later failure is reported with unknown baseline health.
 
 The prompt and verifier live in [`packages/benchmarks/src/tasks/fix-lint-rule`](../../packages/benchmarks/src/tasks/fix-lint-rule). Changing either requires a `version` bump in `task.json`.

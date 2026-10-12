@@ -28,5 +28,6 @@ omot bench start ts-strict-file --param file=src/api/client.ts --agent <your-age
 - Counts `any` used as a type (after `:`, `<`, `|`, `as`, and similar), ignoring comments, strings, and identifiers like `many` or `obj.any`.
 - New `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, or `no-explicit-any` disable comments in the file make the result partial.
 - Typechecks with the `typecheck` script, or with the local `tsc --noEmit -p tsconfig.json` when there is no script.
+- When a `typecheck` script exists, its exit code is recorded at start and an unchanged failure is not counted against the agent. If baseline scripts were skipped or typechecking uses the local `tsc` fallback, baseline health is unknown.
 
 The prompt and verifier live in [`packages/benchmarks/src/tasks/ts-strict-file`](../../packages/benchmarks/src/tasks/ts-strict-file). Changing either requires a `version` bump in `task.json`.

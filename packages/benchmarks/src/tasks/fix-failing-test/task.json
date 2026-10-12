@@ -1,6 +1,6 @@
 {
   "id": "fix-failing-test",
-  "version": 1,
+  "version": 2,
   "title": "Fix a deliberately introduced failing test",
   "category": "testing",
   "estimatedScope": "small",

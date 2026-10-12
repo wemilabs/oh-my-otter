@@ -1,7 +1,10 @@
 import { z } from "zod";
-import { commandFailure } from "../../context";
 import { isLockfile } from "../../lib/files";
-import { changedScripts, scriptChangeReason } from "../../lib/scripts";
+import {
+  changedScripts,
+  checkScript,
+  scriptChangeReason,
+} from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError, type RepoContext } from "../../types";
 import manifest from "./task.json";
@@ -126,6 +129,7 @@ async function manifestFiles(ctx: RepoContext): Promise<string[]> {
 export default defineTask<Data>({
   manifest,
   prompt,
+  scripts: ["build", "test"],
   async prepare(ctx) {
     const pkg = ctx.params.package as string;
     const declarations: Record<string, string> = {};
@@ -242,15 +246,9 @@ export default defineTask<Data>({
     }
 
     for (const script of ["build", "test"]) {
-      const result = await ctx.runScript(script);
-      if (result === null) {
-        reasons.push(`No ${script} script; skipped.`);
-      } else if (result.code === 0) {
-        reasons.push(`${script} script passed.`);
-      } else {
-        partial = true;
-        reasons.push(commandFailure(`${script} script`, result));
-      }
+      const check = await checkScript(ctx, script);
+      if (check.counted) partial = true;
+      reasons.push(check.reason);
     }
 
     return {
