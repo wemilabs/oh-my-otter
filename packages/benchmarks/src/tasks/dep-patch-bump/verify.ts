@@ -86,7 +86,7 @@ export function lockfileVersions(text: string | null, pkg: string): string[] {
   const name = escapeRegExp(pkg);
   const versions = new Set<string>();
   const inline = new RegExp(
-    `(?<![\\w.@/-]|@[\\w.-]+/)${name}@(?:npm:)?v?(\\d+\\.\\d+\\.\\d+[\\w.+-]*)`,
+    `(?<![\\w.@-]|[\\w.-]/)${name}[@/](?:npm:)?v?(\\d+\\.\\d+\\.\\d+[\\w.+-]*)`,
     "g",
   );
   for (const match of text.matchAll(inline)) versions.add(match[1] as string);
@@ -176,24 +176,9 @@ export default defineTask<Data>({
         if (after !== before) lockfileUpdated = true;
         continue;
       }
-      const diff = await ctx.git([
-        "diff",
-        "--no-color",
-        "--unified=0",
-        ctx.baseline.commit,
-        "--",
-        file.path,
-      ]);
       const before = lockfileVersions(await ctx.readBaseline(file.path), pkg);
       const after = lockfileVersions(await ctx.read(file.path), pkg);
-      if (before.length > 0 || after.length > 0) {
-        if (before.join(",") !== after.join(",")) lockfileUpdated = true;
-        continue;
-      }
-      const added = diff
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("+") && !line.startsWith("+++"));
-      if (file.status === "added" || added.some((line) => line.includes(pkg))) {
+      if (after.length > 0 && before.join(",") !== after.join(",")) {
         lockfileUpdated = true;
       }
     }

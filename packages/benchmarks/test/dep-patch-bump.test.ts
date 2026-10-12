@@ -111,6 +111,13 @@ describe("lockfileVersions", () => {
     expect(lockfileVersions(yarn, "zod")).toEqual(["4.1.2"]);
     const bun = `{ "packages": { "zod": ["zod@4.1.3", "", {}] } }`;
     expect(lockfileVersions(bun, "zod")).toEqual(["4.1.3"]);
+    expect(lockfileVersions("  /zod@4.1.4:\n  /zod/4.1.5:\n", "zod")).toEqual([
+      "4.1.4",
+      "4.1.5",
+    ]);
+    expect(
+      lockfileVersions("  zod-extra@1.0.0:\n  /@x/zod/9.9.9:\n", "zod"),
+    ).toEqual([]);
     expect(
       lockfileVersions("  '@types/node@22.1.0':\n", "@types/node"),
     ).toEqual(["22.1.0"]);
