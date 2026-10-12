@@ -1,0 +1,30 @@
+{
+  "id": "add-unit-test",
+  "version": 1,
+  "title": "Add unit tests for an untested function",
+  "category": "testing",
+  "estimatedScope": "small",
+  "params": [
+    {
+      "name": "file",
+      "kind": "path",
+      "description": "The source file that contains the function.",
+      "example": "src/utils/format.ts"
+    },
+    {
+      "name": "function",
+      "kind": "identifier",
+      "description": "The exported function to test.",
+      "example": "formatPrice"
+    }
+  ],
+  "preconditions": [
+    "A test script (scripts.test) and a test runner.",
+    "The named file exists and contains the named function."
+  ],
+  "criteria": {
+    "pass": "New or changed test files reference the function, the test script passes, and no non-test files changed.",
+    "partial": "Tests were added and pass, but non-test files changed, test files were deleted, or no test references the function.",
+    "fail": "No test files were added or changed, or the test script fails."
+  }
+}

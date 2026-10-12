@@ -1,0 +1,25 @@
+{
+  "id": "fix-lint-rule",
+  "version": 1,
+  "title": "Fix every violation of one ESLint rule",
+  "category": "lint",
+  "estimatedScope": "medium",
+  "params": [
+    {
+      "name": "rule",
+      "kind": "rule",
+      "description": "The ESLint rule ID to fix.",
+      "example": "prefer-const"
+    }
+  ],
+  "preconditions": [
+    "ESLint is installed locally and configured with the rule enabled.",
+    "At least one violation of the rule at the baseline.",
+    "A test script (scripts.test)."
+  ],
+  "criteria": {
+    "pass": "ESLint reports zero violations of the rule, no new disable comments or ESLint config changes, and the test script passes.",
+    "partial": "Violations dropped but not to zero, or they reached zero by disabling the rule, or tests fail.",
+    "fail": "The violation count did not drop, or ESLint could not run."
+  }
+}

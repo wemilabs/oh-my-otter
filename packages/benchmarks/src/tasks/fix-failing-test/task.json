@@ -1,0 +1,25 @@
+{
+  "id": "fix-failing-test",
+  "version": 1,
+  "title": "Fix a deliberately introduced failing test",
+  "category": "testing",
+  "estimatedScope": "small",
+  "params": [
+    {
+      "name": "file",
+      "kind": "path",
+      "description": "A source file covered by the tests; omot introduces a one-token bug here.",
+      "example": "src/lib/math.ts"
+    }
+  ],
+  "preconditions": [
+    "A clean working tree and a test script (scripts.test) that passes at the baseline.",
+    "The file is a non-test source file whose tests catch a flipped operator.",
+    "You confirm that omot may create a throwaway branch and commit the bug there."
+  ],
+  "criteria": {
+    "pass": "The test script passes, no test file was deleted or modified, and no tests were skipped.",
+    "partial": "The test script passes, but test files were modified.",
+    "fail": "The test script fails, a test file was deleted, or tests were skipped."
+  }
+}

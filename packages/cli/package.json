@@ -1,7 +1,18 @@
 {
   "name": "oh-my-otter",
   "version": "0.1.0",
-  "description": "Local repository readiness scanner for AI coding agents",
+  "description": "Repository readiness scanner and benchmark runner for AI coding agents",
+  "keywords": [
+    "ai-coding-agents",
+    "agent-readiness",
+    "benchmark",
+    "cli",
+    "devin",
+    "claude-code",
+    "cursor",
+    "codex",
+    "copilot"
+  ],
   "license": "MIT",
   "type": "module",
   "files": [
@@ -37,6 +48,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@oh-my-otter/benchmarks": "workspace:*",
     "@oh-my-otter/checks": "workspace:*",
     "@oh-my-otter/core": "workspace:*",
     "commander": "^15.0.0",

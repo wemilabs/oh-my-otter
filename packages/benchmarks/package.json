@@ -1,0 +1,51 @@
+{
+  "name": "@oh-my-otter/benchmarks",
+  "version": "0.1.0",
+  "description": "Standardized benchmark tasks and local verifiers for AI coding agents",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "ai-coding-agents",
+    "benchmark",
+    "agent-readiness",
+    "devin",
+    "claude-code",
+    "cursor",
+    "codex",
+    "copilot"
+  ],
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wemilabs/oh-my-otter.git",
+    "directory": "packages/benchmarks"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "source": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/copy-package-files.mjs LICENSE",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "check:versions": "node scripts/check-task-versions.mjs"
+  },
+  "dependencies": {
+    "@oh-my-otter/core": "workspace:*",
+    "execa": "^10.1.0",
+    "zod": "^4.6.6"
+  }
+}

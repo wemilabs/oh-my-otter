@@ -118,7 +118,7 @@ describe("scan command", () => {
     const init = await invoke(["init", fixture("healthy"), "--json"]);
     expect(JSON.parse(init.stdout).score).toBe(JSON.parse(scan.stdout).score);
     const help = await invoke(["--help"]);
-    expect(help.stdout).toContain("Oh My Otter is unofficial and independent.");
+    expect(help.stdout).toContain("Oh My Otter is unofficial and independent;");
     expect(help.stdout).toContain("scan");
     expect(help.stdout).not.toContain("init");
   });

@@ -4,23 +4,23 @@ Implementation plan for coding agent · October 10, 2026
 
 ## 1. What we are building
 
-**Oh My Otter** is an open-source benchmark and optimization toolkit for seamless Devin integration.
+**Oh My Otter** is an open-source benchmark and optimization toolkit for AI coding agents (for example Devin, Claude Code, Cursor, Codex, and Copilot). It is agent-neutral: any coding agent can be scanned for and benchmarked.
 
 It has three parts:
 
 - **CLI (`omot`)**: scans a local repo, outputs a readiness score with fixable findings, and has a plugin interface for checks.
-- **Benchmark tasks**: a small set of standardized, objectively verifiable JavaScript/TypeScript dev tasks (web first) people run against Devin.
+- **Benchmark tasks**: a small set of standardized, objectively verifiable JavaScript/TypeScript dev tasks (web first) people run against any AI coding agent.
 - **Website (Next.js)**: docs, check catalog, benchmark catalog, methodology, and public aggregate results.
 
-The project is **unofficial and independent**. It is not affiliated with or endorsed by Cognition. Say this in the README, website footer, and CLI `--help`.
+The project is **unofficial and independent; not affiliated with or endorsed by Cognition or any other agent vendor**. Say this in the README, website footer, and CLI `--help`.
 
-**Non-goals:** no hosted scanning, no code upload, no accounts, no dependence on Devin's API.
+**Non-goals:** no hosted scanning, no code upload, no accounts, no dependence on any agent vendor's API.
 
 ## 2. Tech decisions (fixed)
 
 - Language: TypeScript everywhere, Node 22.13+.
 - Monorepo: pnpm workspaces + Turborepo.
-- CLI: `commander`, `picocolors`, `zod`, `execa`, `fast-glob`, `clipboardy` (clipboard fallback for `omot report`). Bundle with `tsup`. Test with `vitest`.
+- CLI: `commander`, `picocolors`, `zod`, `execa`, `tinyglobby`, `clipboardy` (clipboard fallback for `omot report`). Bundle with `tsup`. Test with `vitest`.
 - Website: Next.js (App Router), TypeScript, Tailwind CSS/shadcn ui, statically generated (SSG, not `output: 'export'`; see 8.1), deployed on Vercel. Docs with Fumadocs, which pairs well with Next.js.
 - Data: plain JSON files in the repo (`dataset/`). No database in the MVP.
 - License: MIT.
@@ -150,7 +150,7 @@ Goal: standardized tasks with **objective, locally computed** outcomes, so resul
 Each task is a folder with `task.json` (zod-validated), `prompt.md`, and a `verify.ts`.
 
 - `id`, `version`, `title`, `category`, `estimatedScope` (small/medium)
-- `prompt`: the exact text users paste to Devin. The prompt is fixed per version.
+- `prompt`: the exact text users paste into their coding agent. The prompt is fixed per version.
 - `preconditions`: what the repo must have (for example, a test runner for the add-test task).
 - `verify`: a function returning `{ outcome: "pass" | "partial" | "fail", reasons: string[] }`, computed from the repo state using commands run locally.
 
@@ -168,14 +168,14 @@ Tasks that need parameters (a named dependency, function, or file) take them via
 ### 5.3 CLI commands (Phase 2)
 
 - `omot bench list` and `bench show <id>`: print task details and the exact prompt.
-- `omot bench start <id> [--param ...]`: records the local baseline (current commit hash, start time) to `.omot/run.json`, then prints the prompt.
-- `omot bench verify`: after the user has pulled or merged Devin's changes, runs the verifier, then asks the user for two self-reported numbers (human corrections, 0 to N; minutes of human effort) and writes the result to `.omot/run.json`.
+- `omot bench start <id> [--param ...]`: records the local baseline (current commit hash, start time) to `.omot/run.json`, then prints the prompt. `--agent <name>` records which coding agent is being benchmarked as an optional `agent` field (a lowercase slug of at most 40 characters from `[a-z0-9._-]`, default `"unknown"`); `verify` can override it. It is never prompted for.
+- `omot bench verify`: after the user has pulled or merged the agent's changes, runs the verifier, then asks the user for two self-reported numbers (human corrections, 0 to N; minutes of human effort) and writes the result to `.omot/run.json`.
 - Add `.omot/` to `.gitignore` automatically (create-only rule applies, append-only for this line, with confirmation).
 
 ### 5.4 Acceptance criteria
 
 - Each verifier has tests against pass, partial, and fail fixture repos.
-- A task `version` bump is required for any prompt or verifier change (enforced by a CI check comparing against main).
+- A task `version` bump is required for any prompt or verifier change (enforced by a CI check comparing against the PR's base branch, `main` by default).
 
 ## 6. Phase 3: Reporting and dataset
 
@@ -216,6 +216,7 @@ The website computes aggregates **at build time** from `dataset/reports/*.json`:
   "scoring_version": 1,
   "task_id": "add-unit-test",
   "task_version": 1,
+  "agent": "claude-code",
   "outcome": "pass",
   "human_corrections": 1,
   "human_minutes": 12,
@@ -240,10 +241,11 @@ Field rules:
 - `stack`: coarse enums only (package manager: npm/pnpm/yarn/bun/other; language: typescript/javascript; framework: nextjs/react/vue/svelte/astro/node/other). No versions.
 - `submitted_on`: date only, no time.
 - `human_corrections` and `human_minutes` are self-reported integers.
+- `agent` (planned for Phase 3): the coding agent slug from `.omot/run.json` (`[a-z0-9._-]`, at most 40 characters, default `"unknown"`). Self-reported via `omot bench start --agent`.
 
 ### 7.3 Never collected or sent
 
-Repo name, remote URL, owner, branch or commit hashes, file names or paths, file contents, code, dependency names or versions, environment variables, hostnames, IP-derived data, Devin session links, prompts you edited, emails, or your username (the GitHub issue is public under your account, but the stored dataset file strips it, and you can delete the issue).
+Repo name, remote URL, owner, branch or commit hashes, file names or paths, file contents, code, dependency names or versions, environment variables, hostnames, IP-derived data, agent session links, prompts you edited, emails, or your username (the GitHub issue is public under your account, but the stored dataset file strips it, and you can delete the issue).
 
 ### 7.4 Enforcement
 
@@ -313,9 +315,9 @@ Complete each step and its tests before moving on.
 
 - **Noisy self-reported data:** fixed prompts, objective local verification, sample sizes always shown, small cells suppressed, limitations stated on `/methodology`.
 - **Claims outrunning evidence:** do not claim that readiness causes better outcomes until the dataset supports it; use "observed in submitted reports" wording.
-- **Trademark confusion:** the unofficial disclaimer everywhere; avoid Devin logos.
+- **Trademark confusion:** the unofficial disclaimer everywhere; avoid agent vendors' logos.
 - **Spam or poisoned reports:** strict schema, issue-based review trail, maintainers can remove files; rate limiting by GitHub itself.
-- **Scope creep:** anything outside this plan (hosted features, accounts, Devin API integration) goes to a post-MVP backlog.
+- **Scope creep:** anything outside this plan (hosted features, accounts, agent vendor API integrations) goes to a post-MVP backlog.
 
 ## 13. Future scope: mobile
 
@@ -328,7 +330,7 @@ React Native and Expo are the first planned extension, since they live in the sa
 
 ## 14. Future scope: model comparison
 
-Devin lets users choose the underlying model, so reports could show how Devin performs with each one. According to [Devin's CLI docs](https://docs.devin.ai/cli/models), the CLI offers model families such as `opus`, `sonnet`, `swe`, `codex`, and `gemini`, plus an Adaptive router that picks a model per task.
+Many coding agents let users choose the underlying model, so reports could show how each agent performs with each one. For example, Devin lets users choose the model. According to [Devin's CLI docs](https://docs.devin.ai/cli/models), the CLI offers model families such as `opus`, `sonnet`, `swe`, `codex`, and `gemini`, plus an Adaptive router that picks a model per task.
 
 - Add an optional `model` field to the report payload, as a coarse enum (`adaptive`, `opus`, `sonnet`, `swe`, `codex`, `gemini`, `other`). Keep it self-reported unless the Devin API turns out to expose the model used; check this first, along with whether cloud sessions expose it at all.
 - Bump `schema_version`, and update `PRIVACY.md` and the `/privacy` page. The snapshot test forces this.

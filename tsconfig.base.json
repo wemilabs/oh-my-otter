@@ -7,6 +7,7 @@
     "verbatimModuleSyntax": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
+    "resolveJsonModule": true,
     "customConditions": ["source"],
     "types": ["node"]
   }

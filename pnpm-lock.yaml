@@ -203,6 +203,18 @@ importers:
         specifier: ^5.0.4
         version: 5.0.4(@types/node@22.20.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(yaml@2.9.1))
 
+  packages/benchmarks:
+    dependencies:
+      '@oh-my-otter/core':
+        specifier: workspace:*
+        version: link:../core
+      execa:
+        specifier: ^10.1.0
+        version: 10.1.0
+      zod:
+        specifier: ^4.6.6
+        version: 4.6.6
+
   packages/checks:
     dependencies:
       '@oh-my-otter/core':
@@ -214,6 +226,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@oh-my-otter/benchmarks':
+        specifier: workspace:*
+        version: link:../benchmarks
       '@oh-my-otter/checks':
         specifier: workspace:*
         version: link:../checks
