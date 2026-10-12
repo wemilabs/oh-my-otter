@@ -4,23 +4,23 @@ Implementation plan for coding agent · October 10, 2026
 
 ## 1. What we are building
 
-**Oh My Otter** is an open-source benchmark and optimization toolkit for seamless Devin integration.
+**Oh My Otter** is an open-source benchmark and optimization toolkit for AI coding agents (for example Devin, Claude Code, Cursor, Codex, and Copilot). It is agent-neutral: any coding agent can be scanned for and benchmarked.
 
 It has three parts:
 
 - **CLI (`omot`)**: scans a local repo, outputs a readiness score with fixable findings, and has a plugin interface for checks.
-- **Benchmark tasks**: a small set of standardized, objectively verifiable JavaScript/TypeScript dev tasks (web first) people run against Devin.
+- **Benchmark tasks**: a small set of standardized, objectively verifiable JavaScript/TypeScript dev tasks (web first) people run against any AI coding agent.
 - **Website (Next.js)**: docs, check catalog, benchmark catalog, methodology, and public aggregate results.
 
-The project is **unofficial and independent**. It is not affiliated with or endorsed by Cognition. Say this in the README, website footer, and CLI `--help`.
+The project is **unofficial and independent; not affiliated with or endorsed by Cognition or any other agent vendor**. Say this in the README, website footer, and CLI `--help`.
 
-**Non-goals:** no hosted scanning, no code upload, no accounts, no dependence on Devin's API.
+**Non-goals:** no hosted scanning, no code upload, no accounts, no dependence on any agent vendor's API.
 
 ## 2. Tech decisions (fixed)
 
 - Language: TypeScript everywhere, Node 22.13+.
 - Monorepo: pnpm workspaces + Turborepo.
-- CLI: `commander`, `picocolors`, `zod`, `execa`, `fast-glob`, `clipboardy` (clipboard fallback for `omot report`). Bundle with `tsup`. Test with `vitest`.
+- CLI: `commander`, `picocolors`, `zod`, `execa`, `tinyglobby`, `clipboardy` (clipboard fallback for `omot report`). Bundle with `tsup`. Test with `vitest`.
 - Website: Next.js (App Router), TypeScript, Tailwind CSS/shadcn ui, statically generated (SSG, not `output: 'export'`; see 8.1), deployed on Vercel. Docs with Fumadocs, which pairs well with Next.js.
 - Data: plain JSON files in the repo (`dataset/`). No database in the MVP.
 - License: MIT.
@@ -150,7 +150,7 @@ Goal: standardized tasks with **objective, locally computed** outcomes, so resul
 Each task is a folder with `task.json` (zod-validated), `prompt.md`, and a `verify.ts`.
 
 - `id`, `version`, `title`, `category`, `estimatedScope` (small/medium)
-- `prompt`: the exact text users paste to Devin. The prompt is fixed per version.
+- `prompt`: the exact text users paste into their coding agent. The prompt is fixed per version.
 - `preconditions`: what the repo must have (for example, a test runner for the add-test task).
 - `verify`: a function returning `{ outcome: "pass" | "partial" | "fail", reasons: string[] }`, computed from the repo state using commands run locally.
 
@@ -168,14 +168,14 @@ Tasks that need parameters (a named dependency, function, or file) take them via
 ### 5.3 CLI commands (Phase 2)
 
 - `omot bench list` and `bench show <id>`: print task details and the exact prompt.
-- `omot bench start <id> [--param ...]`: records the local baseline (current commit hash, start time) to `.omot/run.json`, then prints the prompt.
-- `omot bench verify`: after the user has pulled or merged Devin's changes, runs the verifier, then asks the user for two self-reported numbers (human corrections, 0 to N; minutes of human effort) and writes the result to `.omot/run.json`.
+- `omot bench start <id> [--param ...]`: records the local baseline (current commit hash, start time) to `.omot/run.json`, then prints the prompt. `--agent <name>` records which coding agent is being benchmarked as an optional `agent` field (a lowercase slug of at most 40 characters from `[a-z0-9._-]`, default `"unknown"`); `verify` can override it. It is never prompted for.
+- `omot bench verify`: after the user has pulled or merged the agent's changes, runs the verifier, then asks the user for two self-reported numbers (human corrections, 0 to N; minutes of human effort) and writes the result to `.omot/run.json`.
 - Add `.omot/` to `.gitignore` automatically (create-only rule applies, append-only for this line, with confirmation).
 
 ### 5.4 Acceptance criteria
 
 - Each verifier has tests against pass, partial, and fail fixture repos.
-- A task `version` bump is required for any prompt or verifier change (enforced by a CI check comparing against main).
+- A task `version` bump is required for any prompt or verifier change (enforced by a CI check comparing against the PR's base branch, `main` by default).
 
 ## 6. Phase 3: Reporting and dataset
 
@@ -191,6 +191,13 @@ For the MVP, reports are submitted through a **public GitHub issue**, so there i
 ### 6.2 Aggregation
 
 The website computes aggregates **at build time** from `dataset/reports/*.json`: success rate per task, success rate by readiness band (A/B/C/D), median human corrections, and sample sizes. Never display a percentage without its sample size `n`. Hide any cell with fewer than 5 reports and show "not enough data yet".
+
+**Agent-neutral results.** `agent` is self-reported free text (normalized to a slug), so aggregation maps it to a canonical allowlist kept in the repo, `dataset/agents.json`. Each entry has an `id`, a `display_name`, and `aliases`, for example `{ "id": "claude-code", "display_name": "Claude Code", "aliases": ["claude", "claude-cli"] }`. A report whose `agent` matches an `id` or an alias counts toward that agent. Anything else, including `unknown`, is grouped as `other`, which is shown but never ranked. Adding an agent means one PR to `dataset/agents.json`, and no report files are rewritten.
+
+- Per task and per canonical agent: pass/partial/fail rates, median human corrections, and median human minutes, always shown with the report count `n`.
+- Agents with fewer than 5 reports for a task are marked "insufficient data" and are not ranked. Ranking is by pass rate among agents that meet the minimum `n`.
+- `agent_version` and `model` are optional dimensions on top of `agent`; the same minimum-`n` rule applies to every cell.
+- Results are self-reported, not verified: the verifier ran locally on the submitter's machine, and the agent, version, model, corrections, and minutes are the submitter's own claims.
 
 ### 6.3 Acceptance criteria
 
@@ -216,6 +223,9 @@ The website computes aggregates **at build time** from `dataset/reports/*.json`:
   "scoring_version": 1,
   "task_id": "add-unit-test",
   "task_version": 1,
+  "agent": "claude-code",
+  "agent_version": "2.1.0",
+  "model": "claude-opus-4",
   "outcome": "pass",
   "human_corrections": 1,
   "human_minutes": 12,
@@ -240,10 +250,14 @@ Field rules:
 - `stack`: coarse enums only (package manager: npm/pnpm/yarn/bun/other; language: typescript/javascript; framework: nextjs/react/vue/svelte/astro/node/other). No versions.
 - `submitted_on`: date only, no time.
 - `human_corrections` and `human_minutes` are self-reported integers.
+- `agent` (planned for Phase 3): the coding agent slug from `.omot/run.json` (`[a-z0-9._-]`, at most 40 characters, default `"unknown"`). Self-reported via `omot bench start --agent`.
+- `agent_version` (planned for Phase 3, optional): the agent's version, a slug of at most 40 characters from `[a-z0-9._-]`. Self-reported via `--agent-version`.
+- `model` (planned for Phase 3, optional): the model the agent used, a lowercase slug of at most 60 characters from `[a-z0-9._-]`. Self-reported via `--model`.
+- `agent`, `agent_version`, and `model` follow the same validation and privacy rules: strict zod regexes, no free text beyond the slug, never prompted for, and omitted (or `unknown` for `agent`) when not given. They describe the tool, not the person.
 
 ### 7.3 Never collected or sent
 
-Repo name, remote URL, owner, branch or commit hashes, file names or paths, file contents, code, dependency names or versions, environment variables, hostnames, IP-derived data, Devin session links, prompts you edited, emails, or your username (the GitHub issue is public under your account, but the stored dataset file strips it, and you can delete the issue).
+Repo name, remote URL, owner, branch or commit hashes, file names or paths, file contents, code, dependency names or versions, environment variables, hostnames, IP-derived data, agent session links, prompts you edited, emails, or your username (the GitHub issue is public under your account, but the stored dataset file strips it, and you can delete the issue).
 
 ### 7.4 Enforcement
 
@@ -267,7 +281,7 @@ Repo name, remote URL, owner, branch or commit hashes, file names or paths, file
 - `/docs`: install, usage, flags, `--fix`, plugins, CI usage (`--min-score`).
 - `/checks` and `/checks/[id]`: catalog with search and category filter; each page shows title, weight, why it matters, how to pass, and fix suggestion. Client-side search with `fuse.js`.
 - `/benchmarks` and `/benchmarks/[id]`: task catalog; each page shows the exact prompt, preconditions, and pass criteria, plus that task's aggregate results.
-- `/results`: aggregate tables and simple bar charts (`recharts`); success rate by readiness band and by task; always show `n`; low-sample cells suppressed; link to raw JSON; banner explaining data is self-reported.
+- `/results`: aggregate tables and simple bar charts (`recharts`); success rate by readiness band and by task; per-task, per-agent pass/partial/fail rates with median human corrections and minutes (agents canonicalized via `dataset/agents.json` per §6.2, unknown agents grouped as `other` and not ranked, agents under 5 reports marked "insufficient data"); filter or group by `agent_version` and `model`; always show `n`; low-sample cells suppressed; link to raw JSON; banner explaining data is self-reported.
 - `/methodology`: scoring formula, check weights, task design, verification, self-report limits, known biases.
 - `/privacy`: the exact payload and the never-collected list.
 - `/contribute`: how to add a check, a benchmark task, or submit a report.
@@ -313,9 +327,9 @@ Complete each step and its tests before moving on.
 
 - **Noisy self-reported data:** fixed prompts, objective local verification, sample sizes always shown, small cells suppressed, limitations stated on `/methodology`.
 - **Claims outrunning evidence:** do not claim that readiness causes better outcomes until the dataset supports it; use "observed in submitted reports" wording.
-- **Trademark confusion:** the unofficial disclaimer everywhere; avoid Devin logos.
+- **Trademark confusion:** the unofficial disclaimer everywhere; avoid agent vendors' logos.
 - **Spam or poisoned reports:** strict schema, issue-based review trail, maintainers can remove files; rate limiting by GitHub itself.
-- **Scope creep:** anything outside this plan (hosted features, accounts, Devin API integration) goes to a post-MVP backlog.
+- **Scope creep:** anything outside this plan (hosted features, accounts, agent vendor API integrations) goes to a post-MVP backlog.
 
 ## 13. Future scope: mobile
 
@@ -328,9 +342,9 @@ React Native and Expo are the first planned extension, since they live in the sa
 
 ## 14. Future scope: model comparison
 
-Devin lets users choose the underlying model, so reports could show how Devin performs with each one. According to [Devin's CLI docs](https://docs.devin.ai/cli/models), the CLI offers model families such as `opus`, `sonnet`, `swe`, `codex`, and `gemini`, plus an Adaptive router that picks a model per task.
+Many coding agents let users choose the underlying model, so reports could show how each agent performs with each one. For example, Devin lets users choose the model. According to [Devin's CLI docs](https://docs.devin.ai/cli/models), the CLI offers model families such as `opus`, `sonnet`, `swe`, `codex`, and `gemini`, plus an Adaptive router that picks a model per task.
 
-- Add an optional `model` field to the report payload, as a coarse enum (`adaptive`, `opus`, `sonnet`, `swe`, `codex`, `gemini`, `other`). Keep it self-reported unless the Devin API turns out to expose the model used; check this first, along with whether cloud sessions expose it at all.
+- Build on the optional `model` and `agent_version` payload fields from §7.2 (already captured locally in `.omot/run.json` since Phase 2). For comparison, map the `model` slug to coarse families (`adaptive`, `opus`, `sonnet`, `swe`, `codex`, `gemini`, `other`) in an allowlist like `dataset/agents.json`. Keep it self-reported unless an agent's API turns out to expose the model used; check this first, along with whether cloud sessions expose it at all.
 - Bump `schema_version`, and update `PRIVACY.md` and the `/privacy` page. The snapshot test forces this.
 - On `/results`, add success rate by model and by readiness band, with the same rule of at least 5 reports per cell. Splitting by model makes samples thin, so expect many empty cells at first.
 - State the limits on `/methodology`: short names resolve to the latest version in a family, so the report date matters; Adaptive is a router, not a model, so it stays its own category; and people tend to pick models by task difficulty, which biases comparisons.

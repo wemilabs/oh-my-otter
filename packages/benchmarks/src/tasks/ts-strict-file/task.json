@@ -1,0 +1,24 @@
+{
+  "id": "ts-strict-file",
+  "version": 1,
+  "title": "Remove explicit any from one file",
+  "category": "types",
+  "estimatedScope": "small",
+  "params": [
+    {
+      "name": "file",
+      "kind": "path",
+      "description": "The TypeScript file to clean up.",
+      "example": "src/api/client.ts"
+    }
+  ],
+  "preconditions": [
+    "The file is TypeScript (.ts, .tsx, .mts, .cts) and uses explicit any at least once.",
+    "A typecheck script (scripts.typecheck), or TypeScript installed locally with a tsconfig.json."
+  ],
+  "criteria": {
+    "pass": "The file has zero explicit any, no new type-check suppressions, and typecheck passes.",
+    "partial": "The any count dropped but not to zero, new suppressions were added, or typecheck fails.",
+    "fail": "The any count did not drop, or the file was deleted."
+  }
+}

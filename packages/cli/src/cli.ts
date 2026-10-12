@@ -26,6 +26,7 @@ import {
   planFixes,
 } from "@oh-my-otter/core/node";
 import { builtinChecks } from "@oh-my-otter/checks";
+import { addBenchCommand } from "./bench";
 
 export interface CliIO {
   stdout: (text: string) => void;
@@ -33,6 +34,7 @@ export interface CliIO {
   cwd: string;
   isTTY: boolean;
   confirm: (question: string) => Promise<boolean>;
+  ask: (question: string) => Promise<string>;
 }
 
 interface ScanOptions {
@@ -85,6 +87,11 @@ function defaultConfirm(question: string): Promise<boolean> {
     .finally(() => readline.close());
 }
 
+function defaultAsk(question: string): Promise<string> {
+  const readline = createInterface({ input: stdin, output: stdout });
+  return readline.question(question).finally(() => readline.close());
+}
+
 function getIO(io: Partial<CliIO> = {}): CliIO {
   return {
     stdout: io.stdout ?? ((text) => stdout.write(text)),
@@ -92,6 +99,7 @@ function getIO(io: Partial<CliIO> = {}): CliIO {
     cwd: path.resolve(io.cwd ?? process.cwd()),
     isTTY: io.isTTY ?? Boolean(process.stdout.isTTY),
     confirm: io.confirm ?? defaultConfirm,
+    ask: io.ask ?? defaultAsk,
   };
 }
 
@@ -597,6 +605,7 @@ function normalizeArgv(argv: string[]): string[] {
       "scan",
       "init",
       "checks",
+      "bench",
       "help",
       "--help",
       "-h",
@@ -619,12 +628,12 @@ export async function main(
   program
     .name("omot")
     .description(
-      "Check how ready a repository is for Devin. scan is the default command, so plain omot runs it.",
+      "Check how ready a repository is for AI coding agents (Devin, Claude Code, Cursor, Codex, Copilot, and others), and benchmark them on standard tasks. scan is the default command, so plain omot runs it.",
     )
     .version(packageMetadata.version)
     .addHelpText(
       "after",
-      "\nOh My Otter is unofficial and independent. It is not affiliated with or endorsed by Cognition.\nScanning runs locally with no network calls.\n",
+      "\nOh My Otter is unofficial and independent; not affiliated with or endorsed by Cognition or any other agent vendor.\nScanning runs locally with no network calls.\n",
     )
     .configureOutput({
       writeOut: (text) => io.stdout(text),
@@ -664,6 +673,10 @@ export async function main(
     .action(async (target: string | undefined, options: ChecksOptions) => {
       actionExitCode = await listChecks(target, options, io);
     });
+
+  addBenchCommand(program, io, (code) => {
+    actionExitCode = code;
+  });
 
   try {
     await program.parseAsync(normalizeArgv(argv), { from: "user" });
