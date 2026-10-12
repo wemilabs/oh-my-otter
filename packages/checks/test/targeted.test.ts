@@ -744,6 +744,36 @@ describe("targeted checks", () => {
     });
   });
 
+  it("treats a slash after a spaced comparison as a regex start", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const text = `${0 < /}/.test(text) ? z.object({ API_KEY: z.string() }).parse(process.env) : null}`;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_KEY");
+    });
+  });
+
+  it("treats a slash after an arrow-body block as division", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const t = `${(() => { return 1; })() / 2} ${z.object({ API_URL: z.string() }).parse(process.env)}`;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
   it("treats slashes after values as division, not regex starts", async () => {
     await withTempRepo(async (root) => {
       await mkdir(path.join(root, "src"));
@@ -764,6 +794,7 @@ describe("targeted checks", () => {
     'consume(process.env);\nconst doc = "z.object({ SECRET_TOKEN: z.string() })";\n',
     "consume(process.env);\nconst name = 'x';\nconst s = `${name} z.object({ SECRET_TOKEN: 1 })`;\n",
     "consume(process.env);\nconst re = /z.object({ SECRET_TOKEN: 1 })/;\n",
+    "consume(process.env);\nif (ok) {}\n/>z.object({ FAKE_KEY: 1 })/.test(s);\n",
   ])("ignores schema text that is not code: %s", async (source) => {
     await withTempRepo(async (root) => {
       await mkdir(path.join(root, "src"));

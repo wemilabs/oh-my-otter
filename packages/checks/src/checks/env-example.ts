@@ -129,7 +129,7 @@ function maskStringsAndComments(contents: string): string {
     return end;
   };
 
-  const regexAllowedPrevious = new Set("(,=:[!&|?{};+-*%>~^".split(""));
+  const regexAllowedPrevious = new Set("(,=:[!&|?{;+-*%<>~^".split(""));
   const regexKeywords = new Set([
     "return",
     "typeof",
@@ -178,20 +178,43 @@ function maskStringsAndComments(contents: string): string {
     return null;
   };
 
+  const blockKeywords = new Set(["else", "do", "try", "finally"]);
+
   const scanCode = (start: number, untilCloseBrace: boolean): number => {
     let index = start;
     let depth = 0;
     let previous = "";
     let previousIndex = -1;
-    const startsRegex = (): boolean => {
-      if (previous === "") return true;
-      if (previous === "}" && contents[index + 1] === ">") return false;
-      if (regexAllowedPrevious.has(previous)) return true;
-      if (previousIndex < 0 || !/[A-Za-z0-9_$]/.test(previous)) return false;
+    const braceIsBlock: boolean[] = [];
+    let closedBlock = false;
+    const previousWord = (): string => {
+      if (previousIndex < 0 || !/[A-Za-z0-9_$]/.test(previous)) return "";
       let wordStart = previousIndex;
       while (wordStart > 0 && /[A-Za-z0-9_$]/.test(contents[wordStart - 1]!))
         wordStart--;
-      return regexKeywords.has(contents.slice(wordStart, previousIndex + 1));
+      return contents.slice(wordStart, previousIndex + 1);
+    };
+    const opensBlock = (): boolean => {
+      if (
+        previous === "" ||
+        previous === ")" ||
+        previous === ";" ||
+        previous === "{" ||
+        previous === "}"
+      ) {
+        return true;
+      }
+      if (previous === ">" && contents[previousIndex - 1] === "=") {
+        return true;
+      }
+      return blockKeywords.has(previousWord());
+    };
+    const startsRegex = (): boolean => {
+      if (previous === "") return true;
+      if (previous === "}") return closedBlock;
+      if (previous === "<" && previousIndex === index - 1) return false;
+      if (regexAllowedPrevious.has(previous)) return true;
+      return regexKeywords.has(previousWord());
     };
     while (index < contents.length) {
       const char = contents[index]!;
@@ -231,10 +254,14 @@ function maskStringsAndComments(contents: string): string {
           continue;
         }
       }
-      if (char === "{") depth++;
+      if (char === "{") {
+        depth++;
+        braceIsBlock.push(opensBlock());
+      }
       if (char === "}") {
         if (untilCloseBrace && depth === 0) return index;
         depth--;
+        closedBlock = braceIsBlock.pop() ?? false;
       }
       if (!/\s/.test(char)) {
         previous = char;
