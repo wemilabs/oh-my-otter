@@ -27,5 +27,6 @@
 
 - Add a changeset with each user-facing change.
 - Pushing to `main` runs the release workflow, which opens the “Version Packages” PR (titled `chore: release packages`); merging it publishes the packages to npm.
-- The workflow requires the repository `NPM_TOKEN` secret.
+- Publishing uses npm Trusted Publishing (OIDC) from `.github/workflows/release.yml`; no npm token is needed.
+- Configure an npmjs.com GitHub Actions trusted publisher for each package (`oh-my-otter`, `@oh-my-otter/core`, `@oh-my-otter/checks`) with org `wemilabs`, repo `oh-my-otter`, and workflow `release.yml`; allow direct `npm publish`.
 - PRs opened with `GITHUB_TOKEN` do not trigger CI. Close and reopen the version PR to run CI, or have an admin bypass the three required `verify` checks.
