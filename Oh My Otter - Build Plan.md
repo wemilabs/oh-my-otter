@@ -106,7 +106,8 @@ A `FixPlan` is a list of files to create (never overwrite) with their contents.
 
 ### 4.4 CLI commands (Phase 1)
 
-- `omot init [path]`: scan and print the report (default command). Flags: `--run` (execute test/build scripts for the deeper checks), `--json` (machine-readable output), `--fix` (apply fix plans for failing checks, create-only, shows a diff and asks to confirm), `--badge` (print a README badge snippet), `--plugin <path|package>` (load extra checks).
+- `omot scan [path]`: scan and print the report (default command, so plain `omot` runs it). Flags: `--run` (execute test/build scripts for the deeper checks), `--json` (machine-readable output), `--fix` (apply fix plans for failing checks, create-only, shows a diff and asks to confirm), `--badge` (print a README badge snippet), `--plugin <path|package>` (load extra checks).
+- `omot init [path]`: hidden alias of `scan` kept for backward compatibility, same flags. Commander's `.alias()` shows aliases in help, so register `init` as a separate command with `{ hidden: true }` that reuses the `scan` options and action. Register `scan` with `{ isDefault: true }`.
 - `omot checks`: list all loaded checks with weights.
 - Exit code is always 0 unless the tool itself errors. A `--min-score <n>` flag exits 1 below the threshold, for CI use.
 - **The scanner makes zero network calls.** Enforce with a test that fails if `fetch`, `http`, or `https` is invoked during a scan.
@@ -121,7 +122,7 @@ No server. `--badge` prints a Markdown snippet using a static shields.io URL, fo
 
 ### 4.7 Phase 1 acceptance criteria
 
-- `npx oh-my-otter init` on three fixture repos (healthy, bare, monorepo) returns expected scores in tests.
+- `npx oh-my-otter scan` on three fixture repos (healthy, bare, monorepo) returns expected scores in tests.
 - `--fix` never overwrites an existing file.
 - Adding a new check requires only one new file plus one registry line.
 - CI green on Linux, macOS, and Windows runners.
@@ -187,7 +188,7 @@ The website computes aggregates **at build time** from `dataset/reports/*.json`:
 
 ### 7.1 Principles
 
-- Scanning (`init`, `checks`, `--fix`) is **100% local**. No network calls, no telemetry, no analytics, no update pings.
+- Scanning (`scan`, `checks`, `--fix`) is **100% local**. No network calls, no telemetry, no analytics, no update pings.
 - Nothing is ever sent unless the user runs `omot report`, sees the full payload, and confirms.
 - The CLI never reads file contents beyond what checks need locally, and never includes any of it in a report.
 
@@ -247,7 +248,7 @@ Repo name, remote URL, owner, branch or commit hashes, file names or paths, file
 
 ### 8.2 Pages
 
-- `/`: hero, one-line pitch, `npx oh-my-otter init` copy button, sample report screenshot, links to GitHub, and the unofficial disclaimer.
+- `/`: hero, one-line pitch, `npx oh-my-otter scan` copy button, sample report screenshot, links to GitHub, and the unofficial disclaimer.
 - `/docs`: install, usage, flags, `--fix`, plugins, CI usage (`--min-score`).
 - `/checks` and `/checks/[id]`: catalog with search and category filter; each page shows title, weight, why it matters, how to pass, and fix suggestion. Client-side search with `fuse.js`.
 - `/benchmarks` and `/benchmarks/[id]`: task catalog; each page shows the exact prompt, preconditions, and pass criteria, plus that task's aggregate results.
@@ -283,7 +284,7 @@ Complete each step and its tests before moving on.
 2. Build `core`: types, zod schemas, scoring with tests.
 3. Build the check runner and `CheckContext` implementation (read-only fs, glob, optional `run`).
 4. Implement the 14 built-in checks with fixture repos and tests.
-5. Build the CLI: `init`, `checks`, `--json`, `--min-score`, `--badge`, then `--fix` and `--plugin`/config loading. Add the no-network test.
+5. Build the CLI: `scan` (default, plus hidden `init` alias), `checks`, `--json`, `--min-score`, `--badge`, then `--fix` and `--plugin`/config loading. Add the no-network test.
 6. Checkpoint: Phase 1 acceptance criteria met; publish `0.1.0`.
 7. Build `benchmarks`: schema, six tasks, verifiers with fixture tests.
 8. Add `bench list/show/start/verify` and the `.omot/` handling.
