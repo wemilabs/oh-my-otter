@@ -46,6 +46,7 @@ export function MobileNav() {
                 <Link
                   href={link.href}
                   prefetch={link.href === "/results"}
+                  onClick={() => setOpenedOn(null)}
                   className="flex min-h-11 w-full items-center text-base font-medium"
                 >
                   {link.label}

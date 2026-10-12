@@ -6,7 +6,11 @@ import {
   SITE_URL,
 } from "@oh-my-otter/benchmarks/report";
 import { SectionHeading } from "@/components/landing/sections";
-import { AgentTable, StatsTable } from "@/components/results/stats";
+import {
+  AgentTable,
+  DataUnavailable,
+  StatsTable,
+} from "@/components/results/stats";
 import { getDataset } from "@/lib/dataset";
 
 export const instant = true;
@@ -145,7 +149,10 @@ async function TaskContent({ params }: { params: Promise<{ id: string }> }) {
 }
 
 async function TaskStats({ id }: { id: string }) {
-  const { aggregate } = await getDataset();
+  const { dataset, aggregate } = await getDataset();
+  if (dataset.status === "unavailable") {
+    return <DataUnavailable />;
+  }
   return (
     <>
       <StatsTable
