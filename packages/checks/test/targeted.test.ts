@@ -691,6 +691,8 @@ describe("targeted checks", () => {
     "## Installation\n\nwe use yarn\n",
     "## Installation\n\nWe use pnpm and npx scripts.\n",
     "## Installation\n\n<pre># npm install</pre>\n",
+    "## Installation\n\n<!-- npm install -->\n",
+    "## Installation\n\n<!-- <pre>npm install</pre> -->\n",
     "## Installation\n\n```sh\nyarn --version\n```\n",
     "## Installation\n\n```sh\nyarn -v\n```\n",
     "## Installation\n\n```sh\n# npm install\n```\n",
@@ -714,6 +716,8 @@ describe("targeted checks", () => {
     "## Installation\n\n```sh\ncd app && yarn\n```\n",
     "## Installation\n\n```sh\nnpm install # deps\n```\n",
     "## Installation\n\n```sh\nyarn --frozen-lockfile\n```\n",
+    '## Installation\n\n```sh\ncd "project #1" && npm install\n```\n',
+    "## Installation\n\n```sh\ncd 'a#b' && pnpm install\n```\n",
   ])("recognizes install commands in code: %s", async (readme) => {
     await withTempRepo(async (root) => {
       await writeFile(path.join(root, "README.md"), readme);

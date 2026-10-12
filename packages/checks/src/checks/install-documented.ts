@@ -13,7 +13,7 @@ const yarnOnlyPattern =
   /^yarn(?!.*\s(?:--version|-v|--help|-h)\b)(?:\s+--?[\w-]+(?:=\S+)?)*\s*$/;
 const proseInstallPattern =
   /\b(?:pnpm|npm|bun)\s+(?:install|i|ci)\b|\byarn\s+install\b/i;
-const shellCommentPattern = /(?:^|\s)#.*$/;
+const htmlCommentPattern = /<!--[\s\S]*?-->/g;
 const yarnProsePattern = /\b(?:run|running|execute|executing|type|enter)\s*$/i;
 
 function hasPlainYarn(text: string): boolean {
@@ -24,8 +24,31 @@ function hasPlainYarn(text: string): boolean {
     );
 }
 
+function stripShellComment(line: string): string {
+  let quote: string | null = null;
+  for (let index = 0; index < line.length; index++) {
+    const char = line[index]!;
+    if (char === "\\" && quote === '"') {
+      index++;
+      continue;
+    }
+    if (quote) {
+      if (char === quote) quote = null;
+      continue;
+    }
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "#" && (index === 0 || /\s/.test(line[index - 1]!))) {
+      return line.slice(0, index);
+    }
+  }
+  return line;
+}
+
 function codeLineHasCommand(line: string): boolean {
-  const uncommented = line.replace(shellCommentPattern, "");
+  const uncommented = stripShellComment(line);
   return (
     packageManagerInstallPattern.test(uncommented) ||
     yarnInstallPattern.test(uncommented) ||
@@ -99,7 +122,11 @@ function markdownHasCommand(contents: string): boolean {
     indentedCodeAllowed = indented || line.trim() === "";
   }
 
-  for (const match of contents.matchAll(
+  for (const match of masked.join("").matchAll(htmlCommentPattern)) {
+    blank(match.index!, match.index! + match[0].length);
+  }
+  const uncommented = masked.join("");
+  for (const match of uncommented.matchAll(
     /<(pre|code)\b[^>]*>([\s\S]*?)<\/\1>/gi,
   )) {
     if (codeTextHasCommand(match[2] ?? "")) return true;
