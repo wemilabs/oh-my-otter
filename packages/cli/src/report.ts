@@ -16,6 +16,7 @@ import {
 import {
   buildReportPayload,
   serializeReportPayload,
+  SITE_URL,
 } from "@oh-my-otter/benchmarks/report";
 import type { ScanSummary } from "@oh-my-otter/benchmarks/report";
 import { z } from "zod";
@@ -174,6 +175,7 @@ export async function runReport(
     } catch {
       io.stderr(`Couldn't open a browser. Open this URL to submit:\n${url}\n`);
     }
+    io.stderr(`Results: ${SITE_URL}/results\n`);
     return 0;
   }
 
@@ -195,6 +197,7 @@ export async function runReport(
       `Couldn't copy to the clipboard. Copy the JSON printed above manually and paste it into the "Report payload" field at:\n${templateUrl}\n`,
     );
   }
+  io.stderr(`Results: ${SITE_URL}/results\n`);
   return 0;
 }
 

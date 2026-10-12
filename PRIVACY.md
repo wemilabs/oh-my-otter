@@ -76,8 +76,8 @@ file contents, code, dependency names or versions, environment variables,
 hostnames, IP-derived data, agent session links, prompts you edited, emails,
 or your username.
 
-Your GitHub issue is public under your account, but the stored dataset file
-contains only the JSON fields above — your username and the issue's title and
+Your GitHub issue is public under your account, but the stored dataset
+line contains only the JSON fields above — your username and the issue's title and
 text are stripped by the ingest action and never written. Issues can't be
 deleted by their author, so if you want one removed, ask a maintainer to
 delete it.
@@ -95,7 +95,8 @@ delete it.
    below, and appends only the validated fields as one line in
    `reports.ndjson` on the orphan `dataset` branch, then closes the issue.
    The action never writes your username, the issue number, or the issue
-   text.
+   text. Aggregated results are published hourly at
+   <https://ohmyotter.vercel.app/results>.
 
 ## Plausibility checks
 

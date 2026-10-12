@@ -8,7 +8,7 @@ body:
       value: |
         This issue was filled in by `omot report`. Paste the JSON exactly as it was printed and do not edit it.
 
-        Only the JSON fields are stored in `dataset/reports/` — never your username, this issue's number, title, or text. See [PRIVACY.md](https://github.com/wemilabs/oh-my-otter/blob/main/PRIVACY.md) for exactly what is collected.
+        Only the JSON fields are stored in `reports.ndjson` on the `dataset` branch — never your username, this issue's number, title, or text. See [PRIVACY.md](https://github.com/wemilabs/oh-my-otter/blob/main/PRIVACY.md) for exactly what is collected. Results update hourly at <https://ohmyotter.vercel.app/results>.
   - type: textarea
     id: payload
     attributes:

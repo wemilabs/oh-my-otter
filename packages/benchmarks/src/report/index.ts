@@ -18,5 +18,6 @@ export { agentsFileSchema, canonicalAgent, OTHER_AGENT } from "./agents";
 export type { AgentsFile } from "./agents";
 export { checkReportPlausibility } from "./plausibility";
 export { parseReportsNdjson, serializeReportLine } from "./ndjson";
+export { SITE_URL } from "./site";
 export { extractPayloadJson, ingestIssue, rateLimitProblem } from "./ingest";
 export type { IngestResult, RateLimitIssue } from "./ingest";

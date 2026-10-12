@@ -18,6 +18,7 @@ import {
   reportPayloadSchema,
   serializeReportLine,
   serializeReportPayload,
+  SITE_URL,
 } from "../src/report";
 import { builtinTasks, detectStack, summarizeScan } from "../src/index";
 import { runChecks } from "@oh-my-otter/core";
@@ -772,5 +773,38 @@ describe("checkReportPlausibility", () => {
         today: new Date("2026-10-10T12:00:00Z"),
       }),
     ).toEqual([]);
+  });
+});
+
+describe("SITE_URL", () => {
+  it("is the canonical results site and appears where the site is mentioned", async () => {
+    expect(SITE_URL).toBe("https://ohmyotter.vercel.app");
+    const template = await readFile(
+      path.join(repoRoot, ".github/ISSUE_TEMPLATE/report.yml"),
+      "utf8",
+    );
+    expect(template).toContain(`${SITE_URL}/results`);
+    const readme = await readFile(path.join(repoRoot, "README.md"), "utf8");
+    expect(readme).toContain(`${SITE_URL}/results`);
+    const dataset = await readFile(
+      path.join(repoRoot, "dataset/README.md"),
+      "utf8",
+    );
+    expect(dataset).toContain(`${SITE_URL}/results`);
+  });
+
+  it("points readers to the results page in the valid-ingest comment", async () => {
+    const result = await ingestIssue({
+      body: validBody(),
+      author: "SomeoneElse",
+      agents: {
+        agents: [{ id: "claude", display_name: "C", aliases: ["claude-code"] }],
+      },
+      ...ingestDefaults,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.comment).toContain(`${SITE_URL}/results`);
+    }
   });
 });

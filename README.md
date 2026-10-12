@@ -82,7 +82,7 @@ omot report [path] [--dry-run]
 
 After `omot bench verify`, `omot report` prints the exact JSON it would submit and asks for confirmation before doing anything. The payload is small and anonymous: the task id and version, the outcome, your self-reported corrections/minutes/attempts, the agent slug, the readiness score and per-check statuses recorded at `bench start`, and a coarse stack summary — never repo names, paths, code, commits, or dependency names. [PRIVACY.md](PRIVACY.md) lists every field.
 
-On confirmation it opens a prefilled GitHub issue in your browser (or copies the JSON to your clipboard when it's too long for a URL) — nothing is sent until you click **Create** on the issue. An ingest action then validates the payload strictly, runs plausibility checks, and appends only the JSON fields as one line of [`reports.ndjson`](dataset) on the `dataset` branch. `--dry-run` prints the payload and exits without submitting.
+On confirmation it opens a prefilled GitHub issue in your browser (or copies the JSON to your clipboard when it's too long for a URL) — nothing is sent until you click **Create** on the issue. An ingest action then validates the payload strictly, runs plausibility checks, and appends only the JSON fields as one line of [`reports.ndjson`](dataset) on the `dataset` branch. `--dry-run` prints the payload and exits without submitting. Results update hourly at <https://ohmyotter.vercel.app/results>.
 
 ## Built-in checks
 

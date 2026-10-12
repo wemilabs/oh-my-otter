@@ -16,7 +16,8 @@ Raw URL:
 Reports are added by the `ingest-report` GitHub Action: it validates the
 payload strictly, runs the plausibility checks described in PRIVACY.md, and
 appends one line to `reports.ndjson` on the `dataset` branch. Maintainers
-may remove lines that are abusive or malformed.
+may remove lines that are abusive or malformed. Aggregated results update
+hourly at <https://ohmyotter.vercel.app/results>.
 
 Rate limits: an author with three or more report issues in the last hour, or
 three or more open report issues, is declined until they wait or close them.

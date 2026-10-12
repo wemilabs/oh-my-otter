@@ -5,6 +5,7 @@ import {
   type ReportPayload,
 } from "./payload";
 import { serializeReportLine } from "./ndjson";
+import { SITE_URL } from "./site";
 import { checkReportPlausibility } from "./plausibility";
 import type { AgentsFile } from "./agents";
 
@@ -209,7 +210,6 @@ export function ingestIssue(input: {
   return {
     ok: true,
     line: serializeReportLine(payload),
-    comment:
-      "Thanks! Your report passed validation and was appended to the public dataset (`reports.ndjson` on the `dataset` branch). Only the JSON fields were stored; your username and this issue's text were not.",
+    comment: `Thanks! Your report passed validation and was appended to the public dataset (\`reports.ndjson\` on the \`dataset\` branch). Only the JSON fields were stored; your username and this issue's text were not. Results update hourly at ${SITE_URL}/results.`,
   };
 }
