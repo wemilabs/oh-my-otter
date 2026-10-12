@@ -129,7 +129,7 @@ function maskStringsAndComments(contents: string): string {
     return end;
   };
 
-  const regexAllowedPrevious = new Set("(,=:[!&|?{};+-*%<>~^".split(""));
+  const regexAllowedPrevious = new Set("(,=:[!&|?{};+-*%>~^".split(""));
   const regexKeywords = new Set([
     "return",
     "typeof",
@@ -185,6 +185,7 @@ function maskStringsAndComments(contents: string): string {
     let previousIndex = -1;
     const startsRegex = (): boolean => {
       if (previous === "") return true;
+      if (previous === "}" && contents[index + 1] === ">") return false;
       if (regexAllowedPrevious.has(previous)) return true;
       if (previousIndex < 0 || !/[A-Za-z0-9_$]/.test(previous)) return false;
       let wordStart = previousIndex;

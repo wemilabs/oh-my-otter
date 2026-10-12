@@ -699,6 +699,51 @@ describe("targeted checks", () => {
     });
   });
 
+  it("does not treat JSX closing tags as regex literals", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.jsx"),
+        "const el = <div><b>{a}</b>{z.object({ API_URL: z.string() }).parse(process.env)}</div>;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
+  it("does not treat JSX self-closing tags as regex literals", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.jsx"),
+        "const el = <div><Field value={x} /><p>{z.object({ API_URL: z.string() }).parse(process.env)}</p></div>;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
+  it("keeps a regex literal after an open paren when it contains />", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        'const t = `${x.replace(/>}/g, "")} ${z.object({ API_KEY: z.string() }).parse(process.env)}`;\n',
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_KEY");
+    });
+  });
+
   it("treats slashes after values as division, not regex starts", async () => {
     await withTempRepo(async (root) => {
       await mkdir(path.join(root, "src"));
