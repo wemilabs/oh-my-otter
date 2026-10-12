@@ -1,0 +1,11 @@
+{
+  "name": "monorepo",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "scripts": {
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "build": "turbo run build"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "@oh-my-otter/checks",
+  "version": "0.0.0",
+  "description": "Built-in repository readiness checks for Oh My Otter",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wemilabs/oh-my-otter.git",
+    "directory": "packages/checks"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "source": "./src/index.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@oh-my-otter/core": "workspace:*"
+  }
+}
