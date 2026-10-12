@@ -22,6 +22,9 @@ hourly at <https://ohmyotter.vercel.app/results>.
 Rate limits: an author with three or more report issues in the last hour, or
 three or more open report issues, is declined until they wait or close them.
 
+An ingested issue gets the `ingested` label, and the workflow skips issues that
+carry it, so reopening or relabeling an issue never appends its report twice.
+
 ## `agents.json`
 
 Maps the self-reported `agent` slug in each report to a canonical agent:

@@ -12,7 +12,10 @@ concurrency:
 
 jobs:
   validate:
-    if: github.event.label.name == 'report' && github.event.issue.state == 'open'
+    if: >-
+      github.event.label.name == 'report' &&
+      github.event.issue.state == 'open' &&
+      !contains(github.event.issue.labels.*.name, 'ingested')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -124,4 +127,5 @@ jobs:
           set -e
           printf '%s\n' "$COMMENT" > "$RUNNER_TEMP/comment.md"
           gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/comment.md"
+          gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label ingested
           gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason completed
