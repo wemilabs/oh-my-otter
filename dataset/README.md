@@ -3,24 +3,23 @@
 Public benchmark reports submitted with `omot report`, plus the canonical
 agent list used to aggregate them.
 
-## `reports/`
+## `reports.ndjson`
 
-One JSON file per submitted benchmark report. Each file contains exactly the
-validated report payload described in [PRIVACY.md](../PRIVACY.md) — no
-usernames, issue numbers, repo names, paths, or code. Reports are added by the
-`ingest-report` GitHub Action: it validates the payload strictly, runs the
-plausibility checks described in [PRIVACY.md](../PRIVACY.md), and opens one
-pull request per report containing only the JSON fields. A maintainer reviews
-the JSON-only diff and merges it. Maintainers may delete report files that
-are abusive or malformed.
+Reports live in a single append-only `reports.ndjson` file on the orphan
+`dataset` branch — one validated payload per line, in the field order shown
+in [PRIVACY.md](../PRIVACY.md). No usernames, issue numbers, repo names,
+paths, or code.
+
+Raw URL:
+`https://raw.githubusercontent.com/wemilabs/oh-my-otter/dataset/reports.ndjson`
+
+Reports are added by the `ingest-report` GitHub Action: it validates the
+payload strictly, runs the plausibility checks described in PRIVACY.md, and
+appends one line to `reports.ndjson` on the `dataset` branch. Maintainers
+may remove lines that are abusive or malformed.
 
 Rate limits: an author with three or more report issues in the last hour, or
 three or more open report issues, is declined until they wait or close them.
-
-Pull requests opened with `GITHUB_TOKEN` don't trigger CI, so the dataset PRs
-are reviewed and merged by a maintainer. The repo setting "Allow GitHub
-Actions to create and approve pull requests" must stay enabled for the
-workflow to publish them.
 
 ## `agents.json`
 
@@ -38,4 +37,5 @@ Ids and aliases must be unique across the whole file, and `other`/`unknown`
 are reserved: any report whose `agent` matches nothing — including `unknown` —
 counts as `other`, which is shown but never ranked.
 
-Adding an agent is one PR that edits this file; no report files are rewritten.
+`agents.json` stays on `main` as code. Adding an agent is one PR that edits
+this file; no report lines are rewritten.

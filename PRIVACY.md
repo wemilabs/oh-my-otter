@@ -92,10 +92,10 @@ delete it.
    issue form instead.
 3. The `ingest-report` GitHub Action extracts the JSON, validates it against a
    strict schema (unknown fields are rejected) plus the plausibility checks
-   below, and opens a pull request containing only the validated fields as
-   one file in `dataset/reports/`. A maintainer reviews the JSON-only diff and
-   merges it, then the issue is closed. The action never writes your
-   username, the issue number, or the issue text.
+   below, and appends only the validated fields as one line in
+   `reports.ndjson` on the orphan `dataset` branch, then closes the issue.
+   The action never writes your username, the issue number, or the issue
+   text.
 
 ## Plausibility checks
 
@@ -113,9 +113,8 @@ Before a report is stored, the ingest action re-checks it for consistency:
 
 Self-reports can't be fully authenticated: a determined person can still
 fabricate a plausible run. Cells with fewer than five reports stay hidden in
-aggregate results, and every dataset file arrives through a public pull
-request in the repository's git history — those are the remaining
-safeguards.
+aggregate results, and every report arrives through a public commit on the
+`dataset` branch — those are the remaining safeguards.
 
 ## Enforcement
 

@@ -16,11 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: read
+      issues: write
     outputs:
       status: ${{ steps.ingest.outputs.status }}
-      file_name: ${{ steps.ingest.outputs.file_name }}
-      contents: ${{ steps.ingest.outputs.contents }}
+      line: ${{ steps.ingest.outputs.line }}
       comment: ${{ steps.ingest.outputs.comment }}
     steps:
       - uses: actions/checkout@v7
@@ -56,74 +55,61 @@ jobs:
           RECENT_ISSUES_FILE: ${{ runner.temp }}/recent-issues.json
           OPEN_ISSUES_FILE: ${{ runner.temp }}/open-issues.json
         run: node packages/benchmarks/scripts/ingest-report.mjs
+      - name: Comment and close an invalid report
+        if: steps.ingest.outputs.status == 'invalid'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT: ${{ steps.ingest.outputs.comment }}
+        run: |
+          set -e
+          printf '%s\n' "$COMMENT" > "$RUNNER_TEMP/comment.md"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/comment.md"
+          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason "not planned"
 
-  publish:
+  commit:
     needs: validate
     if: needs.validate.outputs.status == 'valid'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
-      issues: write
     steps:
       - uses: actions/checkout@v7
-      - name: Write the report file
+      - name: Append the report to reports.ndjson
         env:
-          FILE_NAME: ${{ needs.validate.outputs.file_name }}
-          CONTENTS: ${{ needs.validate.outputs.contents }}
+          LINE: ${{ needs.validate.outputs.line }}
         run: |
           set -e
-          if ! echo "$FILE_NAME" | grep -Eq '^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}\.json$'; then
-            echo "Unexpected file name: $FILE_NAME" >&2
+          if [ -z "$LINE" ] || [ "$LINE" != "${LINE%%$'\n'*}" ] || [ "${LINE#\{}" = "$LINE" ]; then
+            echo "Invalid report line" >&2
             exit 1
           fi
-          FILE="dataset/reports/$FILE_NAME"
-          if [ -e "$FILE" ]; then
-            echo "$FILE already exists" >&2
-            exit 1
-          fi
-          printf '%s' "$CONTENTS" > "$FILE"
-      - name: Push the report branch
-        env:
-          FILE_NAME: ${{ needs.validate.outputs.file_name }}
-        run: |
-          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c "report/${FILE_NAME%.json}"
-          git add -- "dataset/reports/$FILE_NAME"
-          git commit -m "dataset: add benchmark report"
-          git push origin HEAD
-      - name: Open the pull request
-        id: pr
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          FILE_NAME: ${{ needs.validate.outputs.file_name }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-        run: |
-          set -e
-          URL=$(gh pr create --repo "$GH_REPO" --base main \
-            --head "report/${FILE_NAME%.json}" \
-            --title "dataset: add benchmark report" \
-            --body "Adds one validated benchmark report submitted in #$ISSUE_NUMBER. Only the validated payload fields are stored.")
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-      - name: Comment and close the issue
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          COMMENT: ${{ needs.validate.outputs.comment }}
-          PR_URL: ${{ steps.pr.outputs.url }}
-        run: |
-          set -e
-          printf '%s\n\nPull request: %s\n' "$COMMENT" "$PR_URL" > "$RUNNER_TEMP/comment.md"
-          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/comment.md"
-          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason completed
+          for attempt in 1 2 3 4 5; do
+            if git ls-remote --exit-code --heads origin dataset >/dev/null 2>&1; then
+              git fetch origin dataset
+              git checkout -B dataset FETCH_HEAD
+            else
+              git switch dataset 2>/dev/null || git switch --orphan dataset
+              git rm -rf --cached . -q 2>/dev/null || true
+              git clean -fdxq
+            fi
+            printf '%s\n' "$LINE" >> reports.ndjson
+            git add reports.ndjson
+            git commit -qm "dataset: add report"
+            if git push origin dataset; then
+              exit 0
+            fi
+            echo "Push failed (attempt $attempt), retrying" >&2
+          done
+          echo "Failed to push after 5 attempts" >&2
+          exit 1
 
-  reject:
-    needs: validate
-    if: needs.validate.outputs.status == 'invalid'
+  close:
+    needs: [validate, commit]
+    if: needs.validate.outputs.status == 'valid'
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -138,4 +124,4 @@ jobs:
           set -e
           printf '%s\n' "$COMMENT" > "$RUNNER_TEMP/comment.md"
           gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/comment.md"
-          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason "not planned"
+          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason completed
