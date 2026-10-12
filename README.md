@@ -6,7 +6,7 @@ An open-source benchmark and optimization toolkit for seamless Devin integration
 
 ### 1. Scan your repo
 
-`omot init` checks your repo for the things Devin depends on, such as runnable tests, documented setup, lint and typecheck scripts, and CI. You get a readiness score and a list of specific, fixable findings. Run `omot init --fix` to generate missing pieces. The scan runs entirely on your machine and makes no network calls.
+`omot scan` checks your repo for the things Devin depends on, such as runnable tests, documented setup, lint and typecheck scripts, and CI. You get a readiness score and a list of specific, fixable findings. Run `omot scan --fix` to generate missing pieces. The scan runs entirely on your machine and makes no network calls.
 
 ### 2. Benchmark Devin on your code
 
