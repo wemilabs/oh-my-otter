@@ -106,12 +106,13 @@ export async function runReport(
     );
     try {
       const baseline = await scanBaselineCommit(root, run.baseline.commit);
-      scan = baseline.summary;
       if (baseline.hasSubmodules) {
         io.stderr(
-          "Submodules aren't checked out for this rescan, so checks that depend on them may differ.\n",
+          "This run was started with an older omot that didn't record readiness at start, and the repo uses git submodules, which omot can't check out offline. The readiness data would be wrong, so this run can't be reported. Start a new bench run with this omot (it records readiness at start) and report that one.\n",
         );
+        return 1;
       }
+      scan = baseline.summary;
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       io.stderr(

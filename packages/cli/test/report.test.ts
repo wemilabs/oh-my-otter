@@ -371,7 +371,7 @@ describe("omot report", () => {
     expect(result.stdout).toBe("");
   });
 
-  it("warns about submodules when rescanning a legacy run", async () => {
+  it("refuses to report a legacy run when the baseline has submodules", async () => {
     const root = await repo({
       ...fixture,
       ".gitmodules": '[submodule "lib"]\n\tpath = lib\n\turl = ./lib\n',
@@ -394,8 +394,9 @@ describe("omot report", () => {
       `${JSON.stringify(run, null, 2)}\n`,
     );
     const result = await invoke(["report", "--dry-run"], { cwd: root });
-    expect(result.code).toBe(0);
-    expect(result.stderr).toContain("Submodules aren't checked out");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("can't be reported");
+    expect(result.stdout).toBe("");
     const worktrees = await git(root, ["worktree", "list"]);
     expect(worktrees.trim().split("\n")).toHaveLength(1);
   });
