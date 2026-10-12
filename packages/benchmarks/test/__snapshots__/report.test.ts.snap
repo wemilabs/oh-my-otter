@@ -86,7 +86,7 @@ exports[`report payload schema > matches the JSON schema snapshot 1`] = `
       "type": "number",
     },
     "scoring_version": {
-      "maximum": 9007199254740991,
+      "maximum": 1,
       "minimum": 1,
       "type": "integer",
     },

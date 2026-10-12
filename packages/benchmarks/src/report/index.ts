@@ -16,5 +16,11 @@ export {
 export type { BuildReportOptions, ReportPayload } from "./payload";
 export { agentsFileSchema, canonicalAgent, OTHER_AGENT } from "./agents";
 export type { AgentsFile } from "./agents";
-export { extractPayloadJson, ingestIssue, reportFileName } from "./ingest";
-export type { IngestResult } from "./ingest";
+export { checkReportPlausibility } from "./plausibility";
+export {
+  extractPayloadJson,
+  ingestIssue,
+  rateLimitProblem,
+  reportFileName,
+} from "./ingest";
+export type { IngestResult, RateLimitIssue } from "./ingest";

@@ -11,13 +11,22 @@ import {
   BUILTIN_TASK_IDS,
   buildReportPayload,
   canonicalAgent,
+  checkReportPlausibility,
   EXAMPLE_REPORT_PAYLOAD,
   ingestIssue,
+  rateLimitProblem,
   reportFileName,
   reportPayloadSchema,
   serializeReportPayload,
 } from "../src/report";
-import { builtinTasks, detectStack, writeIngestResult } from "../src/index";
+import {
+  builtinTasks,
+  detectStack,
+  summarizeScan,
+  writeIngestResult,
+} from "../src/index";
+import { runChecks } from "@oh-my-otter/core";
+import { builtinChecks } from "@oh-my-otter/checks";
 import type { RunFile } from "../src/index";
 import { createRepo } from "./helpers";
 
@@ -450,6 +459,14 @@ function validBody(payload: unknown = EXAMPLE_REPORT_PAYLOAD): string {
   return `Submitted by @OtterFan42 — thanks!\n\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\`\n\nFiled via omot report.`;
 }
 
+const ingestDefaults = {
+  latestCliVersion: "0.3.0",
+  recent: [],
+  open: [],
+  now: new Date("2026-10-10T12:34:56Z"),
+  random: "abcd1234",
+} as const;
+
 describe("ingestIssue", () => {
   const input = (overrides: Partial<Parameters<typeof ingestIssue>[0]>) =>
     ingestIssue({
@@ -458,8 +475,7 @@ describe("ingestIssue", () => {
       agents: {
         agents: [{ id: "claude", display_name: "C", aliases: ["claude-code"] }],
       },
-      now: new Date("2026-10-10T12:34:56Z"),
-      random: "abcd1234",
+      ...ingestDefaults,
       ...overrides,
     });
 
@@ -476,8 +492,8 @@ describe("ingestIssue", () => {
         body: bad,
         author: "someone",
         agents,
+        ...ingestDefaults,
         now: new Date(),
-        random: "abcd1234",
       });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.comment).toContain("`");
@@ -489,8 +505,8 @@ describe("ingestIssue", () => {
       body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, attempts: "one" }),
       author: "someone",
       agents: await agentsFile(),
+      ...ingestDefaults,
       now: new Date(),
-      random: "abcd1234",
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.comment).toContain("- attempts:");
@@ -501,8 +517,8 @@ describe("ingestIssue", () => {
     const base = {
       author: "someone",
       agents,
+      ...ingestDefaults,
       now: new Date(),
-      random: "abcd1234",
     };
     for (const [body, needles] of [
       [
@@ -534,8 +550,7 @@ describe("ingestIssue", () => {
       body: validBody(),
       author: "OtterFan42",
       agents: await agentsFile(),
-      now: new Date("2026-10-10T12:34:56Z"),
-      random: "abcd1234",
+      ...ingestDefaults,
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -560,33 +575,32 @@ describe("ingestIssue", () => {
     if (!result.ok) expect(result.comment).toContain("username");
   });
 
-  it("ignores canonical agent names but catches hyphenated handles", async () => {
+  it("screens non-canonical handles per field, not per handle", async () => {
     const agents = await agentsFile();
-    for (const [author, model] of [
-      ["codex", "gpt-5-codex"],
-      ["ode", "gpt-5-codex"],
-    ] as const) {
-      const accepted = ingestIssue({
-        body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, model }),
+    const run = (author: string, payload: unknown) =>
+      ingestIssue({
+        body: validBody(payload),
         author,
         agents,
+        ...ingestDefaults,
         now: new Date(),
-        random: "abcd1234",
       });
-      expect(accepted.ok).toBe(true);
-    }
-    for (const [author, model] of [
-      ["jdoe42", "jdoe42-model"],
-      ["jdoe42", "x-jdoe42"],
-      ["claude-fan", "claude-fan-build"],
+    // A canonical agent slug always passes, whoever submits it.
+    expect(run("codex", { ...EXAMPLE_REPORT_PAYLOAD, agent: "codex" }).ok).toBe(
+      true,
+    );
+    expect(
+      run("ode", { ...EXAMPLE_REPORT_PAYLOAD, model: "gpt-5-codex" }).ok,
+    ).toBe(true);
+    for (const [author, payload] of [
+      ["codex", { ...EXAMPLE_REPORT_PAYLOAD, model: "codex-private" }],
+      ["codex", { ...EXAMPLE_REPORT_PAYLOAD, model: "gpt-5-codex" }],
+      ["devin-ai", { ...EXAMPLE_REPORT_PAYLOAD, model: "devin-ai-private" }],
+      ["jdoe42", { ...EXAMPLE_REPORT_PAYLOAD, model: "x-jdoe42" }],
+      ["jdoe42", { ...EXAMPLE_REPORT_PAYLOAD, model: "jdoe42-model" }],
+      ["claude-fan", { ...EXAMPLE_REPORT_PAYLOAD, model: "claude-fan-build" }],
     ] as const) {
-      const rejected = ingestIssue({
-        body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, model }),
-        author,
-        agents,
-        now: new Date(),
-        random: "abcd1234",
-      });
+      const rejected = run(author, payload);
       expect(rejected.ok).toBe(false);
       if (!rejected.ok) expect(rejected.comment).toContain("username");
     }
@@ -605,7 +619,7 @@ describe("ingestIssue", () => {
         human_corrections: 1,
         human_minutes: 12,
         attempts: 1,
-        readiness_score: 82,
+        readiness_score: 100,
         checks: { "test-script": "pass" },
         stack: {
           package_manager: "pnpm",
@@ -616,8 +630,8 @@ describe("ingestIssue", () => {
       }),
       author: "claude",
       agents: await agentsFile(),
+      ...ingestDefaults,
       now: new Date(),
-      random: "abcd1234",
     });
     expect(result.ok).toBe(true);
   });
@@ -626,5 +640,119 @@ describe("ingestIssue", () => {
     expect(
       reportFileName(new Date("2026-10-10T12:34:56.789Z"), "abcd1234"),
     ).toBe("20261010T123456Z-abcd1234.json");
+  });
+});
+
+describe("rateLimitProblem", () => {
+  const now = new Date("2026-10-10T12:00:00Z");
+  const issue = (n: number, minutesAgo = 30) => ({
+    number: n,
+    created_at: new Date(now.getTime() - minutesAgo * 60_000).toISOString(),
+  });
+
+  it("passes under the limit", () => {
+    expect(
+      rateLimitProblem({
+        recent: [issue(1), issue(2)],
+        open: [issue(1)],
+        currentIssueNumber: 9,
+        now,
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects three recent report issues", () => {
+    expect(
+      rateLimitProblem({
+        recent: [issue(1), issue(2), issue(3)],
+        open: [],
+        currentIssueNumber: 9,
+        now,
+      }),
+    ).not.toBeNull();
+    // Older issues don't count.
+    expect(
+      rateLimitProblem({
+        recent: [issue(1), issue(2), issue(3, 90)],
+        open: [],
+        currentIssueNumber: 9,
+        now,
+      }),
+    ).toBeNull();
+  });
+
+  it("rejects three open report issues", () => {
+    expect(
+      rateLimitProblem({
+        recent: [],
+        open: [issue(1), issue(2), issue(3)],
+        currentIssueNumber: 9,
+        now,
+      }),
+    ).not.toBeNull();
+  });
+
+  it("excludes pull requests and the current issue", () => {
+    expect(
+      rateLimitProblem({
+        recent: [
+          { ...issue(1), pull_request: {} },
+          { ...issue(2), pull_request: {} },
+          issue(9),
+        ],
+        open: [issue(9)],
+        currentIssueNumber: 9,
+        now,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("checkReportPlausibility", () => {
+  const ctx = {
+    latestCliVersion: "0.3.0",
+    today: new Date("2026-10-10T12:00:00Z"),
+  };
+
+  it("accepts the example payload", () => {
+    expect(checkReportPlausibility(EXAMPLE_REPORT_PAYLOAD, ctx)).toEqual([]);
+  });
+
+  it("flags doctored fields", () => {
+    const plausible = (patch: Partial<typeof EXAMPLE_REPORT_PAYLOAD>) =>
+      checkReportPlausibility({ ...EXAMPLE_REPORT_PAYLOAD, ...patch }, ctx);
+    expect(plausible({ readiness_score: 100 })).toHaveLength(1);
+    expect(plausible({ task_version: 99 })).toHaveLength(1);
+    expect(plausible({ cli_version: "9.9.9" })).toHaveLength(1);
+    expect(plausible({ submitted_on: "2026-10-20" })).toHaveLength(1);
+    // One day of grace is allowed.
+    expect(plausible({ submitted_on: "2026-10-11" })).toEqual([]);
+    // Older cli versions are fine.
+    expect(plausible({ cli_version: "0.1.0" })).toEqual([]);
+  });
+
+  it("recomputes a real scan score exactly", async () => {
+    const root = await createRepo({
+      "package.json": JSON.stringify({
+        name: "f",
+        scripts: { test: "node --test" },
+      }),
+      "package-lock.json": "{}",
+      "tsconfig.json": "{}",
+    });
+    const ctx2 = createCheckContext(root);
+    const report = await runChecks(builtinChecks, ctx2);
+    const stack = await detectStack(ctx2);
+    const summary = summarizeScan(report, stack);
+    const payload = buildReportPayload(verifiedRun, summary, {
+      cliVersion: "0.3.0",
+      today: new Date("2026-10-10T12:00:00Z"),
+    });
+    expect(
+      checkReportPlausibility(payload, {
+        latestCliVersion: "0.3.0",
+        today: new Date("2026-10-10T12:00:00Z"),
+      }),
+    ).toEqual([]);
   });
 });

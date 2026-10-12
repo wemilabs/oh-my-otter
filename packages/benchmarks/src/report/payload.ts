@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SCORING_VERSION } from "@oh-my-otter/core";
 import {
   AGENT_PATTERN,
   AGENT_VERSION_PATTERN,
@@ -24,6 +25,17 @@ export const BUILTIN_TASK_IDS = [
   tsStrictFile.id,
   fixFailingTest.id,
 ] as [string, ...string[]];
+
+export const BUILTIN_TASK_VERSIONS: Record<string, number> = Object.fromEntries(
+  [
+    depPatchBump,
+    addUnitTest,
+    fixLintRule,
+    a11yImgAlt,
+    tsStrictFile,
+    fixFailingTest,
+  ].map((manifest) => [manifest.id, manifest.version]),
+);
 
 export { checkStatusSchema, stackSchema } from "./scan";
 
@@ -67,7 +79,7 @@ export const reportPayloadSchema = z
       .string()
       .max(32)
       .regex(/^\d+\.\d+\.\d+(?:-[0-9a-z.-]+)?$/),
-    scoring_version: z.number().int().min(1),
+    scoring_version: z.number().int().min(1).max(SCORING_VERSION),
     task_id: z.enum(BUILTIN_TASK_IDS),
     task_version: z.number().int().min(1),
     agent: z
@@ -102,7 +114,7 @@ export const EXAMPLE_REPORT_PAYLOAD: ReportPayload = {
   cli_version: "0.3.0",
   scoring_version: 1,
   task_id: "add-unit-test",
-  task_version: 1,
+  task_version: 4,
   agent: "claude-code",
   agent_version: "2.1.0",
   model: "claude-opus-4",
@@ -110,7 +122,7 @@ export const EXAMPLE_REPORT_PAYLOAD: ReportPayload = {
   human_corrections: 1,
   human_minutes: 12,
   attempts: 1,
-  readiness_score: 82,
+  readiness_score: 63,
   checks: {
     "test-script": "pass",
     "lint-script": "fail",

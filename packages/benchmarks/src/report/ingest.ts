@@ -5,6 +5,7 @@ import {
   SECRET_SLUG_MESSAGE,
   type ReportPayload,
 } from "./payload";
+import { checkReportPlausibility } from "./plausibility";
 import type { AgentsFile } from "./agents";
 
 const MAX_BODY_LENGTH = 20_000;
@@ -97,19 +98,45 @@ function invalidComment(lines: string[]): string {
   ].join("\n");
 }
 
+export interface RateLimitIssue {
+  number?: number;
+  created_at?: string;
+  pull_request?: unknown;
+}
+
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const RATE_LIMIT = 3;
+
+export function rateLimitProblem(input: {
+  recent: readonly RateLimitIssue[];
+  open: readonly RateLimitIssue[];
+  currentIssueNumber?: number;
+  now: Date;
+}): string | null {
+  const relevant = (issues: readonly RateLimitIssue[]) =>
+    issues.filter(
+      (issue) =>
+        issue.pull_request === undefined &&
+        issue.number !== input.currentIssueNumber,
+    );
+  const recentCount = relevant(input.recent).filter(
+    (issue) =>
+      issue.created_at !== undefined &&
+      input.now.getTime() - Date.parse(issue.created_at) < RATE_LIMIT_WINDOW_MS,
+  ).length;
+  if (recentCount >= RATE_LIMIT || relevant(input.open).length >= RATE_LIMIT) {
+    return (
+      "You've submitted several report issues recently. Wait about an hour " +
+      "or close your earlier report issues before submitting again."
+    );
+  }
+  return null;
+}
+
 function leaksUsername(payload: ReportPayload, agents: AgentsFile, h: string) {
   const canonical = new Set(
     agents.agents.flatMap((agent) => [agent.id, ...agent.aliases]),
   );
-  if (canonical.has(h)) return false;
-  const agentTokens = new Set(
-    agents.agents.flatMap((agent) =>
-      [agent.id, ...agent.aliases].flatMap((slug) =>
-        slug.toLowerCase().split(/[._-]/),
-      ),
-    ),
-  );
-  if (agentTokens.has(h)) return false;
   const hs = h.split(/[._-]/).filter((segment) => segment !== "");
   const aligned = (field: string) => {
     const fs = field.toLowerCase().split(/[._-]/);
@@ -122,8 +149,8 @@ function leaksUsername(payload: ReportPayload, agents: AgentsFile, h: string) {
   return [payload.agent, payload.agent_version, payload.model].some(
     (field) =>
       field !== undefined &&
-      aligned(field) &&
-      !(field === payload.agent && canonical.has(field)),
+      !canonical.has(field.toLowerCase()) &&
+      aligned(field),
   );
 }
 
@@ -131,9 +158,22 @@ export function ingestIssue(input: {
   body: string;
   author: string;
   agents: AgentsFile;
+  latestCliVersion: string;
+  recent: readonly RateLimitIssue[];
+  open: readonly RateLimitIssue[];
+  currentIssueNumber?: number;
   now: Date;
   random: string;
 }): IngestResult {
+  const limited = rateLimitProblem({
+    recent: input.recent,
+    open: input.open,
+    currentIssueNumber: input.currentIssueNumber,
+    now: input.now,
+  });
+  if (limited !== null) {
+    return { ok: false, comment: invalidComment([`- ${limited}`]) };
+  }
   let value: unknown;
   try {
     value = extractPayloadJson(input.body);
@@ -157,6 +197,16 @@ export function ingestIssue(input: {
     };
   }
   const payload = parsed.data;
+  const problems = checkReportPlausibility(payload, {
+    latestCliVersion: input.latestCliVersion,
+    today: input.now,
+  });
+  if (problems.length > 0) {
+    return {
+      ok: false,
+      comment: invalidComment(problems.map((problem) => `- ${problem}`)),
+    };
+  }
   const handle = input.author.toLowerCase();
   if (handle.length >= 3 && leaksUsername(payload, input.agents, handle)) {
     return {
@@ -171,6 +221,6 @@ export function ingestIssue(input: {
     fileName: reportFileName(input.now, input.random),
     contents: serializeReportPayload(payload),
     comment:
-      "Thanks! Your report passed validation and was added to the public dataset. Only the JSON fields were stored; your username and this issue's text were not.",
+      "Thanks! Your report passed validation and a pull request will add it to the public dataset after maintainer review. Only the JSON fields were stored; your username and this issue's text were not stored.",
   };
 }

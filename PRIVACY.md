@@ -24,7 +24,7 @@ This is an example report. Every report has exactly these fields — no more.
   "cli_version": "0.3.0",
   "scoring_version": 1,
   "task_id": "add-unit-test",
-  "task_version": 1,
+  "task_version": 4,
   "agent": "claude-code",
   "agent_version": "2.1.0",
   "model": "claude-opus-4",
@@ -32,7 +32,7 @@ This is an example report. Every report has exactly these fields — no more.
   "human_corrections": 1,
   "human_minutes": 12,
   "attempts": 1,
-  "readiness_score": 82,
+  "readiness_score": 63,
   "checks": {
     "test-script": "pass",
     "lint-script": "fail",
@@ -91,9 +91,31 @@ delete it.
    too long for a URL, it's copied to your clipboard for you to paste into the
    issue form instead.
 3. The `ingest-report` GitHub Action extracts the JSON, validates it against a
-   strict schema (unknown fields are rejected), stores only the validated
-   fields as one file in `dataset/reports/`, and closes the issue. The action
-   never writes your username, the issue number, or the issue text.
+   strict schema (unknown fields are rejected) plus the plausibility checks
+   below, and opens a pull request containing only the validated fields as
+   one file in `dataset/reports/`. A maintainer reviews the JSON-only diff and
+   merges it, then the issue is closed. The action never writes your
+   username, the issue number, or the issue text.
+
+## Plausibility checks
+
+Before a report is stored, the ingest action re-checks it for consistency:
+
+- `task_version` can't be newer than the task version bundled with the
+  released omot.
+- `readiness_score` must equal the score recomputed from `checks` using the
+  built-in check weights (for the current `scoring_version`).
+- `cli_version` can't be newer than the latest released omot.
+- `submitted_on` can't be more than a day in the future.
+- The schema itself already enforces `attempts >= 1` and known check ids.
+- At most two other report issues per author per hour / open at once; more
+  are declined with a comment.
+
+Self-reports can't be fully authenticated: a determined person can still
+fabricate a plausible run. Cells with fewer than five reports stay hidden in
+aggregate results, and every dataset file arrives through a public pull
+request in the repository's git history — those are the remaining
+safeguards.
 
 ## Enforcement
 
