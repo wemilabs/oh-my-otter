@@ -1,0 +1,14 @@
+export { default as packageManagerLockfile } from "./checks/package-manager-lockfile";
+export { default as nodeVersionPinned } from "./checks/node-version-pinned";
+export { default as installDocumented } from "./checks/install-documented";
+export { default as testScript } from "./checks/test-script";
+export { default as testsExist } from "./checks/tests-exist";
+export { default as testsPass } from "./checks/tests-pass";
+export { default as lintScript } from "./checks/lint-script";
+export { default as typecheckScript } from "./checks/typecheck-script";
+export { default as buildScript } from "./checks/build-script";
+export { default as ciConfig } from "./checks/ci-config";
+export { default as envExample } from "./checks/env-example";
+export { default as formatterConfig } from "./checks/formatter-config";
+export { default as contributingOrAgentsDoc } from "./checks/contributing-or-agents-doc";
+export { default as gitignoreSane } from "./checks/gitignore-sane";

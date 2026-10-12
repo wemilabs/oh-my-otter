@@ -18,7 +18,7 @@ The project is **unofficial and independent**. It is not affiliated with or endo
 
 ## 2. Tech decisions (fixed)
 
-- Language: TypeScript everywhere, Node 20+.
+- Language: TypeScript everywhere, Node 22.13+.
 - Monorepo: pnpm workspaces + Turborepo.
 - CLI: `commander`, `picocolors`, `zod`, `execa`, `fast-glob`, `clipboardy` (clipboard fallback for `omot report`). Bundle with `tsup`. Test with `vitest`.
 - Website: Next.js (App Router), TypeScript, Tailwind CSS/shadcn ui, statically generated (SSG, not `output: 'export'`; see 8.1), deployed on Vercel. Docs with Fumadocs, which pairs well with Next.js.

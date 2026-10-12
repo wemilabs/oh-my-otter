@@ -1,0 +1,45 @@
+{
+  "name": "@oh-my-otter/core",
+  "version": "0.0.0",
+  "description": "Shared types, scoring, and scanner runtime for Oh My Otter",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wemilabs/oh-my-otter.git",
+    "directory": "packages/core"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "source": "./src/index.ts",
+      "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "source": "./src/node.ts",
+      "import": "./dist/node.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "execa": "^10.1.0",
+    "ignore": "^7.0.12",
+    "tinyglobby": "^0.2.17",
+    "zod": "^4.6.6"
+  }
+}
