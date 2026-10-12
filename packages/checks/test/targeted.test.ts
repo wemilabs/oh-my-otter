@@ -528,7 +528,7 @@ describe("targeted checks", () => {
     await withTempRepo(async (root) => {
       await writeFile(
         path.join(root, "README.md"),
-        "## Installation\r\n\r\n```sh\r\ncorepack enable\r\n```\r\n\r\nPlease run yarn install when ready.\r\n",
+        "## Installation\r\n\r\n```sh\r\ncorepack enable\r\n```\r\n\r\nyarn\r\n",
       );
       expect(
         (await installDocumented.run(createCheckContext(root))).status,
@@ -688,7 +688,9 @@ describe("targeted checks", () => {
   it.each([
     "## Installation\n\nWe use `yarn` workspaces. See the team for setup details.\n",
     "## Setup\n\nThis repo uses `npx` scripts and `pnpm`.\n",
-    "## Installation\n\nRun pnpm install first.\n",
+    "## Installation\n\nwe use yarn\n",
+    "## Installation\n\nWe use pnpm and npx scripts.\n",
+    "## Installation\n\n<pre># npm install</pre>\n",
     "## Installation\n\n```sh\nyarn --version\n```\n",
     "## Installation\n\n```sh\nyarn -v\n```\n",
     "## Installation\n\n```sh\n# npm install\n```\n",
@@ -720,6 +722,34 @@ describe("targeted checks", () => {
       ).toBe("pass");
     });
   });
+
+  it.each([
+    "## Installation\n\nRun pnpm install first.\n",
+    "## Installation\n\nRun pnpm install to set up.\n",
+    "## Setup\n\nInstall dependencies with npm ci, then build.\n",
+  ])("recognizes install commands in prose: %s", async (readme) => {
+    await withTempRepo(async (root) => {
+      await writeFile(path.join(root, "README.md"), readme);
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("pass");
+    });
+  });
+
+  it.each([
+    ["pass", "## Installation\n\nStep #1: run yarn install\n"],
+    ["warn", "## Installation\n\n# npm install\n"],
+  ] as const)(
+    "returns %s for a plain-text README line: %s",
+    async (status, readme) => {
+      await withTempRepo(async (root) => {
+        await writeFile(path.join(root, "README.txt"), readme);
+        expect(
+          (await installDocumented.run(createCheckContext(root))).status,
+        ).toBe(status);
+      });
+    },
+  );
 
   it("accepts a line-start install command in a plain-text README", async () => {
     await withTempRepo(async (root) => {

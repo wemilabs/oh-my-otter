@@ -11,6 +11,8 @@ const anchoredInstallPattern = /^(?:pnpm|npm|bun)\s+(?:install|i|ci|add)\b/i;
 const anchoredYarnInstallPattern = /^yarn\s+(?:install|add)\b/i;
 const yarnOnlyPattern =
   /^yarn(?!.*\s(?:--version|-v|--help|-h)\b)(?:\s+--?[\w-]+(?:=\S+)?)*\s*$/;
+const proseInstallPattern =
+  /\b(?:pnpm|npm|bun)\s+(?:install|i|ci)\b|\byarn\s+install\b/i;
 const shellCommentPattern = /(?:^|\s)#.*$/;
 const yarnProsePattern = /\b(?:run|running|execute|executing|type|enter)\s*$/i;
 
@@ -37,9 +39,9 @@ function codeTextHasCommand(text: string): boolean {
 
 function plainTextHasCommand(contents: string): boolean {
   for (const line of contents.split(/\r?\n/)) {
-    const stripped = line
-      .replace(shellCommentPattern, "")
-      .replace(/^\s*(?:[$>]\s+)?/, "");
+    if (line.trimStart().startsWith("#")) continue;
+    if (proseInstallPattern.test(line)) return true;
+    const stripped = line.replace(/^\s*(?:[$>]\s+)?/, "");
     if (
       anchoredInstallPattern.test(stripped) ||
       anchoredYarnInstallPattern.test(stripped) ||
@@ -90,18 +92,20 @@ function markdownHasCommand(contents: string): boolean {
       continue;
     }
     const indented = /^(?: {4}|\t)/.test(line);
-    if (indented && indentedCodeAllowed && codeLineHasCommand(line)) {
-      return true;
+    if (indented && indentedCodeAllowed) {
+      blank(offsets[index]!, offsets[index]! + line.length);
+      if (codeLineHasCommand(line)) return true;
     }
     indentedCodeAllowed = indented || line.trim() === "";
   }
 
-  const stripped = masked.join("");
-  for (const match of stripped.matchAll(
+  for (const match of contents.matchAll(
     /<(pre|code)\b[^>]*>([\s\S]*?)<\/\1>/gi,
   )) {
     if (codeTextHasCommand(match[2] ?? "")) return true;
+    blank(match.index!, match.index! + match[0].length);
   }
+  const stripped = masked.join("");
   for (const match of stripped.matchAll(/(`+)([\s\S]*?)\1/g)) {
     const span = match[2] ?? "";
     if (
@@ -117,7 +121,7 @@ function markdownHasCommand(contents: string): boolean {
       return true;
     }
   }
-  return false;
+  return proseInstallPattern.test(stripped);
 }
 
 function hasInstallCommand(contents: string, readme: string): boolean {
