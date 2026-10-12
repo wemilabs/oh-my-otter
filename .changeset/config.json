@@ -2,13 +2,10 @@
   "$schema": "https://unpkg.com/@changesets/config@3.0.5/schema.json",
   "baseBranch": "main",
   "access": "public",
-  "fixed": [
-    [
-      "oh-my-otter",
-      "@oh-my-otter/core",
-      "@oh-my-otter/checks",
-      "@oh-my-otter/benchmarks"
-    ]
-  ],
+  "fixed": [["oh-my-otter", "@oh-my-otter/core", "@oh-my-otter/checks"]],
+  "privatePackages": {
+    "version": false,
+    "tag": false
+  },
   "commit": false
 }

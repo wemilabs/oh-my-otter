@@ -6,6 +6,10 @@ import { execa } from "execa";
 import { afterEach, describe, expect, it } from "vitest";
 import { badgeMarkdown, main } from "../src/cli";
 
+const cliRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
 const fixtures = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../checks/test/fixtures",
@@ -399,5 +403,23 @@ describe("CLI executable", () => {
       { cwd: path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..") },
     );
     expect(JSON.parse(result.stdout).score).toBe(100);
+  });
+});
+
+describe("bundled benchmarks", () => {
+  it("inlines @oh-my-otter/benchmarks and its task assets into dist", async () => {
+    const pkg = JSON.parse(
+      await readFile(path.join(cliRoot, "package.json"), "utf8"),
+    ) as {
+      dependencies?: Record<string, string>;
+    };
+    expect(pkg.dependencies).not.toHaveProperty("@oh-my-otter/benchmarks");
+    for (const file of ["bin.js", "index.js"]) {
+      const code = await readFile(path.join(cliRoot, "dist", file), "utf8");
+      expect(code).not.toMatch(/["']@oh-my-otter\/benchmarks["']/);
+    }
+    const bin = await readFile(path.join(cliRoot, "dist", "bin.js"), "utf8");
+    expect(bin).toContain('"add-unit-test"');
+    expect(bin).toContain("The test suite in this repository is failing.");
   });
 });

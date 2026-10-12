@@ -47,8 +47,10 @@
     "lint": "eslint .",
     "test": "vitest run"
   },
+  "devDependencies": {
+    "@oh-my-otter/benchmarks": "workspace:*"
+  },
   "dependencies": {
-    "@oh-my-otter/benchmarks": "workspace:*",
     "@oh-my-otter/checks": "workspace:*",
     "@oh-my-otter/core": "workspace:*",
     "commander": "^15.0.0",
