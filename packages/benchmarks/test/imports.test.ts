@@ -111,6 +111,47 @@ describe("module imports", () => {
     expect(localNames(requireAlias, "add", scope)).toEqual(["add"]);
     expect(referencesIdentifier(requireAlias, "add", scope)).toBe(false);
   });
+
+  it.each([
+    ['import { add } from "./other.mjs";', "named import"],
+    ['import { x as add } from "./other.mjs";', "named import alias"],
+    ['import add from "./other.mjs";', "default import"],
+    ['import * as add from "./other.mjs";', "namespace import"],
+    ['const { add } = require("./other.mjs");', "require shorthand"],
+    ['const { x: add } = require("./other.mjs");', "require alias"],
+    [
+      'const { add } = await import("./other.mjs");',
+      "dynamic import shorthand",
+    ],
+    ['const add = require("./other.mjs");', "assigned require"],
+  ])("drops a bare name bound by an unrelated %s", (declaration) => {
+    const scope = { fromFile: "test/add.test.mjs", target: "src/math.mjs" };
+    const source = `
+      import { add as sum } from "../src/math.mjs";
+      ${declaration}
+      test("x", () => add(1, 2));
+    `;
+    expect(localNames(source, "add", scope)).toEqual(["sum"]);
+    expect(referencesIdentifier(source, "add", scope)).toBe(false);
+  });
+
+  it("keeps target aliases and namespace member access", () => {
+    const scope = { fromFile: "test/add.test.mjs", target: "src/math.mjs" };
+    const targetAlias = `
+      import { add as sum } from "../src/math.mjs";
+      import { add } from "./other.mjs";
+      test("x", () => sum(1, 2));
+    `;
+    expect(referencesIdentifier(targetAlias, "add", scope)).toBe(true);
+
+    const targetNamespace = `
+      import * as math from "../src/math.mjs";
+      import { add } from "./other.mjs";
+      test("x", () => math.add(1, 2));
+    `;
+    expect(localNames(targetNamespace, "add", scope)).toEqual([]);
+    expect(referencesIdentifier(targetNamespace, "add", scope)).toBe(true);
+  });
 });
 
 describe("test case counting", () => {

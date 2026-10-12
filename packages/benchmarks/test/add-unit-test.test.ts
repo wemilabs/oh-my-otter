@@ -107,6 +107,50 @@ test("x", () => sum(1, 2));
     );
   });
 
+  it("does not count a bare name imported from an unrelated module", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "test/other.mjs": "export function add(a, b) { return a + b; }\n",
+      "test/add.test.mjs": `import { test } from "node:test";
+import { add as sum } from "../src/math.mjs";
+import { add } from "./other.mjs";
+test("x", () => add(1, 2));
+`,
+    });
+    expect(result.outcome).toBe("fail");
+    expect(result.reasons.join("\n")).toContain(
+      "import src/math.mjs but never use add",
+    );
+  });
+
+  it("keeps a target alias when the bare name comes from another module", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "test/other.mjs": "export function add(a, b) { return a + b; }\n",
+      "test/add.test.mjs": `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { add as sum } from "../src/math.mjs";
+import { add } from "./other.mjs";
+test("x", () => assert.equal(sum(1, 2), 3));
+`,
+    });
+    expect(result.outcome).toBe("pass");
+  });
+
+  it("keeps target namespace member access when the bare name comes from another module", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "test/other.mjs": "export function add(a, b) { return a + b; }\n",
+      "test/add.test.mjs": `import { test } from "node:test";
+import assert from "node:assert/strict";
+import * as math from "../src/math.mjs";
+import { add } from "./other.mjs";
+test("x", () => assert.equal(math.add(1, 2), 3));
+`,
+    });
+    expect(result.outcome).toBe("pass");
+  });
+
   it("is partial when source files change too", async () => {
     const started = await startTask(task, base, params);
     const result = await verifyTask(task, started, params, {

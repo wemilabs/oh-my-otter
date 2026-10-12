@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { execa } from "execa";
 import { createCheckContext } from "@oh-my-otter/core/node";
@@ -61,9 +61,37 @@ async function fileFingerprint(
   root: string,
   file: string,
 ): Promise<string | null> {
+  const fullPath = path.join(root, file);
   try {
+    const info = await stat(fullPath);
+    if (info.isDirectory()) {
+      const records: string[] = [];
+      const collect = async (
+        directory: string,
+        relativeDirectory: string,
+      ): Promise<void> => {
+        for (const entry of await readdir(directory, { withFileTypes: true })) {
+          if (entry.name === ".git") continue;
+          const relativePath = relativeDirectory
+            ? `${relativeDirectory}/${entry.name}`
+            : entry.name;
+          const entryPath = path.join(directory, entry.name);
+          const entryInfo = await stat(entryPath);
+          records.push(
+            `${relativePath}\0${entryInfo.size}\0${entryInfo.mtimeMs}`,
+          );
+          if (entryInfo.isDirectory()) {
+            await collect(entryPath, relativePath);
+          }
+        }
+      };
+      await collect(fullPath, "");
+      const hash = createHash("sha256");
+      for (const record of records.sort()) hash.update(record).update("\0");
+      return hash.digest("hex");
+    }
     return createHash("sha256")
-      .update(await readFile(path.join(root, file)))
+      .update(await readFile(fullPath))
       .digest("hex");
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;

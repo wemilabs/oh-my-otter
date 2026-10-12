@@ -78,9 +78,23 @@ export function importsModule(
 }
 
 const namedImportPattern = /\bimport\s*\{([^}]*)\}/g;
+const staticImportPattern = /\bimport\s+([^;]*?)\s+from\s*(["'])/g;
 const destructuredImportPattern =
   /\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:await\s+)?(?:require|import)\s*\(/g;
+const assignedImportPattern =
+  /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:require|import)\s*\(/g;
 const identifierPattern = /^[A-Za-z_$][\w$]*$/;
+
+function specifierAt(
+  source: string,
+  open: number,
+  quote: string,
+): string | undefined {
+  const close = source.indexOf(quote, open + 1);
+  if (close === -1) return undefined;
+  const specifier = source.slice(open + 1, close);
+  return specifier.includes("\n") ? undefined : specifier;
+}
 
 function quotedSpecifierAt(
   source: string,
@@ -92,10 +106,7 @@ function quotedSpecifierAt(
   if (!match) return undefined;
   const quote = match[1] as string;
   const open = start + match.index + match[0].length - 1;
-  const close = source.indexOf(quote, open + 1);
-  if (close === -1) return undefined;
-  const specifier = source.slice(open + 1, close);
-  return specifier.includes("\n") ? undefined : specifier;
+  return specifierAt(source, open, quote);
 }
 
 function isInScope(
@@ -107,6 +118,108 @@ function isInScope(
     (specifier !== undefined &&
       resolvesTo(specifier, scope.fromFile, scope.target))
   );
+}
+
+function namedBindings(bindings: string): string[] {
+  const names: string[] = [];
+  for (const binding of bindings.split(",")) {
+    if (/^\s*type\b/.test(binding)) continue;
+    const match =
+      /^\s*([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?\s*$/.exec(binding);
+    if (match) names.push((match[2] ?? match[1]) as string);
+  }
+  return names;
+}
+
+function staticImportBindings(clause: string): string[] {
+  if (/^\s*type\b/.test(clause)) return [];
+  const names: string[] = [];
+  const defaultBinding = /^\s*([A-Za-z_$][\w$]*)\s*(?:,|$)/.exec(clause)?.[1];
+  if (defaultBinding) names.push(defaultBinding);
+  const namespaceBinding = /\*\s+as\s+([A-Za-z_$][\w$]*)/.exec(clause)?.[1];
+  if (namespaceBinding) names.push(namespaceBinding);
+  const named = /\{([^}]*)\}/.exec(clause)?.[1];
+  if (named !== undefined) names.push(...namedBindings(named));
+  return names;
+}
+
+function destructuredBindings(bindings: string): string[] {
+  const names: string[] = [];
+  for (const binding of bindings.split(",")) {
+    const withoutDefault = binding.split("=")[0] ?? "";
+    const match =
+      /^\s*(?:\.\.\.)?([A-Za-z_$][\w$]*)(?:\s*:\s*([A-Za-z_$][\w$]*))?\s*$/.exec(
+        withoutDefault,
+      );
+    if (match) names.push((match[2] ?? match[1]) as string);
+  }
+  return names;
+}
+
+function scopedBindings(
+  source: string,
+  masked: string,
+  scope: { fromFile: string; target: string },
+): {
+  otherModuleBindings: Set<string>;
+  targetNamespaces: Set<string>;
+} {
+  const otherModuleBindings = new Set<string>();
+  const targetNamespaces = new Set<string>();
+  for (const match of masked.matchAll(staticImportPattern)) {
+    const clause = match[1] ?? "";
+    const quote = match[2] as string;
+    const specifier = specifierAt(
+      source,
+      match.index + match[0].length - 1,
+      quote,
+    );
+    const isTarget =
+      specifier !== undefined &&
+      resolvesTo(specifier, scope.fromFile, scope.target);
+    if (isTarget) {
+      const namespace = /\*\s+as\s+([A-Za-z_$][\w$]*)/.exec(clause)?.[1];
+      if (namespace) targetNamespaces.add(namespace);
+    } else {
+      for (const binding of staticImportBindings(clause)) {
+        otherModuleBindings.add(binding);
+      }
+    }
+  }
+  for (const match of masked.matchAll(destructuredImportPattern)) {
+    const specifier = quotedSpecifierAt(
+      source,
+      masked,
+      match.index + match[0].length,
+      /^\s*(["'])/,
+    );
+    if (
+      specifier === undefined ||
+      !resolvesTo(specifier, scope.fromFile, scope.target)
+    ) {
+      for (const binding of destructuredBindings(match[1] ?? "")) {
+        otherModuleBindings.add(binding);
+      }
+    }
+  }
+  for (const match of masked.matchAll(assignedImportPattern)) {
+    const specifier = quotedSpecifierAt(
+      source,
+      masked,
+      match.index + match[0].length,
+      /^\s*(["'])/,
+    );
+    const binding = match[1] as string;
+    if (
+      specifier !== undefined &&
+      resolvesTo(specifier, scope.fromFile, scope.target)
+    ) {
+      targetNamespaces.add(binding);
+    } else {
+      otherModuleBindings.add(binding);
+    }
+  }
+  return { otherModuleBindings, targetNamespaces };
 }
 
 /** Local bindings for imports of `name`, including common aliases. */
@@ -152,7 +265,12 @@ export function localNames(
       }
     }
   }
-  return [...new Set([name, ...aliases])];
+  const names = new Set([name, ...aliases]);
+  if (scope) {
+    const { otherModuleBindings } = scopedBindings(source, masked, scope);
+    if (otherModuleBindings.has(name)) names.delete(name);
+  }
+  return [...names];
 }
 
 function blankRange(text: string, from: number, to: number): string {
@@ -176,10 +294,24 @@ export function referencesIdentifier(
 ): boolean {
   const names = localNames(source, name, scope);
   let masked = maskNonCode(source);
+  const targetNamespaces = scope
+    ? scopedBindings(source, masked, scope).targetNamespaces
+    : new Set<string>();
   for (const pattern of declarationPatterns) {
     for (const match of masked.matchAll(pattern)) {
       masked = blankRange(masked, match.index, match.index + match[0].length);
     }
+  }
+  const escapedName = name.replace(/[$]/g, "\\$");
+  if (
+    [...targetNamespaces].some((namespace) => {
+      const escapedNamespace = namespace.replace(/[$]/g, "\\$");
+      return new RegExp(
+        `(?<![\\w$.])${escapedNamespace}\\s*\\.\\s*${escapedName}(?![\\w$])`,
+      ).test(masked);
+    })
+  ) {
+    return true;
   }
   return names.some((localName) => {
     const escaped = localName.replace(/[$]/g, "\\$");
