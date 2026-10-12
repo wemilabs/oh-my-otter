@@ -101,6 +101,7 @@ function leaksUsername(payload: ReportPayload, agents: AgentsFile, h: string) {
   const canonical = new Set(
     agents.agents.flatMap((agent) => [agent.id, ...agent.aliases]),
   );
+  if (canonical.has(h)) return false;
   const agentTokens = new Set(
     agents.agents.flatMap((agent) =>
       [agent.id, ...agent.aliases].flatMap((slug) =>
@@ -108,16 +109,11 @@ function leaksUsername(payload: ReportPayload, agents: AgentsFile, h: string) {
       ),
     ),
   );
-  const scrubbed = (field: string) =>
-    field
-      .toLowerCase()
-      .split(/[._-]/)
-      .filter((segment) => !agentTokens.has(segment))
-      .join("-");
+  if (agentTokens.has(h)) return false;
   return [payload.agent, payload.agent_version, payload.model].some(
     (field) =>
       field !== undefined &&
-      scrubbed(field).includes(h) &&
+      field.toLowerCase().includes(h) &&
       !(field === payload.agent && canonical.has(field)),
   );
 }

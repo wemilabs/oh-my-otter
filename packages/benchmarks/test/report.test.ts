@@ -559,7 +559,7 @@ describe("ingestIssue", () => {
     if (!result.ok) expect(result.comment).toContain("username");
   });
 
-  it("ignores canonical agent tokens when checking the handle", async () => {
+  it("ignores canonical agent names but catches hyphenated handles", async () => {
     const agents = await agentsFile();
     const accepted = ingestIssue({
       body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, model: "gpt-5-codex" }),
@@ -569,15 +569,20 @@ describe("ingestIssue", () => {
       random: "abcd1234",
     });
     expect(accepted.ok).toBe(true);
-    const rejected = ingestIssue({
-      body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, model: "jdoe42-model" }),
-      author: "jdoe42",
-      agents,
-      now: new Date(),
-      random: "abcd1234",
-    });
-    expect(rejected.ok).toBe(false);
-    if (!rejected.ok) expect(rejected.comment).toContain("username");
+    for (const [author, model] of [
+      ["jdoe42", "jdoe42-model"],
+      ["claude-fan", "claude-fan-build"],
+    ] as const) {
+      const rejected = ingestIssue({
+        body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, model }),
+        author,
+        agents,
+        now: new Date(),
+        random: "abcd1234",
+      });
+      expect(rejected.ok).toBe(false);
+      if (!rejected.ok) expect(rejected.comment).toContain("username");
+    }
   });
 
   it("accepts an agent that equals a canonical alias even if it matches the handle", async () => {
