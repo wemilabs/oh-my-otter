@@ -33,6 +33,7 @@ Scans run locally and make no network calls.
 omot scan [path] [--run] [--json] [--fix] [--yes] [--badge]
           [--plugin <path|package>] [--min-score <n>]
 omot checks [path] [--plugin <path|package>] [--json]
+omot report [path] [--dry-run]
 ```
 
 Use `--run` to execute the repository's test script. `--fix` previews create-only fixes; confirm interactively or use `--yes` to apply them. `--json` prints a machine-readable report, `--badge` prints a Markdown badge, and `--min-score` sets a CI threshold.
@@ -57,7 +58,7 @@ omot bench verify [path] [--corrections <n>] [--minutes <n>] [--agent <name>] [-
 
 Each task has a docs page in [`docs/benchmarks`](docs/benchmarks).
 
-1. Commit your work, then run `omot bench start add-unit-test --param file=src/format.ts --param function=formatPrice --agent claude-code`. It records the baseline commit, start time, and exit codes from the task's available scripts in `.omot/run.json`, then prints the prompt. Use `--skip-baseline-scripts` to skip those checks; verification will then report baseline health as unknown.
+1. Commit your work, then run `omot bench start add-unit-test --param file=src/format.ts --param function=formatPrice --agent claude-code`. It records the baseline commit, start time, a readiness scan of your repo at start, and exit codes from the task's available scripts in `.omot/run.json`, then prints the prompt. Use `--skip-baseline-scripts` to skip those checks; verification will then report baseline health as unknown.
 2. Paste the prompt into your coding agent and let it work. Pull or merge its changes into your working tree.
 3. Run `omot bench verify`. The verifier compares the repo with the baseline and runs the repository's own scripts locally, then prints pass, partial, or fail with reasons. Each verification is appended to `.omot/run.json`; the latest result includes the attempt count. It asks how many times you corrected the agent and how many minutes of human effort it took; pass `--corrections <n> --minutes <n>` to skip the questions in scripts. It exits 1 on fail.
 
@@ -72,6 +73,16 @@ Each task has a docs page in [`docs/benchmarks`](docs/benchmarks).
 `fix-failing-test` checks that the baseline test script passes, then creates a branch named `omot/fix-failing-test-<timestamp>` and records the deliberately introduced bug in a parentless commit named `bench baseline`. The commit has no parent, so its history does not reveal the mutation; your original branch and index are untouched. This is not a security boundary: an agent can still inspect other refs such as `origin/main` or the reflog. Results stay in `.omot/run.json`; `omot bench` sends nothing anywhere.
 
 To add a task, see [writing a task](docs/writing-a-task.md).
+
+## Reporting
+
+```sh
+omot report [path] [--dry-run]
+```
+
+After `omot bench verify`, `omot report` prints the exact JSON it would submit and asks for confirmation before doing anything. The payload is small and anonymous: the task id and version, the outcome, your self-reported corrections/minutes/attempts, the agent slug, the readiness score and per-check statuses recorded at `bench start`, and a coarse stack summary — never repo names, paths, code, commits, or dependency names. [PRIVACY.md](PRIVACY.md) lists every field.
+
+On confirmation it opens a prefilled GitHub issue in your browser (or copies the JSON to your clipboard when it's too long for a URL) — nothing is sent until you click **Create** on the issue. An ingest action then validates the payload strictly, stores only the JSON fields under [`dataset/reports`](dataset/reports), and closes the issue. `--dry-run` prints the payload and exits without submitting.
 
 ## Built-in checks
 

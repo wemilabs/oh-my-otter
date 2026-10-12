@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     branches: [main]
+    paths-ignore: ["dataset/**"]
   workflow_dispatch:
 
 concurrency: release-${{ github.ref }}

@@ -1,0 +1,71 @@
+name: Ingest report
+
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: ingest-report
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    if: github.event.label.name == 'report' && github.event.issue.state == 'open'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo run build --filter=@oh-my-otter/benchmarks...
+      - name: Validate and write the report
+        id: ingest
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          COMMENT_FILE: ${{ runner.temp }}/ingest-comment.md
+        run: node packages/benchmarks/scripts/ingest-report.mjs
+      - name: Commit a valid report
+        if: steps.ingest.outputs.status == 'valid'
+        env:
+          FILE: ${{ steps.ingest.outputs.file }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$FILE"
+          git commit -m "dataset: add benchmark report"
+          for attempt in 1 2 3; do
+            git pull --rebase && git push && exit 0
+          done
+          echo "Failed to push after 3 attempts" >&2
+          exit 1
+      - name: Comment on the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_FILE: ${{ runner.temp }}/ingest-comment.md
+        run: gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$COMMENT_FILE"
+      - name: Close a valid report
+        if: steps.ingest.outputs.status == 'valid'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason completed
+      - name: Close an invalid report
+        if: steps.ingest.outputs.status != 'valid'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason "not planned"
