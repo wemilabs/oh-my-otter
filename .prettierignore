@@ -4,3 +4,5 @@ pnpm-lock.yaml
 CHANGELOG.md
 Oh My Otter - Build Plan.md
 **/.tmp
+**/.next
+**/next-env.d.ts
