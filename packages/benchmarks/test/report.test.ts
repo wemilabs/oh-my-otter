@@ -160,6 +160,7 @@ describe("report payload schema", () => {
       "claude-opus-4-1-20250805",
       "2.1.0",
       "gemini-2.5-pro",
+      "llama-3.1-nemotron-70b-instruct-hf",
     ]) {
       for (const field of ["agent", "agent_version", "model"] as const) {
         expect(
@@ -175,6 +176,8 @@ describe("report payload schema", () => {
       "sk-proj-abc123",
       "a".repeat(20) + "1".repeat(20),
       "npm_abc123def",
+      "ab12cd-34ef56-gh78ij-90kl12-mn34op",
+      "a1b2-c3d4-e5f6-g7h8-i9j0-k1l2-m3n4-o5p6",
     ]) {
       for (const field of ["agent", "agent_version", "model"] as const) {
         expect(
@@ -338,6 +341,49 @@ describe("detectStack", () => {
       package_manager: "other",
       language: "javascript",
       framework: "other",
+    });
+  });
+
+  it("strips comments from pnpm-workspace.yaml packages globs", async () => {
+    expect(
+      await stackOf({
+        "package.json": JSON.stringify({ name: "f", private: true }),
+        "pnpm-workspace.yaml":
+          'packages:\n  - "services/*" # apps\nother: true\n',
+        "services/api/package.json": JSON.stringify({
+          name: "api",
+          dependencies: { next: "latest" },
+        }),
+        "services/api/tsconfig.json": "{}",
+      }),
+    ).toEqual({
+      package_manager: "npm",
+      language: "typescript",
+      framework: "nextjs",
+    });
+  });
+
+  it("scans configured workspace globs before the defaults", async () => {
+    const root = await createRepo({
+      "package.json": JSON.stringify({
+        name: "f",
+        private: true,
+        workspaces: ["libs/*"],
+      }),
+      "libs/one/package.json": JSON.stringify({ name: "one" }),
+      "libs/two/package.json": JSON.stringify({ name: "two" }),
+      "apps/web/package.json": JSON.stringify({
+        name: "web",
+        dependencies: { next: "latest" },
+      }),
+      "apps/web/tsconfig.json": "{}",
+    });
+    // Cap of 2 means only the two configured manifests are scanned,
+    // so apps/web's next is never seen.
+    expect(await detectStack(createCheckContext(root), 2)).toEqual({
+      package_manager: "npm",
+      language: "javascript",
+      framework: "node",
     });
   });
 
@@ -508,6 +554,27 @@ describe("ingestIssue", () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.comment).toContain("username");
+  });
+
+  it("ignores canonical agent tokens when checking the handle", async () => {
+    const agents = await agentsFile();
+    const accepted = ingestIssue({
+      body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, model: "gpt-5-codex" }),
+      author: "codex",
+      agents,
+      now: new Date(),
+      random: "abcd1234",
+    });
+    expect(accepted.ok).toBe(true);
+    const rejected = ingestIssue({
+      body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, model: "jdoe42-model" }),
+      author: "jdoe42",
+      agents,
+      now: new Date(),
+      random: "abcd1234",
+    });
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) expect(rejected.comment).toContain("username");
   });
 
   it("accepts an agent that equals a canonical alias even if it matches the handle", async () => {

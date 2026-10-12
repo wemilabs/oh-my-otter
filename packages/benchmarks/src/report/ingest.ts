@@ -98,14 +98,26 @@ function invalidComment(lines: string[]): string {
 }
 
 function leaksUsername(payload: ReportPayload, agents: AgentsFile, h: string) {
-  const fields = [payload.agent, payload.agent_version, payload.model];
   const canonical = new Set(
     agents.agents.flatMap((agent) => [agent.id, ...agent.aliases]),
   );
-  return fields.some(
+  const agentTokens = new Set(
+    agents.agents.flatMap((agent) =>
+      [agent.id, ...agent.aliases].flatMap((slug) =>
+        slug.toLowerCase().split(/[._-]/),
+      ),
+    ),
+  );
+  const scrubbed = (field: string) =>
+    field
+      .toLowerCase()
+      .split(/[._-]/)
+      .filter((segment) => !agentTokens.has(segment))
+      .join("-");
+  return [payload.agent, payload.agent_version, payload.model].some(
     (field) =>
       field !== undefined &&
-      field.toLowerCase().includes(h) &&
+      scrubbed(field).includes(h) &&
       !(field === payload.agent && canonical.has(field)),
   );
 }

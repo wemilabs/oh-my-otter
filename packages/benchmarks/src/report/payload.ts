@@ -35,12 +35,22 @@ const TOKEN_PREFIX_PATTERN =
 
 export function looksLikeSecret(value: string): boolean {
   if (TOKEN_PREFIX_PATTERN.test(value)) return true;
-  return value
-    .split(/[._-]/)
-    .some(
-      (segment) =>
-        segment.length >= 24 && /[a-z]/i.test(segment) && /\d/.test(segment),
-    );
+  if (
+    value
+      .split(/[._-]/)
+      .some(
+        (segment) =>
+          segment.length >= 24 && /[a-z]/i.test(segment) && /\d/.test(segment),
+      )
+  ) {
+    return true;
+  }
+  const compact = value.replace(/[._-]/g, "");
+  return (
+    compact.length >= 30 &&
+    (compact.match(/\d/g)?.length ?? 0) >= 6 &&
+    (compact.match(/[a-z]/gi)?.length ?? 0) >= 6
+  );
 }
 
 const notSecret = (value: string) => !looksLikeSecret(value);

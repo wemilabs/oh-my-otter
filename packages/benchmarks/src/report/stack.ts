@@ -65,12 +65,13 @@ function pnpmWorkspaceGlobs(yaml: string): string[] {
       continue;
     }
     if (!inPackages) continue;
-    const item = /^\s+-\s*['"]?([^'"\s#]+)['"]?\s*$/.exec(line);
+    const clean = line.replace(/\s+#.*$/, "");
+    const item = /^\s+-\s*['"]?([^'"\s#]+)['"]?\s*$/.exec(clean);
     if (item) {
       globs.push(item[1]!);
       continue;
     }
-    if (/^\S/.test(line)) break; // next top-level key
+    if (/^\S/.test(clean)) break; // next top-level key
   }
   return globs;
 }
@@ -82,30 +83,39 @@ function safeGlob(glob: string): string | null {
   return trimmed;
 }
 
-async function workspacePackageJsons(ctx: CheckContext): Promise<string[]> {
-  const globs = new Set(DEFAULT_WORKSPACE_GLOBS);
-  for (const glob of packageJsonWorkspaces(ctx.packageJson ?? {})) {
+async function workspacePackageJsons(
+  ctx: CheckContext,
+  maxManifests = MAX_WORKSPACE_MANIFESTS,
+): Promise<string[]> {
+  const globs: string[] = [];
+  const seen = new Set<string>();
+  const add = (glob: string) => {
     const safe = safeGlob(glob);
-    if (safe) globs.add(safe);
-  }
+    if (safe !== null && !seen.has(safe)) {
+      seen.add(safe);
+      globs.push(safe);
+    }
+  };
+  for (const glob of packageJsonWorkspaces(ctx.packageJson ?? {})) add(glob);
   const pnpmYaml = await ctx.read("pnpm-workspace.yaml");
   if (pnpmYaml !== null) {
-    for (const glob of pnpmWorkspaceGlobs(pnpmYaml)) {
-      const safe = safeGlob(glob);
-      if (safe) globs.add(safe);
-    }
+    for (const glob of pnpmWorkspaceGlobs(pnpmYaml)) add(glob);
   }
+  for (const glob of DEFAULT_WORKSPACE_GLOBS) add(glob);
   const found = new Set<string>();
   for (const glob of globs) {
     for (const file of await ctx.glob(`${glob}/package.json`)) {
       found.add(file);
-      if (found.size >= MAX_WORKSPACE_MANIFESTS) return [...found];
+      if (found.size >= maxManifests) return [...found];
     }
   }
   return [...found];
 }
 
-export async function detectStack(ctx: CheckContext): Promise<Stack> {
+export async function detectStack(
+  ctx: CheckContext,
+  maxManifests = MAX_WORKSPACE_MANIFESTS,
+): Promise<Stack> {
   const hasPackageJson = ctx.packageJson !== null;
 
   let packageManager: PackageManager = hasPackageJson ? "npm" : "other";
@@ -128,8 +138,8 @@ export async function detectStack(ctx: CheckContext): Promise<Stack> {
     }
   }
 
-  const workspaceDirs = (await workspacePackageJsons(ctx)).map((file) =>
-    file.split("/").slice(0, -1).join("/"),
+  const workspaceDirs = (await workspacePackageJsons(ctx, maxManifests)).map(
+    (file) => file.split("/").slice(0, -1).join("/"),
   );
 
   const deps = depNames(ctx.packageJson);
