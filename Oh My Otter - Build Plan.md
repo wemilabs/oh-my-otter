@@ -282,7 +282,7 @@ Repo name, remote URL, owner, branch or commit hashes, file names or paths, file
 ## 9. Quality, CI, and release
 
 - **CI (every PR):** install, typecheck, lint, vitest, build all packages, build the site, run schema and snapshot privacy tests, verify unique check IDs, and verify task version bumps.
-- **Release:** Changesets for versioning; GitHub Action publishes `oh-my-otter` (CLI) and scoped packages to npm with provenance on tag.
+- **Release:** Changesets for versioning; the GitHub Action publishes `oh-my-otter` (CLI) and scoped packages to npm via Trusted Publishing (OIDC), with provenance attached by pnpm.
 - **Docs gate:** every new check or task must include its documentation file or CI fails.
 
 ## 10. Open-source setup
