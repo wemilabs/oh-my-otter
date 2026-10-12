@@ -2,8 +2,8 @@ import { access, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
-import fastGlob from "fast-glob";
 import ignore from "ignore";
+import { glob } from "tinyglobby";
 import type { CheckContext, FixPlan } from "./types";
 import { RunDisabledError } from "./runner";
 
@@ -120,11 +120,12 @@ export function createCheckContext(
       ) {
         throw new Error(`Path escapes repository root: ${pattern}`);
       }
-      const files = await fastGlob(pattern, {
+      const files = await glob(pattern, {
         cwd: absoluteRoot,
         dot: true,
         onlyFiles: true,
         followSymbolicLinks: false,
+        expandDirectories: false,
         ignore: ["**/node_modules/**", "**/.git/**"],
       });
       rootGitignorePromise ??= context.read(".gitignore");
