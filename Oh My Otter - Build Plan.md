@@ -21,7 +21,7 @@ The project is **unofficial and independent**. It is not affiliated with or endo
 - Language: TypeScript everywhere, Node 20+.
 - Monorepo: pnpm workspaces + Turborepo.
 - CLI: `commander`, `picocolors`, `zod`, `execa`, `fast-glob`. Bundle with `tsup`. Test with `vitest`.
-- Website: Next.js (App Router), TypeScript, Tailwind CSS/shadcn ui, fully static export where possible, deployed on Vercel.
+- Website: Next.js (App Router), TypeScript, Tailwind CSS/shadcn ui, fully static export where possible, deployed on Vercel. Docs with Fumadocs, which pairs well with Next.js.
 - Data: plain JSON files in the repo (`dataset/`). No database in the MVP.
 - License: MIT.
 
