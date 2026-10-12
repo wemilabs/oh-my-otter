@@ -32,10 +32,10 @@ jobs:
       - name: Create Release Pull Request or Publish to npm
         uses: changesets/action@v2.1.2
         with:
-          version: pnpm version-packages
-          publish: pnpm release
-          title: "chore: release packages"
-          commit: "chore: release packages"
+          version-script: pnpm version-packages
+          publish-script: pnpm release
+          pr-title: "chore: release packages"
+          commit-message: "chore: release packages"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
