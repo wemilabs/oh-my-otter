@@ -85,6 +85,52 @@ describe("dep-patch-bump", () => {
     expect(result.outcome).toBe("fail");
   });
 
+  it("does not count a build failure that was already present at baseline", async () => {
+    const initial: Files = {
+      ...base,
+      "build.mjs":
+        "console.error('BASELINE BUILD FAILURE TAIL'); process.exit(1);\n",
+    };
+    const started = await startTask(task, initial, params);
+    const result = await verifyTask(task, started, params, {
+      "package.json": pkg("^1.3.0"),
+      "package-lock.json": lock("1.3.0"),
+    });
+    expect(result.outcome).toBe("pass");
+    expect(result.reasons.join("\n")).toContain("failed at baseline too");
+    expect(result.reasons.join("\n")).toContain("BASELINE BUILD FAILURE TAIL");
+  });
+
+  it("counts a build failure after a passing baseline and includes its output tail", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "package.json": pkg("^1.3.0"),
+      "package-lock.json": lock("1.3.0"),
+      "build.mjs":
+        "console.error('VERIFY BUILD FAILURE TAIL'); process.exit(1);\n",
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons.join("\n")).toContain("build script failed");
+    expect(result.reasons.join("\n")).toContain("VERIFY BUILD FAILURE TAIL");
+  });
+
+  it("counts build failures when baseline scripts were skipped", async () => {
+    const started = await startTask(task, base, params, {
+      skipBaselineScripts: true,
+    });
+    const result = await verifyTask(task, started, params, {
+      "package.json": pkg("^1.3.0"),
+      "package-lock.json": lock("1.3.0"),
+      "build.mjs":
+        "console.error('UNKNOWN BASELINE BUILD TAIL'); process.exit(1);\n",
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons.join("\n")).toContain(
+      "Baseline health is unknown (baseline scripts were not recorded).",
+    );
+    expect(result.reasons.join("\n")).toContain("UNKNOWN BASELINE BUILD TAIL");
+  });
+
   it("rejects packages that are not declared", async () => {
     await expect(startTask(task, base, { package: "react" })).rejects.toThrow(
       /not declared/,

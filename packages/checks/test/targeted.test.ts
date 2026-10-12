@@ -524,6 +524,18 @@ describe("targeted checks", () => {
     },
   );
 
+  it("closes CRLF code fences before reading prose", async () => {
+    await withTempRepo(async (root) => {
+      await writeFile(
+        path.join(root, "README.md"),
+        "## Installation\r\n\r\n```sh\r\ncorepack enable\r\n```\r\n\r\nyarn\r\n",
+      );
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("warn");
+    });
+  });
+
   it.each([
     "pnpm install",
     "npm ci",
@@ -581,6 +593,301 @@ describe("targeted checks", () => {
       });
     },
   );
+
+  it("extracts env keys from Joi.object schemas", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const schema = Joi.object({ DATABASE_URL: Joi.string().required(), PORT: Joi.number() }); schema.validate(process.env);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: DATABASE_URL");
+    });
+  });
+
+  it("extracts env keys from Joi.object().keys() schemas", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const schema = Joi.object().keys({ DATABASE_URL: Joi.string().required(), PORT: Joi.number() }); schema.validate(process.env);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: DATABASE_URL");
+    });
+  });
+
+  it("ignores Joi schemas without a bare process.env reference", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const schema = Joi.object({ API_KEY: Joi.string() }); schema.validate(body);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      expect((await envExample.run(createCheckContext(root))).status).toBe(
+        "na",
+      );
+    });
+  });
+
+  it("extracts schema env keys inside template interpolations", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const text = `${z.object({ DATABASE_URL: z.string() }).parse(process.env)}`;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: DATABASE_URL");
+    });
+  });
+
+  it("extracts schema env keys past nested templates and brace strings", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        'const t = `a ${`b ${"}"}`} ${z.object({ API_URL: z.string() }).parse(process.env)}`;\n',
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
+  it("extracts schema env keys after a regex with a brace in its class", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const text = `${/[}]/.test(input) ? z.object({ DATABASE_URL: z.string() }).parse(process.env) : ''}`;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: DATABASE_URL");
+    });
+  });
+
+  it("ignores braces in top-level regex literals before schemas", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const re = /[{]/;\nconst env = z.object({ API_URL: z.string() }).parse(process.env);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
+  it("does not treat JSX closing tags as regex literals", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.jsx"),
+        "const el = <div><b>{a}</b>{z.object({ API_URL: z.string() }).parse(process.env)}</div>;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
+  it("does not treat JSX self-closing tags as regex literals", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.jsx"),
+        "const el = <div><Field value={x} /><p>{z.object({ API_URL: z.string() }).parse(process.env)}</p></div>;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
+  it("keeps a regex literal after an open paren when it contains />", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        'const t = `${x.replace(/>}/g, "")} ${z.object({ API_KEY: z.string() }).parse(process.env)}`;\n',
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_KEY");
+    });
+  });
+
+  it("treats a slash after a spaced comparison as a regex start", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const text = `${0 < /}/.test(text) ? z.object({ API_KEY: z.string() }).parse(process.env) : null}`;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_KEY");
+    });
+  });
+
+  it("treats a slash after an arrow-body block as division", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const t = `${(() => { return 1; })() / 2} ${z.object({ API_URL: z.string() }).parse(process.env)}`;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
+  it("treats slashes after values as division, not regex starts", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const t = `${total / count} ${z.object({ API_KEY: z.string() }).parse(process.env)}`;\nconst r = (a) / 2 / (b);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_KEY");
+    });
+  });
+
+  it.each([
+    "consume(process.env);\nconst doc = `z.object({ SECRET_TOKEN: z.string() })`;\n",
+    'consume(process.env);\nconst doc = "z.object({ SECRET_TOKEN: z.string() })";\n',
+    "consume(process.env);\nconst name = 'x';\nconst s = `${name} z.object({ SECRET_TOKEN: 1 })`;\n",
+    "consume(process.env);\nconst re = /z.object({ SECRET_TOKEN: 1 })/;\n",
+    "consume(process.env);\nif (ok) {}\n/>z.object({ FAKE_KEY: 1 })/.test(s);\n",
+  ])("ignores schema text that is not code: %s", async (source) => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(path.join(root, "src/env.js"), source);
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      expect((await envExample.run(createCheckContext(root))).status).toBe(
+        "pass",
+      );
+    });
+  });
+
+  it.each([
+    "## Installation\n\nWe use `yarn` workspaces. See the team for setup details.\n",
+    "## Setup\n\nThis repo uses `npx` scripts and `pnpm`.\n",
+    "## Installation\n\nwe use yarn\n",
+    "## Installation\n\nWe use pnpm and npx scripts.\n",
+    "## Installation\n\n<pre># npm install</pre>\n",
+    "## Installation\n\n<!-- npm install -->\n",
+    "## Installation\n\n<!-- <pre>npm install</pre> -->\n",
+    "## Installation\n\n```sh\nyarn --version\n```\n",
+    "## Installation\n\n```sh\nyarn -v\n```\n",
+    "## Installation\n\n```sh\n# npm install\n```\n",
+    "## Installation\n\n    # pnpm install\n",
+  ])("warns when install commands only appear in prose: %s", async (readme) => {
+    await withTempRepo(async (root) => {
+      await writeFile(path.join(root, "README.md"), readme);
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("warn");
+    });
+  });
+
+  it.each([
+    "## Installation\n\nRun `pnpm install` to set up dependencies.\n",
+    "## Installation\n\nRun `yarn` in the repo root.\n",
+    "## Installation\n\nRun `npm ci`.\n",
+    "## Installation\n\n    pnpm install\n",
+    "## Installation\n\n~~~bash\n$ bun install\n~~~\n",
+    "## Installation\n\n<pre>yarn install</pre>\n",
+    "## Installation\n\n```sh\ncd app && yarn\n```\n",
+    "## Installation\n\n```sh\nnpm install # deps\n```\n",
+    "## Installation\n\n```sh\nyarn --frozen-lockfile\n```\n",
+    '## Installation\n\n```sh\ncd "project #1" && npm install\n```\n',
+    "## Installation\n\n```sh\ncd 'a#b' && pnpm install\n```\n",
+  ])("recognizes install commands in code: %s", async (readme) => {
+    await withTempRepo(async (root) => {
+      await writeFile(path.join(root, "README.md"), readme);
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("pass");
+    });
+  });
+
+  it.each([
+    "## Installation\n\nRun pnpm install first.\n",
+    "## Installation\n\nRun pnpm install to set up.\n",
+    "## Setup\n\nInstall dependencies with npm ci, then build.\n",
+  ])("recognizes install commands in prose: %s", async (readme) => {
+    await withTempRepo(async (root) => {
+      await writeFile(path.join(root, "README.md"), readme);
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("pass");
+    });
+  });
+
+  it.each([
+    ["pass", "## Installation\n\nStep #1: run yarn install\n"],
+    ["warn", "## Installation\n\n# npm install\n"],
+  ] as const)(
+    "returns %s for a plain-text README line: %s",
+    async (status, readme) => {
+      await withTempRepo(async (root) => {
+        await writeFile(path.join(root, "README.txt"), readme);
+        expect(
+          (await installDocumented.run(createCheckContext(root))).status,
+        ).toBe(status);
+      });
+    },
+  );
+
+  it("accepts a line-start install command in a plain-text README", async () => {
+    await withTempRepo(async (root) => {
+      await writeFile(
+        path.join(root, "README.txt"),
+        "## Installation\n\nInstallation\n\nnpm install\n",
+      );
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("pass");
+    });
+  });
 
   it("returns valid, create-only fixes for the bare fixture", async () => {
     const fixture = path.resolve(

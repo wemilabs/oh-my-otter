@@ -1,23 +1,33 @@
-import { readFile, realpath, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { execa } from "execa";
 import { createCheckContext } from "@oh-my-otter/core/node";
 import { OMOT_DIR, withoutOmotLines } from "./lib/gitignore";
-import { normalizeNewlines } from "./lib/files";
+import { normalizeNewlines, summarizeList } from "./lib/files";
 import { detectPackageManager } from "./lib/package-manager";
-import type {
-  ChangedFile,
-  CommandResult,
-  PackageManager,
-  PrepareContext,
-  RepoContext,
-  VerifyContext,
+import {
+  TaskPreconditionError,
+  type ChangedFile,
+  type CommandResult,
+  type PackageManager,
+  type PrepareContext,
+  type RepoContext,
+  type VerifyContext,
 } from "./types";
 
 export interface ContextOptions {
   params?: Record<string, string>;
   log?: (text: string) => void;
   timeoutMs?: number;
+}
+
+export interface PrepareContextOptions extends ContextOptions {
+  scripts?: readonly string[];
+  skipBaselineScripts?: boolean;
+  yes?: boolean;
+  isTTY?: boolean;
+  confirm?: (question: string) => Promise<boolean>;
 }
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
@@ -45,6 +55,49 @@ export async function runGit(
     throw new Error(`git ${args.join(" ")} failed: ${detail}`);
   }
   return String(result.stdout);
+}
+
+async function fileFingerprint(
+  root: string,
+  file: string,
+): Promise<string | null> {
+  const fullPath = path.join(root, file);
+  try {
+    const info = await stat(fullPath);
+    if (info.isDirectory()) {
+      const records: string[] = [];
+      const collect = async (
+        directory: string,
+        relativeDirectory: string,
+      ): Promise<void> => {
+        for (const entry of await readdir(directory, { withFileTypes: true })) {
+          if (entry.name === ".git") continue;
+          const relativePath = relativeDirectory
+            ? `${relativeDirectory}/${entry.name}`
+            : entry.name;
+          const entryPath = path.join(directory, entry.name);
+          const entryInfo = await stat(entryPath);
+          records.push(
+            `${relativePath}\0${entryInfo.size}\0${entryInfo.mtimeMs}`,
+          );
+          if (entryInfo.isDirectory()) {
+            await collect(entryPath, relativePath);
+          }
+        }
+      };
+      await collect(fullPath, "");
+      const hash = createHash("sha256");
+      for (const record of records.sort()) hash.update(record).update("\0");
+      return hash.digest("hex");
+    }
+    return createHash("sha256")
+      .update(await readFile(fullPath))
+      .digest("hex");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw error;
+  }
 }
 
 /** Resolves the git work-tree root that contains `target`. */
@@ -118,20 +171,43 @@ export function createRepoContext(
     file: string,
     args: readonly string[],
   ): Promise<CommandResult> => {
-    const result = await execa(file, args, {
-      cwd: root,
-      reject: false,
-      stdin: "ignore",
-      timeout,
-      env: commandEnv,
-      maxBuffer: 256 * 1024 * 1024,
-    });
-    return {
-      code: result.exitCode ?? 1,
-      stdout: String(result.stdout ?? ""),
-      stderr: String(result.stderr ?? ""),
-      timedOut: Boolean(result.timedOut),
-    };
+    try {
+      const result = await execa(file, args, {
+        all: true,
+        cwd: root,
+        reject: false,
+        stdin: "ignore",
+        timeout,
+        env: commandEnv,
+        maxBuffer: 256 * 1024 * 1024,
+      });
+      return {
+        code: result.exitCode ?? 1,
+        stdout: String(result.stdout ?? ""),
+        stderr: String(result.stderr ?? ""),
+        output: String(result.all ?? ""),
+        timedOut: Boolean(result.timedOut),
+      };
+    } catch (error) {
+      const result = error as {
+        exitCode?: number | null;
+        stdout?: unknown;
+        stderr?: unknown;
+        all?: unknown;
+        timedOut?: boolean;
+      };
+      const stdout = String(result.stdout ?? "");
+      const stderr = String(result.stderr ?? "");
+      return {
+        code: result.exitCode ?? 1,
+        stdout,
+        stderr,
+        output: String(
+          result.all ?? [stdout, stderr].filter(Boolean).join("\n"),
+        ),
+        timedOut: Boolean(result.timedOut),
+      };
+    }
   };
   const scripts = (): Record<string, unknown> => {
     const value = base.packageJson?.scripts;
@@ -176,16 +252,64 @@ export function createRepoContext(
 
 export function createPrepareContext(
   root: string,
-  options: ContextOptions & {
-    yes?: boolean;
-    isTTY?: boolean;
-    confirm?: (question: string) => Promise<boolean>;
-  } = {},
+  options: PrepareContextOptions = {},
 ): PrepareContext {
-  return Object.assign(createRepoContext(root, options), {
+  const repo = createRepoContext(root, options);
+  let baseline: Promise<Record<string, CommandResult> | null> | undefined;
+  return Object.assign(repo, {
     yes: Boolean(options.yes),
     isTTY: Boolean(options.isTTY),
     confirm: options.confirm ?? (async () => false),
+    recordBaseline() {
+      baseline ??= (async () => {
+        if (options.skipBaselineScripts) return null;
+        const results: Record<string, CommandResult> = {};
+        const paths = (status: string) =>
+          status
+            .split(/\r?\n/)
+            .filter((entry) => entry.length > 0)
+            .map((entry) => entry.slice(3))
+            .filter(
+              (file) => file !== OMOT_DIR && !file.startsWith(`${OMOT_DIR}/`),
+            );
+        const existingPaths = new Set(
+          paths(
+            await repo.git(["status", "--porcelain", "--untracked-files=all"]),
+          ),
+        );
+        const fingerprints = new Map<string, string | null>();
+        for (const file of existingPaths) {
+          fingerprints.set(file, await fileFingerprint(root, file));
+        }
+        for (const name of options.scripts ?? []) {
+          if (!repo.hasScript(name)) continue;
+          repo.log(`Running ${name} at the baseline...`);
+          const result = await repo.runScript(name);
+          if (result !== null) results[name] = result;
+        }
+        const currentPaths = new Set(
+          paths(
+            await repo.git(["status", "--porcelain", "--untracked-files=all"]),
+          ),
+        );
+        const changedPaths: string[] = [];
+        for (const file of new Set([...existingPaths, ...currentPaths])) {
+          if (
+            !existingPaths.has(file) ||
+            fingerprints.get(file) !== (await fileFingerprint(root, file))
+          ) {
+            changedPaths.push(file);
+          }
+        }
+        if (changedPaths.length > 0) {
+          throw new TaskPreconditionError(
+            `Baseline scripts changed the working tree: ${summarizeList(changedPaths)}. Add these to .gitignore (or commit them), then run bench start again.`,
+          );
+        }
+        return results;
+      })();
+      return baseline;
+    },
   });
 }
 
@@ -195,7 +319,11 @@ function parseNul(output: string): string[] {
 
 export function createVerifyContext<TData = unknown>(
   root: string,
-  baseline: { commit: string; data: TData },
+  baseline: {
+    commit: string;
+    data: TData;
+    scripts?: Record<string, number>;
+  },
   options: ContextOptions = {},
 ): VerifyContext<TData> {
   const repo = createRepoContext(root, options);

@@ -28,6 +28,7 @@ omot bench start a11y-img-alt --param dir=src/components --agent <your-agent>
 - Statically scans `html`, `jsx`, `tsx`, `js`, `mjs`, `vue`, `svelte`, `astro`, and `mdx` files under the directory for `<img>` and `<Image>` tags.
 - A tag counts as having alt if it has `alt`, `:alt`, `v-bind:alt`, `[alt]`, or a JSX spread (`{...props}`). HTML comments are ignored.
 - Runs the `build` script.
+- The build exit code is recorded at start. A build failure that also occurred at baseline is not counted against the agent; if baseline scripts were skipped or no baseline build script existed, baseline health is reported as unknown.
 - This is a heuristic, not a full parser; see the plan for later stretch tasks.
 
 The prompt and verifier live in [`packages/benchmarks/src/tasks/a11y-img-alt`](../../packages/benchmarks/src/tasks/a11y-img-alt). Changing either requires a `version` bump in `task.json`.

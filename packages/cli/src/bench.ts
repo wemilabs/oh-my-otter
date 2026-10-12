@@ -21,7 +21,10 @@ import {
   readRunFile,
   renderPrompt,
   resolveRepoRoot,
+  appendVerification,
+  updateRunFile,
   writeRunFile,
+  TaskPreconditionError,
   type RunFile,
   type Task,
   type VerifyResult,
@@ -44,6 +47,7 @@ interface AgentOptions {
 
 interface StartOptions extends AgentOptions {
   param?: string[];
+  skipBaselineScripts?: boolean;
   yes?: boolean;
 }
 
@@ -242,7 +246,11 @@ async function ensureGitignore(
     return;
   }
   await applyGitignore(root, plan);
-  io.stderr(pc.dim(`Added ${OMOT_IGNORE_LINE} to .gitignore.\n`));
+  io.stderr(
+    pc.dim(
+      `Added ${OMOT_IGNORE_LINE} to .gitignore; .gitignore was left uncommitted, and verify ignores the change.\n`,
+    ),
+  );
 }
 
 async function startTask(
@@ -276,9 +284,7 @@ async function startTask(
     ? null
     : previous === null
       ? `${RUN_FILE} exists but is not a valid run file`
-      : previous.result
-        ? null
-        : `${RUN_FILE} has an unverified ${previous.task.id} run`;
+      : `${RUN_FILE} already has a ${previous.task.id} run (${previous.verifications.length} attempts)`;
   if (conflict && !options.yes) {
     if (!io.isTTY) {
       throw new Error(`${conflict}; re-run with --yes to replace it.`);
@@ -291,12 +297,27 @@ async function startTask(
 
   const ctx = createPrepareContext(root, {
     params,
+    scripts: task.scripts,
+    skipBaselineScripts: Boolean(options.skipBaselineScripts),
     yes: Boolean(options.yes),
     isTTY: io.isTTY,
     confirm: io.confirm,
     log: (text) => io.stderr(pc.dim(`${text}\n`)),
   });
   const data = task.prepare ? await task.prepare(ctx) : undefined;
+  const baselineScripts = await ctx.recordBaseline();
+  if (baselineScripts === null) {
+    io.stderr(
+      pc.dim(
+        "Baseline scripts skipped; verify will report baseline health as unknown.\n",
+      ),
+    );
+  } else {
+    const summary = Object.entries(baselineScripts)
+      .map(([name, result]) => `${name} exit ${result.code}`)
+      .join(", ");
+    io.stderr(pc.dim(`Baseline scripts: ${summary || "none available"}\n`));
+  }
   const commit = await headCommit(root);
   await ensureGitignore(root, Boolean(options.yes), io);
   const run: RunFile = {
@@ -308,7 +329,18 @@ async function startTask(
       commit,
       started_at: new Date().toISOString(),
       ...(data === undefined ? {} : { data }),
+      ...(baselineScripts === null
+        ? {}
+        : {
+            scripts: Object.fromEntries(
+              Object.entries(baselineScripts).map(([name, result]) => [
+                name,
+                result.code,
+              ]),
+            ),
+          }),
     },
+    verifications: [],
   };
   await writeRunFile(root, run);
   agentNote(options, fields, io);
@@ -356,6 +388,7 @@ async function verifyRun(
     );
   }
   const fields = agentFields(options, run);
+  const attempt = run.verifications.length + 1;
 
   if (!options.json)
     io.stderr(
@@ -365,14 +398,33 @@ async function verifyRun(
     );
   const ctx = createVerifyContext(
     root,
-    { commit: run.baseline.commit, data: run.baseline.data },
+    {
+      commit: run.baseline.commit,
+      data: run.baseline.data,
+      ...(run.baseline.scripts === undefined
+        ? {}
+        : { scripts: run.baseline.scripts }),
+    },
     { params: run.params, log: (text) => io.stderr(pc.dim(`${text}\n`)) },
   );
   const result = await task.verify(ctx);
+  const verifiedAt = new Date().toISOString();
+  const verifiedCommit = await headCommit(root);
   if (!options.json) {
     io.stdout(
-      `${outcomeLabel(result.outcome)} ${task.manifest.id} v${task.manifest.version}\n${result.reasons
-        .map((reason) => `  - ${reason}`)
+      run.baseline.scripts === undefined
+        ? "Baseline health unknown (start ran with --skip-baseline-scripts or an older omot)\n"
+        : "Baseline health recorded\n",
+    );
+    io.stdout(
+      `${outcomeLabel(result.outcome)} ${task.manifest.id} v${task.manifest.version} (attempt ${attempt})\n${result.reasons
+        .flatMap((reason) =>
+          reason
+            .split("\n")
+            .map((line, index) =>
+              index === 0 ? `  - ${line}` : `    ${line}`,
+            ),
+        )
         .join("\n")}\n`,
     );
   }
@@ -387,18 +439,24 @@ async function verifyRun(
     "How many minutes of human effort did the task take? ",
     io,
   );
-  const updated: RunFile = {
-    ...run,
+  const entry = {
+    outcome: result.outcome,
+    reasons: result.reasons,
+    verified_at: verifiedAt,
+    head_commit: verifiedCommit,
+    human_corrections: corrections,
+    human_minutes: minutes,
     ...fields,
-    result: {
-      outcome: result.outcome,
-      reasons: result.reasons,
-      verified_at: new Date().toISOString(),
-      human_corrections: corrections,
-      human_minutes: minutes,
-    },
   };
-  await writeRunFile(root, updated);
+  const updated = await updateRunFile(root, (fresh) => {
+    if (
+      fresh.task.id !== run.task.id ||
+      fresh.baseline.commit !== run.baseline.commit
+    ) {
+      throw new Error("run.json changed during verify; re-run bench verify");
+    }
+    return appendVerification({ ...fresh, ...fields }, entry);
+  });
   agentNote(options, fields, io);
   if (options.json) {
     io.stdout(`${JSON.stringify(updated, null, 2)}\n`);
@@ -451,12 +509,25 @@ export function addBenchCommand(
     .option("--agent-version <version>", "Version of the coding agent")
     .option("--model <name>", "Model the coding agent used (stored as a slug)")
     .option(
+      "--skip-baseline-scripts",
+      "Skip task scripts at start (baseline health will be unknown)",
+    )
+    .option(
       "-y, --yes",
       "Confirm .gitignore and fix-failing-test changes without prompting",
     )
     .action(
       async (id: string, target: string | undefined, options: StartOptions) => {
-        setExitCode(await startTask(id, target, options, io));
+        try {
+          setExitCode(await startTask(id, target, options, io));
+        } catch (error) {
+          if (error instanceof TaskPreconditionError) {
+            io.stderr(`Cannot start ${id}: ${error.message}\n`);
+            setExitCode(1);
+            return;
+          }
+          throw error;
+        }
       },
     );
 

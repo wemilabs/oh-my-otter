@@ -1,6 +1,6 @@
 {
   "id": "fix-lint-rule",
-  "version": 1,
+  "version": 2,
   "title": "Fix every violation of one ESLint rule",
   "category": "lint",
   "estimatedScope": "medium",

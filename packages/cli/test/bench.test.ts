@@ -1,4 +1,11 @@
-import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import {
+  access,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+  mkdir,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
@@ -84,6 +91,42 @@ const fixture = {
   ".gitignore": "node_modules\n",
   "src/math.mjs": "export function add(a, b) {\n  return a + b;\n}\n",
 };
+const coverageFixture = {
+  ...fixture,
+  "package.json":
+    JSON.stringify({
+      name: "f",
+      private: true,
+      type: "module",
+      scripts: {
+        test: `node -e "require('node:fs').writeFileSync('coverage.txt', 'generated')"`,
+      },
+    }) + "\n",
+};
+const changedGitignoreFixture = {
+  ...fixture,
+  "package.json":
+    JSON.stringify({
+      name: "f",
+      private: true,
+      type: "module",
+      scripts: {
+        test: `node -e "require('node:fs').appendFileSync('.gitignore', 'coverage/\\n')"`,
+      },
+    }) + "\n",
+};
+const changedNestedRepoFixture = {
+  ...fixture,
+  "package.json":
+    JSON.stringify({
+      name: "f",
+      private: true,
+      type: "module",
+      scripts: {
+        test: `node -e "require('node:fs').writeFileSync('nested/generated.txt', 'generated')"`,
+      },
+    }) + "\n",
+};
 const addTest = `import { test } from "node:test";
 import assert from "node:assert/strict";
 import { add } from "../src/math.mjs";
@@ -101,6 +144,35 @@ const start = [
 
 async function runFile(root: string) {
   return JSON.parse(await readFile(path.join(root, ".omot/run.json"), "utf8"));
+}
+
+async function addDirtyNestedRepo(root: string): Promise<string> {
+  const nested = path.join(root, "nested");
+  await mkdir(nested);
+  await git(nested, ["init", "-q", "--initial-branch=main"]);
+  await git(nested, ["config", "user.name", "Test"]);
+  await git(nested, ["config", "user.email", "test@example.invalid"]);
+  await git(nested, ["config", "commit.gpgsign", "false"]);
+  await writeFile(path.join(nested, "tracked.txt"), "tracked\n");
+  await git(nested, ["add", "tracked.txt"]);
+  await git(nested, ["commit", "-qm", "nested baseline"]);
+  await git(root, ["add", "nested"]);
+  await git(root, ["commit", "-qm", "add nested repo"]);
+  await writeFile(path.join(nested, "untracked.txt"), "pre-existing\n");
+  return nested;
+}
+
+async function waitForFile(file: string) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    try {
+      await access(file);
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+  }
+  throw new Error(`Timed out waiting for ${file}.`);
 }
 
 describe("bench list and show", () => {
@@ -178,14 +250,20 @@ describe("bench start and verify", () => {
     expect(await readFile(path.join(root, ".gitignore"), "utf8")).toBe(
       "node_modules\n.omot/\n",
     );
+    expect(started.stderr).toContain(
+      ".gitignore was left uncommitted, and verify ignores the change.",
+    );
     const run = await runFile(root);
     expect(run).toMatchObject({
-      schema_version: 1,
-      task: { id: "add-unit-test", version: 1 },
+      schema_version: 2,
+      task: { id: "add-unit-test", version: 4 },
       params: { file: "src/math.mjs", function: "add" },
       agent: "claude-code",
       baseline: { commit: head },
+      verifications: [],
     });
+    expect(run.baseline.scripts).toEqual({ test: 0 });
+    expect(started.stderr).toContain("Baseline scripts: test exit 0");
     expect(Date.parse(run.baseline.started_at)).not.toBeNaN();
 
     await writeFile(
@@ -206,14 +284,169 @@ describe("bench start and verify", () => {
       { cwd: root },
     );
     expect(verified.code).toBe(0);
-    expect(verified.stdout).toContain("PASS add-unit-test v1");
+    expect(verified.stdout).toContain("PASS add-unit-test v4");
+    expect(verified.stdout).toContain("(attempt 1)");
+    expect(verified.stdout).toContain("Baseline health recorded");
     expect(verified.stderr).toContain("Nothing was sent anywhere.");
-    expect((await runFile(root)).result).toMatchObject({
-      outcome: "pass",
-      human_corrections: 1,
-      human_minutes: 4,
+    expect(await runFile(root)).toMatchObject({
+      verifications: [{ head_commit: head }],
+      result: {
+        outcome: "pass",
+        human_corrections: 1,
+        human_minutes: 4,
+        attempts: 1,
+      },
     });
     expect((await runFile(root)).agent).toBe("cursor");
+
+    const second = await invoke(
+      ["bench", "verify", "--corrections", "0", "--minutes", "1", "--json"],
+      { cwd: root },
+    );
+    expect(second.code).toBe(0);
+    expect(JSON.parse(second.stdout)).toMatchObject({
+      verifications: [{ head_commit: head }, { head_commit: head }],
+      result: { attempts: 2, outcome: "pass" },
+    });
+  });
+
+  it("preserves both results from concurrent verification calls", async () => {
+    const root = await repo(fixture);
+    await invoke([...start, "--yes"], { cwd: root });
+    await writeFile(
+      path.join(root, "test.add.test.mjs"),
+      addTest.replace("../src", "./src"),
+    );
+    const args = [
+      "bench",
+      "verify",
+      "--corrections",
+      "0",
+      "--minutes",
+      "0",
+      "--json",
+    ];
+
+    const results = await Promise.all([
+      invoke(args, { cwd: root }),
+      invoke(args, { cwd: root }),
+    ]);
+
+    expect(results.map((result) => result.code)).toEqual([0, 0]);
+    expect(
+      results.map((result) => JSON.parse(result.stdout).result.attempts).sort(),
+    ).toEqual([1, 2]);
+    const run = await runFile(root);
+    expect(run.verifications).toHaveLength(2);
+    expect(run.result.attempts).toBe(2);
+  });
+
+  it("refuses to append a verification after the run identity changes", async () => {
+    const root = await repo(fixture);
+    await invoke([...start, "--yes"], { cwd: root });
+    await writeFile(
+      path.join(root, "test.add.test.mjs"),
+      `import { existsSync, writeFileSync } from "node:fs";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { add } from "./src/math.mjs";
+writeFileSync("verify-started", "");
+while (!existsSync("continue-verification")) {
+  await new Promise((resolve) => setTimeout(resolve, 20));
+}
+test("add", () => assert.equal(add(1, 2), 3));
+`,
+    );
+    const verifying = invoke(
+      ["bench", "verify", "--corrections", "0", "--minutes", "0"],
+      { cwd: root },
+    );
+    await waitForFile(path.join(root, "verify-started"));
+    const run = await runFile(root);
+    run.baseline.commit = "b".repeat(40);
+    await writeFile(
+      path.join(root, ".omot/run.json"),
+      `${JSON.stringify(run, null, 2)}\n`,
+    );
+    await writeFile(path.join(root, "continue-verification"), "");
+
+    const result = await verifying;
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "run.json changed during verify; re-run bench verify",
+    );
+  });
+
+  it("rejects baseline scripts that leave generated files without deleting them", async () => {
+    const root = await repo(coverageFixture);
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Baseline scripts changed the working tree: coverage.txt. Add these to .gitignore (or commit them), then run bench start again.",
+    );
+    expect(await readFile(path.join(root, "coverage.txt"), "utf8")).toBe(
+      "generated",
+    );
+  });
+
+  it("allows generated baseline files when baseline scripts are skipped", async () => {
+    const root = await repo(coverageFixture);
+    const result = await invoke(
+      [...start, "--skip-baseline-scripts", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain(
+      "Baseline scripts skipped; verify will report baseline health as unknown.",
+    );
+    await expect(access(path.join(root, "coverage.txt"))).rejects.toThrow();
+    expect((await runFile(root)).baseline.scripts).toBeUndefined();
+  });
+
+  it("rejects baseline scripts that modify a pre-dirty .gitignore", async () => {
+    const root = await repo(changedGitignoreFixture);
+    await writeFile(path.join(root, ".gitignore"), "node_modules\n.omot/\n");
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Baseline scripts changed the working tree: .gitignore.",
+    );
+    expect(await readFile(path.join(root, ".gitignore"), "utf8")).toContain(
+      "coverage/",
+    );
+  });
+
+  it("allows baseline scripts when a pre-dirty .gitignore is unchanged", async () => {
+    const root = await repo(fixture);
+    await writeFile(path.join(root, ".gitignore"), "node_modules\n.omot/\n");
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(0);
+    expect(await runFile(root)).toMatchObject({
+      task: { id: "add-unit-test", version: 4 },
+    });
+  });
+
+  it("allows an unchanged dirty nested repository directory", async () => {
+    const root = await repo(fixture);
+    await addDirtyNestedRepo(root);
+    expect(
+      await git(root, ["status", "--porcelain", "--untracked-files=all"]),
+    ).toBe(" M nested");
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(0);
+  });
+
+  it("rejects baseline scripts that modify a dirty nested repository directory", async () => {
+    const root = await repo(changedNestedRepoFixture);
+    const nested = await addDirtyNestedRepo(root);
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Baseline scripts changed the working tree: nested.",
+    );
+    expect(await readFile(path.join(nested, "generated.txt"), "utf8")).toBe(
+      "generated",
+    );
   });
 
   it("asks before touching .gitignore and leaves it alone when declined", async () => {
@@ -247,7 +480,47 @@ describe("bench start and verify", () => {
     expect((await invoke([...start, "--yes"], { cwd: root })).code).toBe(0);
     const again = await invoke(start, { cwd: root });
     expect(again.code).toBe(1);
-    expect(again.stderr).toContain("unverified add-unit-test run");
+    expect(again.stderr).toContain(
+      ".omot/run.json already has a add-unit-test run (0 attempts); re-run with --yes to replace it",
+    );
+
+    const declined = await invoke(start, {
+      cwd: root,
+      isTTY: true,
+      confirm: async () => false,
+    });
+    expect(declined.code).toBe(1);
+    expect(declined.confirms[0]).toContain(
+      ".omot/run.json already has a add-unit-test run (0 attempts)",
+    );
+    const replaced = await invoke([...start, "--yes"], { cwd: root });
+    expect(replaced.code).toBe(0);
+  });
+
+  it("skips baseline scripts and reports unknown baseline health on verify", async () => {
+    const root = await repo(fixture);
+    const started = await invoke(
+      [...start, "--skip-baseline-scripts", "--yes"],
+      {
+        cwd: root,
+      },
+    );
+    expect(started.code).toBe(0);
+    expect(started.stderr).toContain(
+      "Baseline scripts skipped; verify will report baseline health as unknown.",
+    );
+    const run = await runFile(root);
+    expect(run.baseline.scripts).toBeUndefined();
+    await mkdir(path.join(root, "test"), { recursive: true });
+    await writeFile(path.join(root, "test/add.test.mjs"), addTest);
+    const verified = await invoke(
+      ["bench", "verify", "--corrections", "0", "--minutes", "1"],
+      { cwd: root },
+    );
+    expect(verified.code).toBe(0);
+    expect(verified.stdout).toContain(
+      "Baseline health unknown (start ran with --skip-baseline-scripts or an older omot)",
+    );
   });
 
   it("prompts for the self-reported numbers interactively", async () => {
@@ -364,6 +637,23 @@ describe("bench start and verify", () => {
     expect(result.stderr).toContain("not a valid run file");
     expect(await readFile(path.join(root, ".omot/run.json"), "utf8")).toBe(
       "{ nope",
+    );
+  });
+
+  it("prints task precondition failures with the task id", async () => {
+    const root = await repo({
+      ...fixture,
+      "package.json": `${JSON.stringify({
+        name: "f",
+        private: true,
+        type: "module",
+        scripts: {},
+      })}\n`,
+    });
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Cannot start add-unit-test: Precondition not met: no test script (scripts.test)",
     );
   });
 
