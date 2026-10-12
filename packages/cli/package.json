@@ -1,6 +1,6 @@
 {
   "name": "oh-my-otter",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Local repository readiness scanner for AI coding agents",
   "license": "MIT",
   "type": "module",
@@ -30,6 +30,7 @@
     "omot": "./dist/bin.js"
   },
   "scripts": {
+    "prepack": "node ../../scripts/copy-package-files.mjs LICENSE README.md",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
