@@ -153,6 +153,40 @@ describe("report payload schema", () => {
     }
   });
 
+  it("rejects slugs that look like secrets", () => {
+    for (const good of [
+      "claude-opus-4",
+      "gpt-5.1-codex",
+      "claude-opus-4-1-20250805",
+      "2.1.0",
+      "gemini-2.5-pro",
+    ]) {
+      for (const field of ["agent", "agent_version", "model"] as const) {
+        expect(
+          reportPayloadSchema.safeParse({
+            ...EXAMPLE_REPORT_PAYLOAD,
+            [field]: good,
+          }).success,
+        ).toBe(true);
+      }
+    }
+    for (const bad of [
+      "ghp_abcdef123456",
+      "sk-proj-abc123",
+      "a".repeat(20) + "1".repeat(20),
+      "npm_abc123def",
+    ]) {
+      for (const field of ["agent", "agent_version", "model"] as const) {
+        expect(
+          reportPayloadSchema.safeParse({
+            ...EXAMPLE_REPORT_PAYLOAD,
+            [field]: bad,
+          }).success,
+        ).toBe(false);
+      }
+    }
+  });
+
   it("derives task and check ids from the registry", () => {
     expect([...BUILTIN_TASK_IDS].sort()).toEqual(
       builtinTasks.map((task) => task.manifest.id).sort(),
@@ -306,6 +340,45 @@ describe("detectStack", () => {
       framework: "other",
     });
   });
+
+  it("follows pnpm-workspace.yaml packages globs", async () => {
+    expect(
+      await stackOf({
+        "package.json": JSON.stringify({ name: "f", private: true }),
+        "pnpm-workspace.yaml": 'packages:\n  - "services/*"\nother: true\n',
+        "services/api/package.json": JSON.stringify({
+          name: "api",
+          dependencies: { next: "latest" },
+        }),
+        "services/api/tsconfig.json": "{}",
+      }),
+    ).toEqual({
+      package_manager: "npm",
+      language: "typescript",
+      framework: "nextjs",
+    });
+  });
+
+  it("follows package.json workspaces globs", async () => {
+    expect(
+      await stackOf({
+        "package.json": JSON.stringify({
+          name: "f",
+          private: true,
+          workspaces: ["libs/*"],
+        }),
+        "libs/api/package.json": JSON.stringify({
+          name: "api",
+          dependencies: { next: "latest" },
+        }),
+        "libs/api/tsconfig.json": "{}",
+      }),
+    ).toEqual({
+      package_manager: "npm",
+      language: "typescript",
+      framework: "nextjs",
+    });
+  });
 });
 
 describe("agents file", () => {
@@ -370,7 +443,38 @@ describe("ingestIssue", () => {
       random: "abcd1234",
     });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.comment).toContain("`attempts`");
+    if (!result.ok) expect(result.comment).toContain("- attempts:");
+  });
+
+  it("never echoes attacker text from the body", async () => {
+    const agents = await agentsFile();
+    const base = {
+      author: "someone",
+      agents,
+      now: new Date(),
+      random: "abcd1234",
+    };
+    for (const [body, needles] of [
+      [
+        `{"schema_version":1,"<script>evil</script>":"x"}`,
+        ["evil", "<script>", "http"],
+      ],
+      [`{ "a": SPAM-LINK-http://evil }`, ["evil", "http"]],
+      [
+        validBody({
+          ...EXAMPLE_REPORT_PAYLOAD,
+          checks: { "https://evil.example": "pass" },
+        }),
+        ["evil", "http"],
+      ],
+    ] as const) {
+      const result = ingestIssue({ ...base, body });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      for (const needle of needles) {
+        expect(result.comment).not.toContain(needle);
+      }
+    }
   });
 
   it("accepts a valid report and writes exactly one file without the username", async () => {

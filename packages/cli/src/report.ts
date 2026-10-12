@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,6 +19,7 @@ import {
   serializeReportPayload,
 } from "@oh-my-otter/benchmarks/report";
 import type { ScanSummary } from "@oh-my-otter/benchmarks/report";
+import { z } from "zod";
 import type { CliIO } from "./cli";
 
 export const REPORT_REPO_URL = "https://github.com/wemilabs/oh-my-otter";
@@ -53,12 +55,13 @@ export async function scanBaseline(root: string): Promise<BaselineScan> {
 async function scanBaselineCommit(
   root: string,
   commit: string,
-): Promise<ScanSummary> {
+): Promise<{ summary: ScanSummary; hasSubmodules: boolean }> {
   const dir = await mkdtemp(path.join(tmpdir(), "omot-baseline-"));
   try {
     await runGit(root, ["worktree", "add", "--detach", dir, commit]);
     try {
-      return (await scanBaseline(dir)).summary;
+      const hasSubmodules = existsSync(path.join(dir, ".gitmodules"));
+      return { summary: (await scanBaseline(dir)).summary, hasSubmodules };
     } finally {
       await runGit(root, ["worktree", "remove", "--force", dir]);
     }
@@ -102,7 +105,13 @@ export async function runReport(
       `This run was started with an older omot that didn't record readiness at start; scanning the baseline commit ${run.baseline.commit.slice(0, 12)} instead.\n`,
     );
     try {
-      scan = await scanBaselineCommit(root, run.baseline.commit);
+      const baseline = await scanBaselineCommit(root, run.baseline.commit);
+      scan = baseline.summary;
+      if (baseline.hasSubmodules) {
+        io.stderr(
+          "Submodules aren't checked out for this rescan, so checks that depend on them may differ.\n",
+        );
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       io.stderr(
@@ -112,10 +121,25 @@ export async function runReport(
     }
   }
 
-  const payload = buildReportPayload(run, scan, {
-    cliVersion: internal.cliVersion,
-    today: io.now(),
-  });
+  let payload;
+  try {
+    payload = buildReportPayload(run, scan, {
+      cliVersion: internal.cliVersion,
+      today: io.now(),
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      const issue = error.issues[0];
+      const field =
+        issue === undefined || issue.path.length === 0
+          ? "payload"
+          : issue.path.join(".");
+      const message = issue?.message ?? "invalid value";
+      io.stderr(`Can't report this run: ${field}: ${message}\n`);
+      return 1;
+    }
+    throw error;
+  }
   const json = serializeReportPayload(payload);
   io.stderr("This is the exact data omot report would submit:\n");
   io.stdout(json);

@@ -354,4 +354,49 @@ describe("omot report", () => {
     expect(stderr).toContain("Couldn't copy to the clipboard");
     expect(stderr).toContain("Report payload");
   });
+
+  it("fails cleanly when the run contains a secret-looking slug", async () => {
+    const root = await verifiedRepo();
+    const run = JSON.parse(
+      await readFile(path.join(root, ".omot/run.json"), "utf8"),
+    );
+    run.agent = "ghp_abcdef123456";
+    await writeFile(
+      path.join(root, ".omot/run.json"),
+      `${JSON.stringify(run, null, 2)}\n`,
+    );
+    const result = await invoke(["report", "--dry-run"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Can't report this run: agent:");
+    expect(result.stdout).toBe("");
+  });
+
+  it("warns about submodules when rescanning a legacy run", async () => {
+    const root = await repo({
+      ...fixture,
+      ".gitmodules": '[submodule "lib"]\n\tpath = lib\n\turl = ./lib\n',
+    });
+    await invoke([...start, "--yes"], { cwd: root });
+    await writeFile(
+      path.join(root, "add.test.mjs"),
+      addTest.replace("../src", "./src"),
+    );
+    await invoke(["bench", "verify", "--corrections", "0", "--minutes", "1"], {
+      cwd: root,
+    });
+    const run = JSON.parse(
+      await readFile(path.join(root, ".omot/run.json"), "utf8"),
+    );
+    delete run.baseline.scan;
+    run.schema_version = 2;
+    await writeFile(
+      path.join(root, ".omot/run.json"),
+      `${JSON.stringify(run, null, 2)}\n`,
+    );
+    const result = await invoke(["report", "--dry-run"], { cwd: root });
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain("Submodules aren't checked out");
+    const worktrees = await git(root, ["worktree", "list"]);
+    expect(worktrees.trim().split("\n")).toHaveLength(1);
+  });
 });

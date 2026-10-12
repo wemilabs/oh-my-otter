@@ -1,11 +1,15 @@
+import { z } from "zod";
 import {
   reportPayloadSchema,
   serializeReportPayload,
+  SECRET_SLUG_MESSAGE,
   type ReportPayload,
 } from "./payload";
 import type { AgentsFile } from "./agents";
 
 const MAX_BODY_LENGTH = 20_000;
+const MAX_ISSUES = 30;
+const KEY_PATTERN = /^[a-z0-9_-]{1,40}$/i;
 
 export type IngestResult =
   | { ok: true; fileName: string; contents: string; comment: string }
@@ -20,13 +24,15 @@ export function extractPayloadJson(body: string): unknown {
   const start = body.indexOf("{");
   const end = body.lastIndexOf("}");
   if (start === -1 || end <= start) {
-    throw new Error("No JSON payload was found in the issue body.");
+    throw new Error(
+      "The issue body doesn't contain valid JSON. Paste the output of `omot report` unedited.",
+    );
   }
   try {
     return JSON.parse(body.slice(start, end + 1));
   } catch (error) {
     throw new Error(
-      `No valid JSON payload was found in the issue body (${error instanceof Error ? error.message : String(error)}).`,
+      "The issue body doesn't contain valid JSON. Paste the output of `omot report` unedited.",
       { cause: error },
     );
   }
@@ -43,11 +49,49 @@ export function reportFileName(now: Date, random: string): string {
 const RETRY_GUIDANCE =
   "Re-run `omot report` with the latest omot and paste its JSON exactly as printed, without editing it. This issue will be closed; open a new one to submit again.";
 
+function safeKey(key: unknown): string {
+  if (typeof key === "number") return String(key);
+  if (typeof key === "string" && KEY_PATTERN.test(key)) return key;
+  return "<invalid key>";
+}
+
+function safePath(path: readonly PropertyKey[]): string {
+  if (path.length === 0) return "(root)";
+  return path.map((seg) => safeKey(seg)).join(".");
+}
+
+function issueText(issue: z.core.$ZodIssue): string {
+  switch (issue.code) {
+    case "invalid_type":
+      return `expected ${issue.expected}`;
+    case "invalid_value":
+      return "not an allowed value";
+    case "too_small":
+    case "too_big":
+      return "out of range";
+    case "invalid_format":
+      return "invalid format";
+    case "unrecognized_keys":
+      return `unexpected field(s): ${issue.keys
+        .slice(0, 10)
+        .map(safeKey)
+        .join(", ")}${issue.keys.length > 10 ? "…" : ""}`;
+    case "invalid_key":
+      return "invalid key";
+    case "custom":
+      return issue.message === SECRET_SLUG_MESSAGE
+        ? SECRET_SLUG_MESSAGE
+        : "invalid value";
+    default:
+      return "invalid value";
+  }
+}
+
 function invalidComment(lines: string[]): string {
   return [
     "This report could not be added to the dataset.",
     "",
-    ...lines,
+    ...lines.slice(0, MAX_ISSUES),
     "",
     RETRY_GUIDANCE,
   ].join("\n");
@@ -80,7 +124,7 @@ export function ingestIssue(input: {
     return {
       ok: false,
       comment: invalidComment([
-        `- \`payload\`: ${error instanceof Error ? error.message : String(error)}`,
+        `- payload: ${error instanceof Error ? error.message : "invalid payload"}`,
       ]),
     };
   }
@@ -90,8 +134,7 @@ export function ingestIssue(input: {
       ok: false,
       comment: invalidComment(
         parsed.error.issues.map(
-          (issue) =>
-            `- \`${issue.path.join(".") || "(root)"}\`: ${issue.message}`,
+          (issue) => `- ${safePath(issue.path)}: ${issueText(issue)}`,
         ),
       ),
     };

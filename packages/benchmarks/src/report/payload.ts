@@ -27,6 +27,24 @@ export const BUILTIN_TASK_IDS = [
 
 export { checkStatusSchema, stackSchema } from "./scan";
 
+export const SECRET_SLUG_MESSAGE =
+  "looks like a secret or token; use a plain version or model name";
+
+const TOKEN_PREFIX_PATTERN =
+  /(?:^|[._-])(?:ghp|gho|ghu|ghs|ghr|github_pat|glpat|npm|sk|xox[abprs]|akia)[_-]/;
+
+export function looksLikeSecret(value: string): boolean {
+  if (TOKEN_PREFIX_PATTERN.test(value)) return true;
+  return value
+    .split(/[._-]/)
+    .some(
+      (segment) =>
+        segment.length >= 24 && /[a-z]/i.test(segment) && /\d/.test(segment),
+    );
+}
+
+const notSecret = (value: string) => !looksLikeSecret(value);
+
 export const reportPayloadSchema = z
   .object({
     schema_version: z.literal(REPORT_SCHEMA_VERSION),
@@ -37,9 +55,20 @@ export const reportPayloadSchema = z
     scoring_version: z.number().int().min(1),
     task_id: z.enum(BUILTIN_TASK_IDS),
     task_version: z.number().int().min(1),
-    agent: z.string().regex(AGENT_PATTERN),
-    agent_version: z.string().regex(AGENT_VERSION_PATTERN).optional(),
-    model: z.string().regex(MODEL_PATTERN).optional(),
+    agent: z
+      .string()
+      .regex(AGENT_PATTERN)
+      .refine(notSecret, { message: SECRET_SLUG_MESSAGE }),
+    agent_version: z
+      .string()
+      .regex(AGENT_VERSION_PATTERN)
+      .refine(notSecret, { message: SECRET_SLUG_MESSAGE })
+      .optional(),
+    model: z
+      .string()
+      .regex(MODEL_PATTERN)
+      .refine(notSecret, { message: SECRET_SLUG_MESSAGE })
+      .optional(),
     outcome: z.enum(["pass", "partial", "fail"]),
     human_corrections: z.number().int().min(0).max(100_000),
     human_minutes: z.number().int().min(0).max(100_000),
@@ -50,8 +79,6 @@ export const reportPayloadSchema = z
     submitted_on: z.iso.date(),
   })
   .strict();
-
-export type ReportPayload = z.infer<typeof reportPayloadSchema>;
 
 export const EXAMPLE_REPORT_PAYLOAD: ReportPayload = {
   schema_version: 1,

@@ -38,6 +38,73 @@ function depNames(pkg: Record<string, unknown> | null): Set<string> {
   return names;
 }
 
+const DEFAULT_WORKSPACE_GLOBS = ["apps/*", "packages/*"];
+const MAX_WORKSPACE_MANIFESTS = 200;
+
+function packageJsonWorkspaces(pkg: Record<string, unknown>): string[] {
+  const workspaces = pkg.workspaces;
+  if (Array.isArray(workspaces)) {
+    return workspaces.filter((w): w is string => typeof w === "string");
+  }
+  if (workspaces !== null && typeof workspaces === "object") {
+    const packages = (workspaces as Record<string, unknown>).packages;
+    if (Array.isArray(packages)) {
+      return packages.filter((w): w is string => typeof w === "string");
+    }
+  }
+  return [];
+}
+
+/** Minimal parser: the `packages:` list in pnpm-workspace.yaml. */
+function pnpmWorkspaceGlobs(yaml: string): string[] {
+  const globs: string[] = [];
+  let inPackages = false;
+  for (const line of yaml.split(/\r?\n/)) {
+    if (/^packages\s*:/.test(line)) {
+      inPackages = true;
+      continue;
+    }
+    if (!inPackages) continue;
+    const item = /^\s+-\s*['"]?([^'"\s#]+)['"]?\s*$/.exec(line);
+    if (item) {
+      globs.push(item[1]!);
+      continue;
+    }
+    if (/^\S/.test(line)) break; // next top-level key
+  }
+  return globs;
+}
+
+function safeGlob(glob: string): string | null {
+  const trimmed = glob.trim().replace(/\/+$/, "");
+  if (trimmed === "" || trimmed.startsWith("!")) return null;
+  if (trimmed.startsWith("/") || trimmed.split("/").includes("..")) return null;
+  return trimmed;
+}
+
+async function workspacePackageJsons(ctx: CheckContext): Promise<string[]> {
+  const globs = new Set(DEFAULT_WORKSPACE_GLOBS);
+  for (const glob of packageJsonWorkspaces(ctx.packageJson ?? {})) {
+    const safe = safeGlob(glob);
+    if (safe) globs.add(safe);
+  }
+  const pnpmYaml = await ctx.read("pnpm-workspace.yaml");
+  if (pnpmYaml !== null) {
+    for (const glob of pnpmWorkspaceGlobs(pnpmYaml)) {
+      const safe = safeGlob(glob);
+      if (safe) globs.add(safe);
+    }
+  }
+  const found = new Set<string>();
+  for (const glob of globs) {
+    for (const file of await ctx.glob(`${glob}/package.json`)) {
+      found.add(file);
+      if (found.size >= MAX_WORKSPACE_MANIFESTS) return [...found];
+    }
+  }
+  return [...found];
+}
+
 export async function detectStack(ctx: CheckContext): Promise<Stack> {
   const hasPackageJson = ctx.packageJson !== null;
 
@@ -61,10 +128,9 @@ export async function detectStack(ctx: CheckContext): Promise<Stack> {
     }
   }
 
-  const workspaceDirs = [
-    ...(await ctx.glob("apps/*/package.json")),
-    ...(await ctx.glob("packages/*/package.json")),
-  ].map((file) => file.split("/").slice(0, -1).join("/"));
+  const workspaceDirs = (await workspacePackageJsons(ctx)).map((file) =>
+    file.split("/").slice(0, -1).join("/"),
+  );
 
   const deps = depNames(ctx.packageJson);
   for (const dir of workspaceDirs) {
