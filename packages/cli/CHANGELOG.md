@@ -1,5 +1,18 @@
 # oh-my-otter
 
+## 0.3.0
+
+### Minor Changes
+
+- c230425: Record baseline script health and retain each benchmark verification attempt.
+
+### Patch Changes
+
+- ce0d1e8: Scope benchmark import aliases to the target module and detect baseline edits to pre-dirty files.
+- Updated dependencies [89b874f]
+  - @oh-my-otter/checks@0.3.0
+  - @oh-my-otter/core@0.3.0
+
 ## 0.2.0
 
 ### Minor Changes
