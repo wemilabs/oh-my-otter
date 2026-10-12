@@ -123,7 +123,8 @@ describe("fix-failing-test", () => {
     });
     expect(result.outcome).toBe("fail");
     expect(result.reasons.join("\n")).toContain("test script failed");
-    expect(result.reasons.join("\n")).toContain("# fail 1");
+    expect(result.reasons.join("\n")).toContain("Last output:");
+    expect(result.reasons.join("\n")).toMatch(/# fail 1|AssertionError/);
   });
 
   it("rejects a failing baseline test and includes the output tail", async () => {
