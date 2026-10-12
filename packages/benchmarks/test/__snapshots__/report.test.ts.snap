@@ -1,0 +1,173 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`report payload schema > matches the JSON schema snapshot 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agent": {
+      "pattern": "^[a-z0-9._-]{1,40}$",
+      "type": "string",
+    },
+    "agent_version": {
+      "pattern": "^[a-z0-9._-]{1,40}$",
+      "type": "string",
+    },
+    "attempts": {
+      "maximum": 100000,
+      "minimum": 1,
+      "type": "integer",
+    },
+    "checks": {
+      "additionalProperties": {
+        "enum": [
+          "pass",
+          "fail",
+          "warn",
+          "na",
+        ],
+        "type": "string",
+      },
+      "propertyNames": {
+        "enum": [
+          "package-manager-lockfile",
+          "env-example",
+          "node-version-pinned",
+          "test-script",
+          "tests-pass",
+          "build-script",
+          "tests-exist",
+          "lint-script",
+          "typecheck-script",
+          "install-documented",
+          "contributing-or-agents-doc",
+          "ci-config",
+          "formatter-config",
+          "gitignore-sane",
+        ],
+        "type": "string",
+      },
+      "type": "object",
+    },
+    "cli_version": {
+      "maxLength": 32,
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9a-z.-]+)?$",
+      "type": "string",
+    },
+    "human_corrections": {
+      "maximum": 100000,
+      "minimum": 0,
+      "type": "integer",
+    },
+    "human_minutes": {
+      "maximum": 100000,
+      "minimum": 0,
+      "type": "integer",
+    },
+    "model": {
+      "pattern": "^[a-z0-9._-]{1,60}$",
+      "type": "string",
+    },
+    "outcome": {
+      "enum": [
+        "pass",
+        "partial",
+        "fail",
+      ],
+      "type": "string",
+    },
+    "readiness_score": {
+      "maximum": 100,
+      "minimum": 0,
+      "type": "integer",
+    },
+    "schema_version": {
+      "const": 1,
+      "type": "number",
+    },
+    "scoring_version": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer",
+    },
+    "stack": {
+      "additionalProperties": false,
+      "properties": {
+        "framework": {
+          "enum": [
+            "nextjs",
+            "react",
+            "vue",
+            "svelte",
+            "astro",
+            "node",
+            "other",
+          ],
+          "type": "string",
+        },
+        "language": {
+          "enum": [
+            "typescript",
+            "javascript",
+          ],
+          "type": "string",
+        },
+        "package_manager": {
+          "enum": [
+            "npm",
+            "pnpm",
+            "yarn",
+            "bun",
+            "other",
+          ],
+          "type": "string",
+        },
+      },
+      "required": [
+        "package_manager",
+        "language",
+        "framework",
+      ],
+      "type": "object",
+    },
+    "submitted_on": {
+      "format": "date",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$",
+      "type": "string",
+    },
+    "task_id": {
+      "enum": [
+        "dep-patch-bump",
+        "add-unit-test",
+        "fix-lint-rule",
+        "a11y-img-alt",
+        "ts-strict-file",
+        "fix-failing-test",
+      ],
+      "type": "string",
+    },
+    "task_version": {
+      "maximum": 9007199254740991,
+      "minimum": 1,
+      "type": "integer",
+    },
+  },
+  "required": [
+    "schema_version",
+    "cli_version",
+    "scoring_version",
+    "task_id",
+    "task_version",
+    "agent",
+    "outcome",
+    "human_corrections",
+    "human_minutes",
+    "attempts",
+    "readiness_score",
+    "checks",
+    "stack",
+    "submitted_on",
+  ],
+  "type": "object",
+}
+`;

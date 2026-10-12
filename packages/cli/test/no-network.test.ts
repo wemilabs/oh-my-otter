@@ -5,8 +5,12 @@ import * as compatHttp from "http";
 import * as compatHttps from "https";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { execa } from "execa";
 import {
+  afterEach,
   beforeAll,
   afterAll,
   beforeEach,
@@ -25,6 +29,19 @@ const fixtures = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../checks/test/fixtures",
 );
+const tempRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    tempRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true })),
+  );
+});
+
+async function git(cwd: string, args: string[]) {
+  return String((await execa("git", args, { cwd })).stdout);
+}
 
 function blocked(name: string): never {
   recorded.push(name);
@@ -152,6 +169,88 @@ describe("scanner network guard", () => {
       await main(["scan", path.join(fixtures, "healthy"), "--badge"], badge.io),
     ).toBe(0);
     expect(badge.output().stdout).toContain("img.shields.io");
+    expect(recorded).toEqual([]);
+  });
+
+  it("reports without network calls", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "omot-nonet-"));
+    tempRoots.push(root);
+    await git(root, ["init", "-q", "--initial-branch=main"]);
+    await git(root, ["config", "user.name", "Test"]);
+    await git(root, ["config", "user.email", "test@example.invalid"]);
+    await git(root, ["config", "commit.gpgsign", "false"]);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({
+        name: "f",
+        private: true,
+        type: "module",
+        scripts: { test: "node --test" },
+      }),
+    );
+    await writeFile(path.join(root, "package-lock.json"), "{}");
+    await mkdir(path.join(root, "src"));
+    await writeFile(
+      path.join(root, "src/math.mjs"),
+      "export function add(a, b) { return a + b; }\n",
+    );
+    await git(root, ["add", "-A"]);
+    await git(root, ["commit", "-qm", "baseline"]);
+
+    const ioFor2 = () => {
+      let stdout = "";
+      let stderr = "";
+      return {
+        io: {
+          cwd: root,
+          isTTY: true,
+          stdout: (text: string) => {
+            stdout += text;
+          },
+          stderr: (text: string) => {
+            stderr += text;
+          },
+          confirm: async () => true,
+          ask: async () => "",
+          openUrl: async () => {},
+          copyToClipboard: async () => {},
+        },
+        output: () => ({ stdout, stderr }),
+      };
+    };
+
+    const started = ioFor2();
+    expect(
+      await main(
+        [
+          "bench",
+          "start",
+          "add-unit-test",
+          "--param",
+          "file=src/math.mjs",
+          "--param",
+          "function=add",
+          "--yes",
+        ],
+        started.io,
+      ),
+    ).toBe(0);
+    await writeFile(
+      path.join(root, "add.test.mjs"),
+      'import { test } from "node:test";\nimport assert from "node:assert/strict";\nimport { add } from "./src/math.mjs";\ntest("add", () => assert.equal(add(1, 2), 3));\n',
+    );
+    const verified = ioFor2();
+    expect(
+      await main(
+        ["bench", "verify", "--corrections", "0", "--minutes", "1"],
+        verified.io,
+      ),
+    ).toBe(0);
+
+    const dry = ioFor2();
+    expect(await main(["report", "--dry-run"], dry.io)).toBe(0);
+    const submitted = ioFor2();
+    expect(await main(["report"], submitted.io)).toBe(0);
     expect(recorded).toEqual([]);
   });
 

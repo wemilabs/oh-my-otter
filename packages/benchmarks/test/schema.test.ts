@@ -10,7 +10,7 @@ import {
 } from "../src/index";
 
 const run = {
-  schema_version: 2,
+  schema_version: 3,
   task: { id: "add-unit-test", version: 1 },
   params: {},
   baseline: { commit: "a".repeat(40), started_at: "2026-10-12T16:00:00.000Z" },

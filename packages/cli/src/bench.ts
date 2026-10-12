@@ -29,6 +29,7 @@ import {
   type Task,
   type VerifyResult,
 } from "@oh-my-otter/benchmarks";
+import { scanBaseline } from "./report";
 
 export interface BenchIO {
   stdout: (text: string) => void;
@@ -295,6 +296,13 @@ async function startTask(
     }
   }
 
+  const baselineScan = await scanBaseline(root);
+  io.stderr(
+    pc.dim(
+      `Readiness at start: ${baselineScan.score} · ${baselineScan.grade}\n`,
+    ),
+  );
+
   const ctx = createPrepareContext(root, {
     params,
     scripts: task.scripts,
@@ -339,6 +347,7 @@ async function startTask(
               ]),
             ),
           }),
+      scan: baselineScan.summary,
     },
     verifications: [],
   };

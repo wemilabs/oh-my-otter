@@ -255,7 +255,7 @@ describe("bench start and verify", () => {
     );
     const run = await runFile(root);
     expect(run).toMatchObject({
-      schema_version: 2,
+      schema_version: 3,
       task: { id: "add-unit-test", version: 4 },
       params: { file: "src/math.mjs", function: "add" },
       agent: "claude-code",

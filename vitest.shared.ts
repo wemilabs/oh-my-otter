@@ -17,6 +17,10 @@ export const sharedConfig: UserConfig = {
         replacement: resolve(root, "packages/core/src/index.ts"),
       },
       {
+        find: /^@oh-my-otter\/benchmarks\/report$/,
+        replacement: resolve(root, "packages/benchmarks/src/report/index.ts"),
+      },
+      {
         find: /^@oh-my-otter\/benchmarks$/,
         replacement: resolve(root, "packages/benchmarks/src/index.ts"),
       },

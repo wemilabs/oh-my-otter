@@ -31,6 +31,11 @@
       "types": "./dist/index.d.ts",
       "source": "./src/index.ts",
       "import": "./dist/index.js"
+    },
+    "./report": {
+      "types": "./dist/report.d.ts",
+      "source": "./src/report/index.ts",
+      "import": "./dist/report.js"
     }
   },
   "scripts": {
@@ -41,6 +46,7 @@
     "check:versions": "node scripts/check-task-versions.mjs"
   },
   "dependencies": {
+    "@oh-my-otter/checks": "workspace:*",
     "@oh-my-otter/core": "workspace:*",
     "execa": "^10.1.0",
     "zod": "^4.6.6"

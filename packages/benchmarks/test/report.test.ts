@@ -1,0 +1,444 @@
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
+import { z } from "zod";
+import { createCheckContext } from "@oh-my-otter/core/node";
+import {
+  agentsFileSchema,
+  BUILTIN_CHECK_IDS,
+  BUILTIN_TASK_IDS,
+  buildReportPayload,
+  canonicalAgent,
+  EXAMPLE_REPORT_PAYLOAD,
+  ingestIssue,
+  reportFileName,
+  reportPayloadSchema,
+  serializeReportPayload,
+} from "../src/report";
+import { builtinTasks, detectStack, writeIngestResult } from "../src/index";
+import type { RunFile } from "../src/index";
+import { createRepo } from "./helpers";
+
+const packageRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+const repoRoot = path.resolve(packageRoot, "../..");
+
+const dirs: string[] = [];
+afterEach(async () => {
+  await Promise.all(
+    dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })),
+  );
+});
+
+async function agentsFile() {
+  return agentsFileSchema.parse(
+    JSON.parse(
+      await readFile(path.join(repoRoot, "dataset/agents.json"), "utf8"),
+    ),
+  );
+}
+
+const verifiedRun: RunFile = {
+  schema_version: 3,
+  task: { id: "add-unit-test", version: 4 },
+  params: { file: "src/math.mjs", function: "add" },
+  agent: "claude-code",
+  agent_version: "2.1.0",
+  model: "claude-opus-4",
+  baseline: {
+    commit: "a".repeat(40),
+    started_at: "2026-10-12T16:00:00.000Z",
+  },
+  verifications: [
+    {
+      outcome: "pass",
+      reasons: ["ok"],
+      verified_at: "2026-10-12T16:30:00.000Z",
+      head_commit: "b".repeat(40),
+      human_corrections: 1,
+      human_minutes: 12,
+      agent: "claude-code",
+    },
+  ],
+  result: {
+    outcome: "pass",
+    reasons: ["ok"],
+    verified_at: "2026-10-12T16:30:00.000Z",
+    human_corrections: 1,
+    human_minutes: 12,
+    attempts: 1,
+  },
+};
+
+const scan = {
+  scoring_version: 1,
+  readiness_score: 82,
+  checks: { "test-script": "pass" as const },
+  stack: {
+    package_manager: "pnpm" as const,
+    language: "typescript" as const,
+    framework: "nextjs" as const,
+  },
+};
+
+describe("report payload schema", () => {
+  it("matches the JSON schema snapshot", () => {
+    expect(z.toJSONSchema(reportPayloadSchema)).toMatchSnapshot();
+  });
+
+  it("keeps the documented key order", () => {
+    expect(Object.keys(reportPayloadSchema.shape)).toEqual([
+      "schema_version",
+      "cli_version",
+      "scoring_version",
+      "task_id",
+      "task_version",
+      "agent",
+      "agent_version",
+      "model",
+      "outcome",
+      "human_corrections",
+      "human_minutes",
+      "attempts",
+      "readiness_score",
+      "checks",
+      "stack",
+      "submitted_on",
+    ]);
+  });
+
+  it("parses the example payload and serializes it deterministically", () => {
+    expect(reportPayloadSchema.parse(EXAMPLE_REPORT_PAYLOAD)).toEqual(
+      EXAMPLE_REPORT_PAYLOAD,
+    );
+    expect(serializeReportPayload(EXAMPLE_REPORT_PAYLOAD)).toBe(
+      serializeReportPayload({
+        ...EXAMPLE_REPORT_PAYLOAD,
+        outcome: "pass",
+      }),
+    );
+  });
+
+  it("rejects extra keys, custom check ids, and bad values", () => {
+    expect(
+      reportPayloadSchema.safeParse({ ...EXAMPLE_REPORT_PAYLOAD, repo: "x" })
+        .success,
+    ).toBe(false);
+    expect(
+      reportPayloadSchema.safeParse({
+        ...EXAMPLE_REPORT_PAYLOAD,
+        checks: { "my-plugin-check": "pass" },
+      }).success,
+    ).toBe(false);
+    for (const patch of [
+      { agent: "Not A Slug!" },
+      { submitted_on: "2026-10-10T00:00:00Z" },
+      { submitted_on: "yesterday" },
+      { human_corrections: -1 },
+      { attempts: 0 },
+      { readiness_score: 101 },
+      { cli_version: "v0.3.0!" },
+      { task_id: "not-a-task" },
+    ]) {
+      expect(
+        reportPayloadSchema.safeParse({
+          ...EXAMPLE_REPORT_PAYLOAD,
+          ...patch,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("derives task and check ids from the registry", () => {
+    expect([...BUILTIN_TASK_IDS].sort()).toEqual(
+      builtinTasks.map((task) => task.manifest.id).sort(),
+    );
+    expect(BUILTIN_CHECK_IDS.length).toBeGreaterThan(0);
+  });
+});
+
+describe("PRIVACY.md example", () => {
+  it("matches EXAMPLE_REPORT_PAYLOAD exactly", async () => {
+    const privacy = await readFile(path.join(repoRoot, "PRIVACY.md"), "utf8");
+    const blocks = privacy.match(/```json\n([\s\S]*?)```/g) ?? [];
+    expect(blocks).toHaveLength(1);
+    const raw = blocks[0]!.slice("```json\n".length, -"```".length);
+    expect(JSON.parse(raw)).toEqual(EXAMPLE_REPORT_PAYLOAD);
+    expect(raw.trim()).toBe(
+      serializeReportPayload(EXAMPLE_REPORT_PAYLOAD).trim(),
+    );
+  });
+});
+
+describe("buildReportPayload", () => {
+  it("throws for an unverified run", () => {
+    const { result: _ignored, ...rest } = verifiedRun;
+    void _ignored;
+    expect(() =>
+      buildReportPayload(rest as RunFile, scan, {
+        cliVersion: "0.3.0",
+        today: new Date("2026-10-10T12:00:00Z"),
+      }),
+    ).toThrow("hasn't been verified yet");
+  });
+
+  it("builds the payload and leaks no repo details", () => {
+    const run: RunFile = {
+      ...verifiedRun,
+      agent: "cursor",
+      params: { file: "src/secret/math.mjs", function: "add" },
+      verifications: [
+        {
+          ...verifiedRun.verifications[0]!,
+          reasons: ["src/secret/math.mjs broke @scope/pkg"],
+        },
+      ],
+      result: {
+        ...verifiedRun.result!,
+        reasons: ["src/secret/math.mjs broke @scope/pkg"],
+      },
+    };
+    const payload = buildReportPayload(run, scan, {
+      cliVersion: "0.3.0",
+      today: new Date("2026-10-10T23:30:00Z"),
+    });
+    expect(payload.agent).toBe("cursor");
+    expect(payload.attempts).toBe(1);
+    expect(payload.submitted_on).toBe("2026-10-10");
+    const json = serializeReportPayload(payload);
+    for (const leak of [
+      "src/secret/math.mjs",
+      "@scope/pkg",
+      "a".repeat(40),
+      "b".repeat(40),
+      "omot",
+    ]) {
+      expect(json).not.toContain(leak);
+    }
+  });
+});
+
+describe("detectStack", () => {
+  async function stackOf(files: Record<string, string>) {
+    const root = await createRepo(files);
+    return detectStack(createCheckContext(root));
+  }
+
+  it("detects pnpm + next + typescript", async () => {
+    expect(
+      await stackOf({
+        "package.json": JSON.stringify({
+          name: "f",
+          packageManager: "pnpm@9.0.0",
+          dependencies: { next: "latest" },
+        }),
+        "pnpm-lock.yaml": "",
+        "tsconfig.json": "{}",
+      }),
+    ).toEqual({
+      package_manager: "pnpm",
+      language: "typescript",
+      framework: "nextjs",
+    });
+  });
+
+  it("detects yarn + react + javascript", async () => {
+    expect(
+      await stackOf({
+        "package.json": JSON.stringify({
+          name: "f",
+          dependencies: { react: "latest" },
+        }),
+        "yarn.lock": "",
+      }),
+    ).toEqual({
+      package_manager: "yarn",
+      language: "javascript",
+      framework: "react",
+    });
+  });
+
+  it("detects the bun lockfile", async () => {
+    expect(
+      (
+        await stackOf({
+          "package.json": JSON.stringify({ name: "f" }),
+          "bun.lock": "",
+        })
+      ).package_manager,
+    ).toBe("bun");
+    expect(
+      (
+        await stackOf({
+          "package.json": JSON.stringify({ name: "f" }),
+          "bun.lockb": "",
+        })
+      ).package_manager,
+    ).toBe("bun");
+  });
+
+  it("finds next and tsconfig inside a workspace package", async () => {
+    expect(
+      await stackOf({
+        "package.json": JSON.stringify({ name: "f", private: true }),
+        "package-lock.json": "{}",
+        "apps/web/package.json": JSON.stringify({
+          name: "web",
+          dependencies: { next: "latest" },
+        }),
+        "apps/web/tsconfig.json": "{}",
+      }),
+    ).toEqual({
+      package_manager: "npm",
+      language: "typescript",
+      framework: "nextjs",
+    });
+  });
+
+  it("reports other/other without a package.json", async () => {
+    expect(await stackOf({ "README.md": "hi\n" })).toEqual({
+      package_manager: "other",
+      language: "javascript",
+      framework: "other",
+    });
+  });
+});
+
+describe("agents file", () => {
+  it("parses dataset/agents.json", async () => {
+    const agents = await agentsFile();
+    expect(agents.agents.length).toBeGreaterThan(5);
+  });
+
+  it("maps slugs to canonical agents", async () => {
+    const agents = await agentsFile();
+    expect(canonicalAgent("claude", agents)).toBe("claude-code");
+    expect(canonicalAgent("claude-code", agents)).toBe("claude-code");
+    expect(canonicalAgent("unknown", agents)).toBe("other");
+    expect(canonicalAgent("my-agent", agents)).toBe("other");
+  });
+});
+
+function validBody(payload: unknown = EXAMPLE_REPORT_PAYLOAD): string {
+  return `Submitted by @OtterFan42 — thanks!\n\n\`\`\`json\n${JSON.stringify(payload, null, 2)}\n\`\`\`\n\nFiled via omot report.`;
+}
+
+describe("ingestIssue", () => {
+  const input = (overrides: Partial<Parameters<typeof ingestIssue>[0]>) =>
+    ingestIssue({
+      body: validBody(),
+      author: "SomeoneElse",
+      agents: {
+        agents: [{ id: "claude", display_name: "C", aliases: ["claude-code"] }],
+      },
+      now: new Date("2026-10-10T12:34:56Z"),
+      random: "abcd1234",
+      ...overrides,
+    });
+
+  it("rejects bodies without JSON, broken JSON, extras, wrong types, and oversized bodies", async () => {
+    const agents = await agentsFile();
+    for (const bad of [
+      "no json here",
+      "```json\n{broken\n```",
+      validBody({ ...EXAMPLE_REPORT_PAYLOAD, wat: 1 }),
+      validBody({ ...EXAMPLE_REPORT_PAYLOAD, attempts: "one" }),
+      `${"x".repeat(20_001)}{"a":1}`,
+    ]) {
+      const result = ingestIssue({
+        body: bad,
+        author: "someone",
+        agents,
+        now: new Date(),
+        random: "abcd1234",
+      });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.comment).toContain("`");
+    }
+  });
+
+  it("lists the failing path in the comment", async () => {
+    const result = ingestIssue({
+      body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, attempts: "one" }),
+      author: "someone",
+      agents: await agentsFile(),
+      now: new Date(),
+      random: "abcd1234",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.comment).toContain("`attempts`");
+  });
+
+  it("accepts a valid report and writes exactly one file without the username", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "omot-ingest-"));
+    dirs.push(root);
+    const result = ingestIssue({
+      body: validBody(),
+      author: "OtterFan42",
+      agents: await agentsFile(),
+      now: new Date("2026-10-10T12:34:56Z"),
+      random: "abcd1234",
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const file = await writeIngestResult(root, result);
+    expect(file).toBe(`dataset/reports/${result.fileName}`);
+    const files = await readdir(path.join(root, "dataset/reports"));
+    expect(files).toEqual([result.fileName]);
+    const contents = await readFile(path.join(root, file), "utf8");
+    expect(contents.toLowerCase()).not.toContain("otterfan42");
+    expect(reportPayloadSchema.parse(JSON.parse(contents))).toEqual(
+      EXAMPLE_REPORT_PAYLOAD,
+    );
+  });
+
+  it("rejects an agent field containing the author's handle", async () => {
+    const result = input({
+      author: "OtterFan42",
+      agents: await agentsFile(),
+      body: validBody({ ...EXAMPLE_REPORT_PAYLOAD, agent: "otterfan42-bot" }),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.comment).toContain("username");
+  });
+
+  it("accepts an agent that equals a canonical alias even if it matches the handle", async () => {
+    const result = ingestIssue({
+      body: validBody({
+        schema_version: 1,
+        cli_version: "0.3.0",
+        scoring_version: 1,
+        task_id: "add-unit-test",
+        task_version: 1,
+        agent: "claude",
+        outcome: "pass",
+        human_corrections: 1,
+        human_minutes: 12,
+        attempts: 1,
+        readiness_score: 82,
+        checks: { "test-script": "pass" },
+        stack: {
+          package_manager: "pnpm",
+          language: "typescript",
+          framework: "nextjs",
+        },
+        submitted_on: "2026-10-10",
+      }),
+      author: "claude",
+      agents: await agentsFile(),
+      now: new Date(),
+      random: "abcd1234",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("formats report file names", () => {
+    expect(
+      reportFileName(new Date("2026-10-10T12:34:56.789Z"), "abcd1234"),
+    ).toBe("20261010T123456Z-abcd1234.json");
+  });
+});
