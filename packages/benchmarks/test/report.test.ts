@@ -1,5 +1,4 @@
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
@@ -14,17 +13,13 @@ import {
   checkReportPlausibility,
   EXAMPLE_REPORT_PAYLOAD,
   ingestIssue,
+  parseReportsNdjson,
   rateLimitProblem,
-  reportFileName,
   reportPayloadSchema,
+  serializeReportLine,
   serializeReportPayload,
 } from "../src/report";
-import {
-  builtinTasks,
-  detectStack,
-  summarizeScan,
-  writeIngestResult,
-} from "../src/index";
+import { builtinTasks, detectStack, summarizeScan } from "../src/index";
 import { runChecks } from "@oh-my-otter/core";
 import { builtinChecks } from "@oh-my-otter/checks";
 import type { RunFile } from "../src/index";
@@ -464,7 +459,6 @@ const ingestDefaults = {
   recent: [],
   open: [],
   now: new Date("2026-10-10T12:34:56Z"),
-  random: "abcd1234",
 } as const;
 
 describe("ingestIssue", () => {
@@ -543,9 +537,7 @@ describe("ingestIssue", () => {
     }
   });
 
-  it("accepts a valid report and writes exactly one file without the username", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "omot-ingest-"));
-    dirs.push(root);
+  it("accepts a valid report and returns one ndjson line without the username", async () => {
     const result = ingestIssue({
       body: validBody(),
       author: "OtterFan42",
@@ -554,15 +546,14 @@ describe("ingestIssue", () => {
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const file = await writeIngestResult(root, result);
-    expect(file).toBe(`dataset/reports/${result.fileName}`);
-    const files = await readdir(path.join(root, "dataset/reports"));
-    expect(files).toEqual([result.fileName]);
-    const contents = await readFile(path.join(root, file), "utf8");
-    expect(contents.toLowerCase()).not.toContain("otterfan42");
-    expect(reportPayloadSchema.parse(JSON.parse(contents))).toEqual(
+    expect(result.line).not.toContain("\n");
+    expect(result.line.toLowerCase()).not.toContain("otterfan42");
+    expect(reportPayloadSchema.parse(JSON.parse(result.line))).toEqual(
       EXAMPLE_REPORT_PAYLOAD,
     );
+    expect(parseReportsNdjson(`${result.line}\n`).reports).toEqual([
+      EXAMPLE_REPORT_PAYLOAD,
+    ]);
   });
 
   it("rejects an agent field containing the author's handle", async () => {
@@ -636,10 +627,37 @@ describe("ingestIssue", () => {
     expect(result.ok).toBe(true);
   });
 
-  it("formats report file names", () => {
-    expect(
-      reportFileName(new Date("2026-10-10T12:34:56.789Z"), "abcd1234"),
-    ).toBe("20261010T123456Z-abcd1234.json");
+  it("serializes a report line in canonical key order", () => {
+    const line = serializeReportLine(EXAMPLE_REPORT_PAYLOAD);
+    expect(line).not.toContain("\n");
+    expect(JSON.parse(line)).toEqual(EXAMPLE_REPORT_PAYLOAD);
+    expect(Object.keys(JSON.parse(line))).toEqual(
+      Object.keys(JSON.parse(serializeReportPayload(EXAMPLE_REPORT_PAYLOAD))),
+    );
+  });
+});
+
+describe("parseReportsNdjson", () => {
+  const line = serializeReportLine(EXAMPLE_REPORT_PAYLOAD);
+
+  it("parses valid lines and skips blank ones", () => {
+    const { reports, invalid } = parseReportsNdjson(`${line}\n\n${line}\n`);
+    expect(reports).toEqual([EXAMPLE_REPORT_PAYLOAD, EXAMPLE_REPORT_PAYLOAD]);
+    expect(invalid).toEqual([]);
+    expect(parseReportsNdjson("")).toEqual({ reports: [], invalid: [] });
+  });
+
+  it("collects line numbers for invalid JSON and schema-invalid payloads", () => {
+    const { reports, invalid } = parseReportsNdjson(
+      [
+        "{not json",
+        line,
+        JSON.stringify({ ...EXAMPLE_REPORT_PAYLOAD, outcome: "maybe" }),
+        JSON.stringify(EXAMPLE_REPORT_PAYLOAD).slice(0, -2),
+      ].join("\n"),
+    );
+    expect(reports).toEqual([EXAMPLE_REPORT_PAYLOAD]);
+    expect(invalid).toEqual([1, 3, 4]);
   });
 });
 

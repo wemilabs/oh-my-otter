@@ -38,19 +38,13 @@ async function main() {
     open,
     currentIssueNumber: issueNumber,
     now: new Date(),
-    random: randomBytes(4).toString("hex"),
   });
 
   if (githubOutput) {
     const delimiter = `omot-${randomBytes(8).toString("hex")}`;
     const lines = [
       `status=${result.ok ? "valid" : "invalid"}`,
-      `file_name<<${delimiter}`,
-      result.ok ? result.fileName : "",
-      delimiter,
-      `contents<<${delimiter}`,
-      result.ok ? result.contents : "",
-      delimiter,
+      `line=${result.ok ? result.line : ""}`,
       `comment<<${delimiter}`,
       result.comment,
       delimiter,

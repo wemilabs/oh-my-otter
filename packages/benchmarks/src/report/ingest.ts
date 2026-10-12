@@ -1,10 +1,10 @@
 import { z } from "zod";
 import {
   reportPayloadSchema,
-  serializeReportPayload,
   SECRET_SLUG_MESSAGE,
   type ReportPayload,
 } from "./payload";
+import { serializeReportLine } from "./ndjson";
 import { checkReportPlausibility } from "./plausibility";
 import type { AgentsFile } from "./agents";
 
@@ -13,8 +13,7 @@ const MAX_ISSUES = 30;
 const KEY_PATTERN = /^[a-z0-9_-]{1,40}$/i;
 
 export type IngestResult =
-  | { ok: true; fileName: string; contents: string; comment: string }
-  | { ok: false; comment: string };
+  { ok: true; line: string; comment: string } | { ok: false; comment: string };
 
 export function extractPayloadJson(body: string): unknown {
   if (body.length > MAX_BODY_LENGTH) {
@@ -37,14 +36,6 @@ export function extractPayloadJson(body: string): unknown {
       { cause: error },
     );
   }
-}
-
-export function reportFileName(now: Date, random: string): string {
-  const stamp = now
-    .toISOString()
-    .replace(/[-:]/g, "")
-    .replace(/\.\d{3}Z$/, "Z");
-  return `${stamp}-${random}.json`;
 }
 
 const RETRY_GUIDANCE =
@@ -163,7 +154,6 @@ export function ingestIssue(input: {
   open: readonly RateLimitIssue[];
   currentIssueNumber?: number;
   now: Date;
-  random: string;
 }): IngestResult {
   const limited = rateLimitProblem({
     recent: input.recent,
@@ -218,9 +208,8 @@ export function ingestIssue(input: {
   }
   return {
     ok: true,
-    fileName: reportFileName(input.now, input.random),
-    contents: serializeReportPayload(payload),
+    line: serializeReportLine(payload),
     comment:
-      "Thanks! Your report passed validation and a pull request will add it to the public dataset after maintainer review. Only the JSON fields were stored; your username and this issue's text were not stored.",
+      "Thanks! Your report passed validation and was appended to the public dataset (`reports.ndjson` on the `dataset` branch). Only the JSON fields were stored; your username and this issue's text were not.",
   };
 }

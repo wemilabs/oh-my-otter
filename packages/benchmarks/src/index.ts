@@ -53,7 +53,6 @@ export {
   writeRunFile,
 } from "./lib/run-file";
 export { detectStack, summarizeScan } from "./report/stack";
-export { writeIngestResult } from "./report/ingest-node";
 export { defineTask } from "./task";
 export { TaskPreconditionError } from "./types";
 export type {
