@@ -19,19 +19,8 @@ function resolveInside(root: string, relativePath: string): string {
   return absolute;
 }
 
-function normalizeRealPath(value: string): string {
-  if (process.platform !== "win32") return value;
-  if (value.slice(0, 8).toLowerCase() === "\\\\?\\unc\\") {
-    return `\\\\${value.slice(8)}`;
-  }
-  return value.startsWith("\\\\?\\") ? value.slice(4) : value;
-}
-
 function isInsideRoot(root: string, target: string): boolean {
-  const relative = path.relative(
-    normalizeRealPath(root),
-    normalizeRealPath(target),
-  );
+  const relative = path.relative(root, target);
   return (
     relative !== ".." &&
     !relative.startsWith(`..${path.sep}`) &&
@@ -81,7 +70,7 @@ export function createCheckContext(
   let packageJson: Record<string, unknown> | null = null;
   let realRoot: string | undefined;
   const getRealRoot = () => {
-    if (realRoot === undefined) realRoot = realpathSync(absoluteRoot);
+    if (realRoot === undefined) realRoot = realpathSync.native(absoluteRoot);
     return realRoot;
   };
   const resolveRealPathInsideRoot = async (relativePath: string) => {
@@ -146,7 +135,7 @@ export function createCheckContext(
         packageJsonLoaded = true;
         try {
           const target = resolveInside(absoluteRoot, "package.json");
-          const targetRealPath = realpathSync(target);
+          const targetRealPath = realpathSync.native(target);
           if (!isInsideRoot(getRealRoot(), targetRealPath)) {
             packageJson = null;
             return packageJson;
