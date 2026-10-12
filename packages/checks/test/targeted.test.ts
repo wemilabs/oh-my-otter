@@ -94,6 +94,7 @@ describe("targeted checks", () => {
       expect(result.fix).toBe(
         "Add the missing variable names to .env.example.",
       );
+      expect(await envExample.fix!(createCheckContext(root))).toEqual([]);
     });
   });
 
@@ -115,6 +116,22 @@ describe("targeted checks", () => {
     });
   });
 
+  it("unions documented keys from all existing environment examples", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/index.js"),
+        "process.env.PORT;\nprocess.env.API_KEY;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+      await writeFile(path.join(root, ".env.sample"), "API_KEY=\n");
+
+      expect((await envExample.run(createCheckContext(root))).status).toBe(
+        "pass",
+      );
+    });
+  });
+
   it("excludes platform-injected variables from warnings and fixes", async () => {
     await withTempRepo(async (root) => {
       await mkdir(path.join(root, "src"));
@@ -128,12 +145,33 @@ describe("targeted checks", () => {
         "TERM",
         "TZ",
         "LANG",
-        "VERCEL",
         "NEXT_RUNTIME",
+        "VERCEL",
+        "VERCEL_ENV",
         "VERCEL_URL",
+        "VERCEL_BRANCH_URL",
+        "VERCEL_PROJECT_PRODUCTION_URL",
+        "VERCEL_REGION",
+        "VERCEL_DEPLOYMENT_ID",
+        "NETLIFY",
+        "NETLIFY_DEV",
         "GITHUB_ACTIONS",
+        "GITHUB_SHA",
+        "GITHUB_REF",
+        "GITHUB_REF_NAME",
+        "GITHUB_HEAD_REF",
+        "GITHUB_BASE_REF",
+        "GITHUB_RUN_ID",
+        "GITHUB_RUN_NUMBER",
+        "GITHUB_WORKSPACE",
+        "GITHUB_REPOSITORY",
+        "GITHUB_EVENT_NAME",
+        "GITHUB_SERVER_URL",
+        "GITHUB_OUTPUT",
+        "GITHUB_ENV",
+        "GITHUB_STEP_SUMMARY",
+        "VERCEL_GIT_COMMIT_SHA",
         "RUNNER_OS",
-        "NETLIFY_SITE_ID",
         "npm_config_user_agent",
       ];
       await writeFile(
@@ -142,13 +180,48 @@ describe("targeted checks", () => {
           .map((name) => `process.env.${name};`)
           .join("\n"),
       );
-      await writeFile(path.join(root, ".env.example"), "API_KEY=\n");
       const context = createCheckContext(root);
 
-      expect((await envExample.run(context)).status).toBe("pass");
       expect((await envExample.fix!(context))[0]?.contents).toBe("API_KEY=\n");
+      await writeFile(path.join(root, ".env.example"), "API_KEY=\n");
+      expect((await envExample.run(context)).status).toBe("pass");
     });
   });
+
+  it.each(["NETLIFY_AUTH_TOKEN", "GITHUB_CLIENT_SECRET", "VERCEL_TOKEN"])(
+    "warns when user-supplied variable %s is undocumented",
+    async (name) => {
+      await withTempRepo(async (root) => {
+        await mkdir(path.join(root, "src"));
+        await writeFile(
+          path.join(root, "src/index.js"),
+          `process.env.${name};`,
+        );
+        await writeFile(path.join(root, ".env.example"), "");
+
+        const result = await envExample.run(createCheckContext(root));
+        expect(result.status).toBe("warn");
+        expect(result.detail).toBe(`.env.example is missing: ${name}`);
+      });
+    },
+  );
+
+  it.each(["VERCEL_URL", "GITHUB_SHA"])(
+    "does not warn for platform-injected variable %s",
+    async (name) => {
+      await withTempRepo(async (root) => {
+        await mkdir(path.join(root, "src"));
+        await writeFile(
+          path.join(root, "src/index.js"),
+          `process.env.${name};`,
+        );
+
+        expect((await envExample.run(createCheckContext(root))).status).toBe(
+          "na",
+        );
+      });
+    },
+  );
 
   it("collects named destructured environment variables", async () => {
     await withTempRepo(async (root) => {

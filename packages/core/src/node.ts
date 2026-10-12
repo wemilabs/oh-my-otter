@@ -19,8 +19,19 @@ function resolveInside(root: string, relativePath: string): string {
   return absolute;
 }
 
+function normalizeRealPath(value: string): string {
+  if (process.platform !== "win32") return value;
+  if (value.slice(0, 8).toLowerCase() === "\\\\?\\unc\\") {
+    return `\\\\${value.slice(8)}`;
+  }
+  return value.startsWith("\\\\?\\") ? value.slice(4) : value;
+}
+
 function isInsideRoot(root: string, target: string): boolean {
-  const relative = path.relative(root, target);
+  const relative = path.relative(
+    normalizeRealPath(root),
+    normalizeRealPath(target),
+  );
   return (
     relative !== ".." &&
     !relative.startsWith(`..${path.sep}`) &&

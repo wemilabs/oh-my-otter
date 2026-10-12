@@ -42,16 +42,33 @@ const platformInjectedVariables = new Set([
   "TERM",
   "TZ",
   "LANG",
-  "VERCEL",
   "NEXT_RUNTIME",
-]);
-const platformInjectedPrefixes = [
-  "VERCEL_",
-  "GITHUB_",
-  "RUNNER_",
+  "VERCEL",
+  "VERCEL_ENV",
+  "VERCEL_URL",
+  "VERCEL_BRANCH_URL",
+  "VERCEL_PROJECT_PRODUCTION_URL",
+  "VERCEL_REGION",
+  "VERCEL_DEPLOYMENT_ID",
   "NETLIFY",
-  "npm_",
-];
+  "NETLIFY_DEV",
+  "GITHUB_ACTIONS",
+  "GITHUB_SHA",
+  "GITHUB_REF",
+  "GITHUB_REF_NAME",
+  "GITHUB_HEAD_REF",
+  "GITHUB_BASE_REF",
+  "GITHUB_RUN_ID",
+  "GITHUB_RUN_NUMBER",
+  "GITHUB_WORKSPACE",
+  "GITHUB_REPOSITORY",
+  "GITHUB_EVENT_NAME",
+  "GITHUB_SERVER_URL",
+  "GITHUB_OUTPUT",
+  "GITHUB_ENV",
+  "GITHUB_STEP_SUMMARY",
+]);
+const platformInjectedPrefixes = ["VERCEL_GIT_", "RUNNER_", "npm_"];
 const envFiles = [
   ".env.example",
   ".env.sample",
@@ -141,28 +158,33 @@ export default defineCheck({
         detail: "No environment variable usage was found.",
       };
     }
+    const exampleFiles: string[] = [];
+    const documented = new Set<string>();
     for (const file of envFiles) {
       if (await ctx.exists(file)) {
-        const documented = documentedVariables((await ctx.read(file)) ?? "");
-        const missing = [...names]
-          .filter((name) => !documented.has(name))
-          .sort();
-        if (missing.length > 0) {
-          const listed = missing.slice(0, 10).join(", ");
-          const additional = missing.length - 10;
-          return {
-            status: "warn",
-            detail: `${file} is missing: ${listed}${
-              additional > 0 ? `, and ${additional} more` : ""
-            }`,
-            fix: `Add the missing variable names to ${file}.`,
-          };
+        exampleFiles.push(file);
+        for (const name of documentedVariables((await ctx.read(file)) ?? "")) {
+          documented.add(name);
         }
+      }
+    }
+    if (exampleFiles.length > 0) {
+      const missing = [...names].filter((name) => !documented.has(name)).sort();
+      if (missing.length > 0) {
+        const listed = missing.slice(0, 10).join(", ");
+        const additional = missing.length - 10;
         return {
-          status: "pass",
-          detail: `Found ${file} for environment variables.`,
+          status: "warn",
+          detail: `${exampleFiles[0]} is missing: ${listed}${
+            additional > 0 ? `, and ${additional} more` : ""
+          }`,
+          fix: `Add the missing variable names to ${exampleFiles[0]}.`,
         };
       }
+      return {
+        status: "pass",
+        detail: `Found ${exampleFiles[0]} for environment variables.`,
+      };
     }
     return {
       status: "fail",
@@ -171,6 +193,9 @@ export default defineCheck({
     };
   },
   async fix(ctx) {
+    for (const file of envFiles) {
+      if (await ctx.exists(file)) return [];
+    }
     const { names } = await collectEnvUsage(ctx);
     return [
       {
