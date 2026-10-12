@@ -14,7 +14,7 @@ omot bench start fix-failing-test --param file=src/lib/math.ts --agent <your-age
 
 ## Preconditions
 
-- A clean working tree and a test script (scripts.test) that passes at the baseline.
+- A clean working tree and a test script (`scripts.test`) that passes at the baseline.
 - The file is a non-test source file whose tests catch a flipped operator.
 - You confirm that omot may create a throwaway branch and commit the bug there.
 
@@ -26,9 +26,10 @@ omot bench start fix-failing-test --param file=src/lib/math.ts --agent <your-age
 
 ## How it is verified
 
-- `bench start` requires a clean working tree and a passing `test` script. After you confirm (or pass `--yes`), it creates the branch `omot/fix-failing-test-<timestamp>`, flips one operator in the file (for example `>=` to `>`), and commits it there with `--no-verify`. It tries up to 10 operators and keeps the first one that makes the tests fail. Your original branch is not changed.
+- `bench start` requires a clean working tree and a passing `test` script; a baseline failure blocks the task and reports the output tail. After you confirm (or pass `--yes`), it creates the branch `omot/fix-failing-test-<timestamp>`, flips one operator in the file (for example `>=` to `>`), and records the changed tree in a single parentless commit named `bench baseline`. The commit has no parent, so its history exposes no diff; the original branch commit and real index are untouched. This is not a security boundary: an agent can still inspect other refs such as `origin/main` or the reflog.
 - The prompt does not name the file, so the agent has to find the bug.
 - `bench verify` runs the `test` script and compares test files with the baseline: deleted test files or new `.skip`/`.only`/`.todo`/`xit` markers fail the run, and any other test file edit makes it partial.
+- Every verification is appended to `.omot/run.json`, with its own commit and result; the latest result records how many attempts were made.
 - When you are done, switch back with `git switch -` and delete the branch with `git branch -D omot/fix-failing-test-<timestamp>`.
 
 The prompt and verifier live in [`packages/benchmarks/src/tasks/fix-failing-test`](../../packages/benchmarks/src/tasks/fix-failing-test). Changing either requires a `version` bump in `task.json`.

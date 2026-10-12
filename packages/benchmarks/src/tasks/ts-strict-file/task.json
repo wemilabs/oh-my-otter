@@ -1,6 +1,6 @@
 {
   "id": "ts-strict-file",
-  "version": 1,
+  "version": 2,
   "title": "Remove explicit any from one file",
   "category": "types",
   "estimatedScope": "small",

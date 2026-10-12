@@ -1,7 +1,11 @@
 import { z } from "zod";
-import { commandFailure } from "../../context";
 import { imageFileGlob, scanImages } from "../../lib/images";
-import { changedScripts, scriptChangeReason } from "../../lib/scripts";
+import {
+  changedScripts,
+  checkScript,
+  missingScript,
+  scriptChangeReason,
+} from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError, type RepoContext } from "../../types";
 import manifest from "./task.json";
@@ -44,10 +48,11 @@ async function scanDir(
 export default defineTask<Data>({
   manifest,
   prompt,
+  scripts: ["build"],
   async prepare(ctx) {
     const dir = ctx.params.dir as string;
     if (!ctx.hasScript("build")) {
-      throw new TaskPreconditionError("No build script (scripts.build) found.");
+      throw new TaskPreconditionError(missingScript("build"));
     }
     if (dir !== "." && !(await ctx.exists(dir))) {
       throw new TaskPreconditionError(`Directory not found: ${dir}`);
@@ -55,7 +60,7 @@ export default defineTask<Data>({
     const scan = await scanDir(ctx, dir);
     if (scan.missing === 0) {
       throw new TaskPreconditionError(
-        `No <img> or <Image> tags missing alt under ${dir}.`,
+        `No <img> or <Image> tags missing alt under "${dir}".`,
       );
     }
     ctx.log(
@@ -94,17 +99,9 @@ export default defineTask<Data>({
       partial = true;
       reasons.push(scriptChangeReason(scripts));
     }
-    const result = await ctx.runScript("build");
-    if (result === null || result.code !== 0) {
-      partial = true;
-      reasons.push(
-        result === null
-          ? "No build script."
-          : commandFailure("build script", result),
-      );
-    } else {
-      reasons.push("build script passed.");
-    }
+    const build = await checkScript(ctx, "build");
+    if (build.result === null || build.counted) partial = true;
+    reasons.push(build.result === null ? "No build script." : build.reason);
     return { outcome: partial ? "partial" : "pass", reasons };
   },
 });

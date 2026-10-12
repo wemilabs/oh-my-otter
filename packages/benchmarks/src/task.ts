@@ -21,6 +21,7 @@ export function defineTask<TData>(definition: TaskDefinition<TData>): Task {
   return {
     manifest,
     prompt,
+    scripts: definition.scripts,
     ...(definition.prepare ? { prepare: definition.prepare } : {}),
     async verify(ctx) {
       const result = await definition.verify(ctx as VerifyContext<TData>);

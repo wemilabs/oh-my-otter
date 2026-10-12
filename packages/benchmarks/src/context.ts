@@ -3,21 +3,30 @@ import path from "node:path";
 import { execa } from "execa";
 import { createCheckContext } from "@oh-my-otter/core/node";
 import { OMOT_DIR, withoutOmotLines } from "./lib/gitignore";
-import { normalizeNewlines } from "./lib/files";
+import { normalizeNewlines, summarizeList } from "./lib/files";
 import { detectPackageManager } from "./lib/package-manager";
-import type {
-  ChangedFile,
-  CommandResult,
-  PackageManager,
-  PrepareContext,
-  RepoContext,
-  VerifyContext,
+import {
+  TaskPreconditionError,
+  type ChangedFile,
+  type CommandResult,
+  type PackageManager,
+  type PrepareContext,
+  type RepoContext,
+  type VerifyContext,
 } from "./types";
 
 export interface ContextOptions {
   params?: Record<string, string>;
   log?: (text: string) => void;
   timeoutMs?: number;
+}
+
+export interface PrepareContextOptions extends ContextOptions {
+  scripts?: readonly string[];
+  skipBaselineScripts?: boolean;
+  yes?: boolean;
+  isTTY?: boolean;
+  confirm?: (question: string) => Promise<boolean>;
 }
 
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
@@ -118,20 +127,43 @@ export function createRepoContext(
     file: string,
     args: readonly string[],
   ): Promise<CommandResult> => {
-    const result = await execa(file, args, {
-      cwd: root,
-      reject: false,
-      stdin: "ignore",
-      timeout,
-      env: commandEnv,
-      maxBuffer: 256 * 1024 * 1024,
-    });
-    return {
-      code: result.exitCode ?? 1,
-      stdout: String(result.stdout ?? ""),
-      stderr: String(result.stderr ?? ""),
-      timedOut: Boolean(result.timedOut),
-    };
+    try {
+      const result = await execa(file, args, {
+        all: true,
+        cwd: root,
+        reject: false,
+        stdin: "ignore",
+        timeout,
+        env: commandEnv,
+        maxBuffer: 256 * 1024 * 1024,
+      });
+      return {
+        code: result.exitCode ?? 1,
+        stdout: String(result.stdout ?? ""),
+        stderr: String(result.stderr ?? ""),
+        output: String(result.all ?? ""),
+        timedOut: Boolean(result.timedOut),
+      };
+    } catch (error) {
+      const result = error as {
+        exitCode?: number | null;
+        stdout?: unknown;
+        stderr?: unknown;
+        all?: unknown;
+        timedOut?: boolean;
+      };
+      const stdout = String(result.stdout ?? "");
+      const stderr = String(result.stderr ?? "");
+      return {
+        code: result.exitCode ?? 1,
+        stdout,
+        stderr,
+        output: String(
+          result.all ?? [stdout, stderr].filter(Boolean).join("\n"),
+        ),
+        timedOut: Boolean(result.timedOut),
+      };
+    }
   };
   const scripts = (): Record<string, unknown> => {
     const value = base.packageJson?.scripts;
@@ -176,16 +208,49 @@ export function createRepoContext(
 
 export function createPrepareContext(
   root: string,
-  options: ContextOptions & {
-    yes?: boolean;
-    isTTY?: boolean;
-    confirm?: (question: string) => Promise<boolean>;
-  } = {},
+  options: PrepareContextOptions = {},
 ): PrepareContext {
-  return Object.assign(createRepoContext(root, options), {
+  const repo = createRepoContext(root, options);
+  let baseline: Promise<Record<string, CommandResult> | null> | undefined;
+  return Object.assign(repo, {
     yes: Boolean(options.yes),
     isTTY: Boolean(options.isTTY),
     confirm: options.confirm ?? (async () => false),
+    recordBaseline() {
+      baseline ??= (async () => {
+        if (options.skipBaselineScripts) return null;
+        const results: Record<string, CommandResult> = {};
+        const paths = (status: string) =>
+          status
+            .split(/\r?\n/)
+            .filter((entry) => entry.length > 0)
+            .map((entry) => entry.slice(3))
+            .filter(
+              (file) => file !== OMOT_DIR && !file.startsWith(`${OMOT_DIR}/`),
+            );
+        const existingPaths = new Set(
+          paths(
+            await repo.git(["status", "--porcelain", "--untracked-files=all"]),
+          ),
+        );
+        for (const name of options.scripts ?? []) {
+          if (!repo.hasScript(name)) continue;
+          repo.log(`Running ${name} at the baseline...`);
+          const result = await repo.runScript(name);
+          if (result !== null) results[name] = result;
+        }
+        const changedPaths = paths(
+          await repo.git(["status", "--porcelain", "--untracked-files=all"]),
+        ).filter((file) => !existingPaths.has(file));
+        if (changedPaths.length > 0) {
+          throw new TaskPreconditionError(
+            `Baseline scripts changed the working tree: ${summarizeList(changedPaths)}. Add these to .gitignore (or commit them), then run bench start again.`,
+          );
+        }
+        return results;
+      })();
+      return baseline;
+    },
   });
 }
 
@@ -195,7 +260,11 @@ function parseNul(output: string): string[] {
 
 export function createVerifyContext<TData = unknown>(
   root: string,
-  baseline: { commit: string; data: TData },
+  baseline: {
+    commit: string;
+    data: TData;
+    scripts?: Record<string, number>;
+  },
   options: ContextOptions = {},
 ): VerifyContext<TData> {
   const repo = createRepoContext(root, options);

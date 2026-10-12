@@ -1,7 +1,12 @@
 import { z } from "zod";
 import { commandFailure, readText } from "../../context";
 import { countExplicitAny, countTypeSuppressions } from "../../lib/lexer";
-import { changedScripts, scriptChangeReason } from "../../lib/scripts";
+import {
+  changedScripts,
+  checkScript,
+  scriptChangeReason,
+  withOutput,
+} from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError, type RepoContext } from "../../types";
 import manifest from "./task.json";
@@ -28,6 +33,7 @@ async function typecheck(ctx: RepoContext) {
 export default defineTask<Data>({
   manifest,
   prompt,
+  scripts: ["typecheck"],
   async prepare(ctx) {
     const file = ctx.params.file as string;
     if (!typescriptFile.test(file) || file.endsWith(".d.ts")) {
@@ -74,13 +80,19 @@ export default defineTask<Data>({
       partial = true;
       reasons.push(scriptChangeReason(scripts));
     }
+    if (ctx.hasScript("typecheck")) {
+      const check = await checkScript(ctx, "typecheck", { label: "typecheck" });
+      if (check.counted) partial = true;
+      reasons.push(check.reason);
+      return { outcome: partial ? "partial" : "pass", reasons };
+    }
     const result = await typecheck(ctx);
     if (result === null || result.code !== 0) {
       partial = true;
       reasons.push(
         result === null
           ? "TypeScript is not installed locally; typecheck did not run."
-          : commandFailure("typecheck", result),
+          : withOutput(commandFailure("typecheck", result), result),
       );
     } else {
       reasons.push("typecheck passed.");

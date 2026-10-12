@@ -1,6 +1,6 @@
 {
   "id": "a11y-img-alt",
-  "version": 1,
+  "version": 2,
   "title": "Add missing alt attributes to images",
   "category": "accessibility",
   "estimatedScope": "small",

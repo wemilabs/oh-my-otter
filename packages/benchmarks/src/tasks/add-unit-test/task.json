@@ -1,6 +1,6 @@
 {
   "id": "add-unit-test",
-  "version": 1,
+  "version": 3,
   "title": "Add unit tests for an untested function",
   "category": "testing",
   "estimatedScope": "small",
@@ -23,8 +23,8 @@
     "The named file exists and contains the named function."
   ],
   "criteria": {
-    "pass": "New or changed test files reference the function, the test script passes, and no non-test files changed.",
-    "partial": "Tests were added and pass, but non-test files changed, test files were deleted, or no test references the function.",
-    "fail": "No test files were added or changed, or the test script fails."
+    "pass": "A new or changed test file imports the target module and uses the function in code, the changed test files that use the function have more it()/test() cases than at baseline, the test script passes, and no non-test files changed.",
+    "partial": "All pass conditions hold, but non-test files changed or test files were deleted.",
+    "fail": "No test file was added or changed, none imports the target module and uses the function in code (comments and strings do not count), no new test cases were added to files that use the function, or the test script fails."
   }
 }

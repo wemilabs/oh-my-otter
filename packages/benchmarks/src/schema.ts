@@ -115,17 +115,83 @@ export const agentSchema = z.string().regex(AGENT_PATTERN);
 const commitSchema = z.string().regex(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/);
 const timestampSchema = z.iso.datetime();
 
-export const RUN_SCHEMA_VERSION = 1 as const;
+const baselineSchema = z
+  .object({
+    commit: commitSchema,
+    started_at: timestampSchema,
+    data: z.unknown().optional(),
+    scripts: z.record(z.string(), z.number().int()).optional(),
+  })
+  .strict();
+
+const taskRunSchema = z
+  .object({
+    id: z.string().regex(TASK_ID_PATTERN),
+    version: z.number().int().min(1),
+  })
+  .strict();
+
+const verificationSchema = z
+  .object({
+    verified_at: timestampSchema,
+    head_commit: commitSchema.optional(),
+    outcome: verifyOutcomeSchema,
+    reasons: z.array(z.string()),
+    human_corrections: z.number().int().min(0),
+    human_minutes: z.number().int().min(0),
+    agent: agentSchema,
+    agent_version: z.string().regex(AGENT_VERSION_PATTERN).optional(),
+    model: z.string().regex(MODEL_PATTERN).optional(),
+  })
+  .strict();
+
+const runResultSchema = z
+  .object({
+    outcome: verifyOutcomeSchema,
+    reasons: z.array(z.string()),
+    verified_at: timestampSchema,
+    human_corrections: z.number().int().min(0),
+    human_minutes: z.number().int().min(0),
+    attempts: z.number().int().min(1),
+  })
+  .strict();
+
+export const RUN_SCHEMA_VERSION = 2 as const;
 
 export const runFileSchema = z
   .object({
     schema_version: z.literal(RUN_SCHEMA_VERSION),
-    task: z
-      .object({
-        id: z.string().regex(TASK_ID_PATTERN),
-        version: z.number().int().min(1),
-      })
-      .strict(),
+    task: taskRunSchema,
+    params: z.record(z.string(), z.string()),
+    agent: agentSchema.default(DEFAULT_AGENT),
+    agent_version: z.string().regex(AGENT_VERSION_PATTERN).optional(),
+    model: z.string().regex(MODEL_PATTERN).optional(),
+    baseline: baselineSchema,
+    verifications: z.array(verificationSchema),
+    result: runResultSchema.optional(),
+  })
+  .strict()
+  .superRefine((run, ctx) => {
+    if (run.result && run.result.attempts !== run.verifications.length) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["result", "attempts"],
+        message: "Attempts must equal the number of verifications.",
+      });
+    }
+    if (Boolean(run.result) !== run.verifications.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["result"],
+        message: "Result must be present iff verifications are non-empty.",
+      });
+    }
+  });
+
+const legacyRunFileSchema = z
+  .object({
+    schema_version: z.literal(1),
+    task: taskRunSchema,
     params: z.record(z.string(), z.string()),
     agent: agentSchema.default(DEFAULT_AGENT),
     agent_version: z.string().regex(AGENT_VERSION_PATTERN).optional(),
@@ -150,7 +216,35 @@ export const runFileSchema = z
   })
   .strict();
 
+export type Verification = z.infer<typeof verificationSchema>;
 export type RunFile = z.infer<typeof runFileSchema>;
+
+export function migrateRunFile(value: unknown): RunFile | null {
+  const legacy = legacyRunFileSchema.safeParse(value);
+  if (!legacy.success) return null;
+  const run = legacy.data;
+  const verifications: Verification[] = run.result
+    ? [
+        {
+          ...run.result,
+          agent: run.agent,
+          ...(run.agent_version === undefined
+            ? {}
+            : { agent_version: run.agent_version }),
+          ...(run.model === undefined ? {} : { model: run.model }),
+        },
+      ]
+    : [];
+  return runFileSchema.parse({
+    ...run,
+    schema_version: RUN_SCHEMA_VERSION,
+    baseline: run.baseline,
+    verifications,
+    ...(run.result
+      ? { result: { ...run.result, attempts: verifications.length } }
+      : {}),
+  });
+}
 
 export const selfReportSchema = z.coerce.number().int().min(0).max(100_000);
 

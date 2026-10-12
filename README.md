@@ -42,7 +42,7 @@ Use `--run` to execute the repository's test script. `--fix` previews create-onl
 ```sh
 omot bench list [--json]
 omot bench show <id> [--param key=value ...] [--json]
-omot bench start <id> [path] [--param key=value ...] [--agent <name>] [--agent-version <version>] [--model <name>] [--yes]
+omot bench start <id> [path] [--param key=value ...] [--agent <name>] [--agent-version <version>] [--model <name>] [--skip-baseline-scripts] [--yes]
 omot bench verify [path] [--corrections <n>] [--minutes <n>] [--agent <name>] [--agent-version <version>] [--model <name>] [--json]
 ```
 
@@ -57,9 +57,9 @@ omot bench verify [path] [--corrections <n>] [--minutes <n>] [--agent <name>] [-
 
 Each task has a docs page in [`docs/benchmarks`](docs/benchmarks).
 
-1. Commit your work, then run `omot bench start add-unit-test --param file=src/format.ts --param function=formatPrice --agent claude-code`. It records the baseline commit and start time in `.omot/run.json` and prints the prompt.
+1. Commit your work, then run `omot bench start add-unit-test --param file=src/format.ts --param function=formatPrice --agent claude-code`. It records the baseline commit, start time, and exit codes from the task's available scripts in `.omot/run.json`, then prints the prompt. Use `--skip-baseline-scripts` to skip those checks; verification will then report baseline health as unknown.
 2. Paste the prompt into your coding agent and let it work. Pull or merge its changes into your working tree.
-3. Run `omot bench verify`. The verifier compares the repo with the baseline and runs the repository's own scripts (build, test, lint, typecheck) locally, then prints pass, partial, or fail with reasons. It asks how many times you corrected the agent and how many minutes of human effort it took; pass `--corrections <n> --minutes <n>` to skip the questions in scripts. It exits 1 on fail.
+3. Run `omot bench verify`. The verifier compares the repo with the baseline and runs the repository's own scripts locally, then prints pass, partial, or fail with reasons. Each verification is appended to `.omot/run.json`; the latest result includes the attempt count. It asks how many times you corrected the agent and how many minutes of human effort it took; pass `--corrections <n> --minutes <n>` to skip the questions in scripts. It exits 1 on fail.
 
 `--agent` is optional and works with any coding agent. It is stored as a lowercase slug of at most 40 characters from `[a-z0-9._-]` (for example `"Claude Code"` becomes `claude-code`); the default is `unknown`. `verify --agent` overrides the value from `start`.
 
@@ -67,7 +67,9 @@ Each task has a docs page in [`docs/benchmarks`](docs/benchmarks).
 
 `bench start` needs a clean working tree, so only the agent's changes are measured. Commit or stash first.
 
-`start` offers to append one line, `.omot/`, to `.gitignore` (or create it); confirm or pass `--yes`. That is the only existing file it edits. `fix-failing-test` asks first, then creates a branch named `omot/fix-failing-test-<timestamp>` and commits a one-operator bug there; your current branch is untouched. Results stay in `.omot/run.json`; `omot bench` sends nothing anywhere.
+`start` offers to append one line, `.omot/`, to `.gitignore` (or create it); confirm or pass `--yes`. That is the only existing file it edits; it is left uncommitted and ignored when verifying. Starting over an existing valid run requires TTY confirmation or `--yes`.
+
+`fix-failing-test` checks that the baseline test script passes, then creates a branch named `omot/fix-failing-test-<timestamp>` and records the deliberately introduced bug in a parentless commit named `bench baseline`. The commit has no parent, so its history does not reveal the mutation; your original branch and index are untouched. This is not a security boundary: an agent can still inspect other refs such as `origin/main` or the reflog. Results stay in `.omot/run.json`; `omot bench` sends nothing anywhere.
 
 To add a task, see [writing a task](docs/writing-a-task.md).
 

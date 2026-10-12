@@ -6,6 +6,8 @@ export interface CommandResult {
   code: number;
   stdout: string;
   stderr: string;
+  /** stdout and stderr interleaved in the order they were written. */
+  output: string;
   timedOut: boolean;
 }
 
@@ -34,13 +36,20 @@ export interface RepoContext {
 }
 
 export interface PrepareContext extends RepoContext {
+  /**
+   * Runs the task's `scripts` that exist on the current (clean) tree once and
+   * memoizes the results. Returns null when baseline scripts are skipped.
+   * Tasks that change the tree must call this before changing it.
+   */
+  recordBaseline(): Promise<Record<string, CommandResult> | null>;
   yes: boolean;
   isTTY: boolean;
   confirm(question: string): Promise<boolean>;
 }
 
 export interface VerifyContext<TData = unknown> extends RepoContext {
-  baseline: { commit: string; data: TData };
+  /** `scripts` holds baseline exit codes; undefined means baseline health is unknown. */
+  baseline: { commit: string; data: TData; scripts?: Record<string, number> };
   changedFiles(): Promise<ChangedFile[]>;
   readBaseline(path: string): Promise<string | null>;
   baselineFiles(): Promise<string[]>;
@@ -49,6 +58,8 @@ export interface VerifyContext<TData = unknown> extends RepoContext {
 export interface TaskDefinition<TData = unknown> {
   manifest: unknown;
   prompt: string;
+  /** package.json scripts the verifier runs; recorded at `bench start`. */
+  scripts: readonly string[];
   prepare?(ctx: PrepareContext): Promise<TData>;
   verify(ctx: VerifyContext<TData>): Promise<VerifyResult>;
 }
@@ -56,6 +67,7 @@ export interface TaskDefinition<TData = unknown> {
 export interface Task {
   manifest: TaskManifest;
   prompt: string;
+  scripts: readonly string[];
   prepare?(ctx: PrepareContext): Promise<unknown>;
   verify(ctx: VerifyContext): Promise<VerifyResult>;
 }

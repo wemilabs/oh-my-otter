@@ -10,10 +10,11 @@ import {
 } from "../src/index";
 
 const run = {
-  schema_version: 1,
+  schema_version: 2,
   task: { id: "add-unit-test", version: 1 },
   params: {},
   baseline: { commit: "a".repeat(40), started_at: "2026-10-12T16:00:00.000Z" },
+  verifications: [],
 };
 
 describe("agent normalization", () => {
@@ -51,12 +52,24 @@ describe("run file schema", () => {
   it("accepts a verified run and rejects unknown fields", () => {
     const verified = {
       ...run,
+      verifications: [
+        {
+          outcome: "partial",
+          reasons: ["x"],
+          verified_at: "2026-10-12T16:30:00.000Z",
+          head_commit: "b".repeat(40),
+          human_corrections: 1,
+          human_minutes: 5,
+          agent: "unknown",
+        },
+      ],
       result: {
         outcome: "partial",
         reasons: ["x"],
         verified_at: "2026-10-12T16:30:00.000Z",
         human_corrections: 1,
         human_minutes: 5,
+        attempts: 1,
       },
     };
     expect(runFileSchema.safeParse(verified).success).toBe(true);
@@ -67,6 +80,12 @@ describe("run file schema", () => {
       runFileSchema.safeParse({
         ...run,
         baseline: { ...run.baseline, commit: "nope" },
+      }).success,
+    ).toBe(false);
+    expect(
+      runFileSchema.safeParse({
+        ...verified,
+        result: { ...verified.result, attempts: 2 },
       }).success,
     ).toBe(false);
   });
