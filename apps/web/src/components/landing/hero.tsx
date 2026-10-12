@@ -45,8 +45,8 @@ export function Hero() {
           <HeroBackdrop />
           <div className="relative grid gap-5 lg:grid-cols-[1.35fr_1fr] lg:items-start">
             <Window title="~/projects/storefront · omot scan">
-              <div className="grid gap-5 p-5 sm:grid-cols-[150px_1fr] sm:p-6">
-                <div className="flex flex-row items-center gap-4 sm:flex-col sm:items-start">
+              <div className="grid min-w-0 gap-5 p-5 sm:grid-cols-[150px_1fr] sm:p-6">
+                <div className="flex flex-row flex-wrap items-center gap-4 sm:flex-col sm:items-start">
                   <div className="font-mono text-[11px] tracking-wider text-muted-foreground uppercase">
                     Readiness
                   </div>
@@ -58,15 +58,15 @@ export function Hero() {
                       B
                     </span>
                   </div>
-                  <div className="h-1.5 w-32 overflow-hidden rounded-full bg-secondary">
+                  <div className="h-1.5 w-32 max-w-full overflow-hidden rounded-full bg-secondary">
                     <div className="h-full w-[82%] rounded-full bg-brand" />
                   </div>
                 </div>
-                <ul className="divide-y divide-border font-mono text-[13px]">
+                <ul className="min-w-0 divide-y divide-border font-mono text-[13px]">
                   {SCAN_ROWS.map(([id, status, reason]) => (
                     <li key={id} className="flex items-center gap-3 py-2">
                       <StatusPill status={status} />
-                      <span className="w-40 shrink-0 truncate">{id}</span>
+                      <span className="min-w-0 flex-1 truncate">{id}</span>
                       <span className="hidden truncate text-muted-foreground md:inline">
                         {reason}
                       </span>

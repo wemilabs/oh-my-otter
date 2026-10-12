@@ -1,5 +1,10 @@
 import { instant } from "@next/playwright";
 import { test, expect } from "@playwright/test";
+import { BUILTIN_TASK_MANIFESTS } from "@oh-my-otter/benchmarks/report";
+
+const ADD_UNIT_TEST_TITLE = BUILTIN_TASK_MANIFESTS.find(
+  (task) => task.id === "add-unit-test",
+)!.title;
 
 test("initial load of /results renders the shell instantly", async ({
   page,
@@ -43,7 +48,9 @@ test("client navigation /results -> task page is instant", async ({
       .first()
       .click();
     await page.waitForURL(`${baseURL}/tasks/add-unit-test`);
-    await expect(page.getByRole("heading").first()).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: ADD_UNIT_TEST_TITLE }),
+    ).toBeVisible();
   });
   await expect(
     page.getByText("Results by readiness band").first(),

@@ -41,8 +41,8 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
-      - run: pnpm build
+      - run: pnpm --filter @oh-my-otter/web exec playwright install --with-deps chromium
+      - run: pnpm turbo run build --filter=@oh-my-otter/web^...
       - run: pnpm --filter @oh-my-otter/web test:e2e
 
   benchmark-tasks:
