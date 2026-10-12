@@ -7,7 +7,7 @@ export default tseslint.config(
     ignores: [".next/**", "next-env.d.ts", "node_modules/**"],
   },
   ...tseslint.configs.recommended,
-  reactHooks.configs.flat.recommended,
+  reactHooks.configs.flat["recommended-latest"],
   {
     files: ["**/*.{ts,tsx,mts,cts}"],
     languageOptions: {

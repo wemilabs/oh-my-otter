@@ -1,88 +1,121 @@
 import "server-only";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
-import path from "node:path";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { cacheLife, cacheTag } from "next/cache";
 import {
   agentsFileSchema,
   aggregateReports,
-  reportPayloadSchema,
+  parseReportsNdjson,
   type AgentsFile,
   type Aggregate,
   type ReportPayload,
 } from "@oh-my-otter/benchmarks/report";
+import agentsJson from "../../../../dataset/agents.json";
+
+export const DEFAULT_DATASET_URL =
+  "https://raw.githubusercontent.com/wemilabs/oh-my-otter/dataset/reports.ndjson";
+
+export interface DatasetLoad {
+  status: "ok" | "empty" | "unavailable";
+  reports: ReportPayload[];
+  invalid: number[];
+}
 
 export interface Dataset {
   reports: ReportPayload[];
   agents: AgentsFile;
-  skipped: number;
+  status: DatasetLoad["status"];
+  invalid: number[];
 }
 
-/** Walks up from `start` until it finds pnpm-workspace.yaml (the repo root). */
-function findRepoRoot(start: string): string {
-  let dir = path.resolve(start);
-  while (true) {
-    if (existsSync(path.join(dir, "pnpm-workspace.yaml"))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) return path.resolve(start, "../..");
-    dir = parent;
-  }
-}
+const agents = agentsFileSchema.parse(agentsJson);
 
-export function loadDataset(root?: string): Dataset {
-  const repoRoot = root ? path.resolve(root) : findRepoRoot(process.cwd());
-  const reportsDir = path.join(repoRoot, "dataset", "reports");
+const EMPTY: DatasetLoad = { status: "empty", reports: [], invalid: [] };
+const UNAVAILABLE: DatasetLoad = {
+  status: "unavailable",
+  reports: [],
+  invalid: [],
+};
 
-  const agents = agentsFileSchema.parse(
-    JSON.parse(
-      readFileSync(path.join(repoRoot, "dataset", "agents.json"), "utf8"),
-    ),
-  );
+/**
+ * Fetches `reports.ndjson` from the `dataset` branch. `file:` URLs are read
+ * from disk for local development and tests. Always resolves; a bad upstream
+ * yields "unavailable" rather than throwing.
+ */
+export async function loadReports(opts?: {
+  url?: string;
+  fetchImpl?: typeof fetch;
+  warn?: (msg: string) => void;
+}): Promise<DatasetLoad> {
+  const url = opts?.url ?? process.env.OMOT_DATASET_URL ?? DEFAULT_DATASET_URL;
+  const warn =
+    opts?.warn ?? ((msg: string) => console.warn(`[dataset] ${msg}`));
 
-  let names: string[] = [];
-  try {
-    names = readdirSync(reportsDir)
-      .filter((name) => name.endsWith(".json"))
-      .sort();
-  } catch {
-    names = [];
-  }
-
-  const reports: ReportPayload[] = [];
-  let skipped = 0;
-  for (const name of names) {
-    const file = path.join(reportsDir, name);
-    let value: unknown;
+  let text: string;
+  if (url.startsWith("file:")) {
     try {
-      value = JSON.parse(readFileSync(file, "utf8"));
+      text = await readFile(fileURLToPath(url), "utf8");
     } catch (error) {
-      console.warn(
-        `[dataset] skipping ${name}: ${error instanceof Error ? error.message : String(error)}`,
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return EMPTY;
+      warn(
+        `could not read ${url}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      skipped += 1;
-      continue;
+      return UNAVAILABLE;
     }
-    const parsed = reportPayloadSchema.safeParse(value);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      console.warn(
-        `[dataset] skipping ${name}: ${issue ? `${issue.path.join(".") || "(root)"}: ${issue.message}` : "invalid payload"}`,
+  } else {
+    const fetchImpl = opts?.fetchImpl ?? fetch;
+    let response: Response;
+    try {
+      response = await fetchImpl(url);
+    } catch (error) {
+      warn(
+        `could not fetch ${url}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      skipped += 1;
-      continue;
+      return UNAVAILABLE;
     }
-    reports.push(parsed.data);
+    if (response.status === 404) return EMPTY;
+    if (!response.ok) {
+      warn(`fetching ${url} failed with status ${response.status}`);
+      return UNAVAILABLE;
+    }
+    text = await response.text();
   }
-  return { reports, agents, skipped };
+
+  const { reports, invalid } = parseReportsNdjson(text);
+  for (const line of invalid) {
+    warn(`skipping invalid dataset line ${line}`);
+  }
+  return {
+    status: reports.length === 0 ? "empty" : "ok",
+    reports,
+    invalid,
+  };
 }
 
-let cached: { dataset: Dataset; aggregate: Aggregate } | undefined;
+/** Pure: combines a loader result with the canonical agents and aggregates. */
+export function buildDataset(load: DatasetLoad): {
+  dataset: Dataset;
+  aggregate: Aggregate;
+} {
+  const dataset: Dataset = {
+    reports: load.reports,
+    agents,
+    status: load.status,
+    invalid: load.invalid,
+  };
+  return {
+    dataset,
+    aggregate: aggregateReports(dataset.reports, dataset.agents),
+  };
+}
 
-export function getDataset(): { dataset: Dataset; aggregate: Aggregate } {
-  cached ??= (() => {
-    const dataset = loadDataset();
-    return {
-      dataset,
-      aggregate: aggregateReports(dataset.reports, dataset.agents),
-    };
-  })();
-  return cached;
+export async function getDataset(): Promise<{
+  dataset: Dataset;
+  aggregate: Aggregate;
+}> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("dataset");
+  const load = await loadReports();
+  return buildDataset(load);
 }

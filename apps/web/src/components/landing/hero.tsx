@@ -15,24 +15,25 @@ const SCAN_ROWS: Array<[string, Status, string]> = [
 export function Hero() {
   return (
     <section className="relative overflow-hidden border-b border-border">
-      <div className="mx-auto max-w-6xl px-5 pt-16 pb-14 sm:px-8 sm:pt-24">
+      <div className="mx-auto max-w-6xl px-gutter pt-[calc(var(--spacing-section)*0.6)] pb-14 sm:pt-section">
         <div className="max-w-3xl">
           <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
             <span className="size-1.5 rounded-full bg-success" />
             Open source · runs entirely on your machine
           </p>
-          <h1 className="text-[2.6rem] leading-[1.05] font-medium tracking-[-0.035em] text-balance sm:text-6xl">
+          <h1 className="text-display leading-[1.04] font-medium tracking-[-0.03em] text-balance">
             Find out how ready your repo is for any coding agent
           </h1>
-          <p className="mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
+          <p className="mt-5 max-w-xl text-body leading-relaxed text-muted-foreground">
             Scan for the things coding agents trip over, benchmark your agent on
             standardized tasks in your own codebase, and compare anonymous
             results from everyone else.
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
+          <div className="mt-8 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
             <Link
               href="/results"
-              className="inline-flex h-10 items-center gap-1.5 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
+              prefetch={true}
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
             >
               See the results <ArrowRight className="size-4" />
             </Link>

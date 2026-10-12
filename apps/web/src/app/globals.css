@@ -4,6 +4,30 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Fluid type and spacing tokens, measured from devin.ai. */
+@theme {
+  --text-display: clamp(2.25rem, 1.5rem + 3.2vw, 4rem);
+  --text-display--line-height: 1.04;
+  --text-display--letter-spacing: -0.03em;
+  --text-h2: clamp(2rem, 1.6rem + 1.6vw, 2.75rem);
+  --text-h2--line-height: 1.06;
+  --text-h2--letter-spacing: -0.03em;
+  --text-h3: clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+  --text-h3--line-height: 1.25;
+  --text-body: clamp(1rem, 0.96rem + 0.2vw, 1.0625rem);
+  --text-body--line-height: 1.5;
+  --text-small: clamp(0.875rem, 0.85rem + 0.1vw, 0.9375rem);
+  --text-small--line-height: 1.43;
+  --spacing-section: clamp(4rem, 2.5rem + 6vw, 8.75rem);
+  --spacing-gutter: clamp(1.25rem, 0.5rem + 3vw, 3.75rem);
+  --spacing-stack: clamp(1rem, 0.5rem + 2vw, 2rem);
+}
+
+@utility px-gutter-safe {
+  padding-inline: max(var(--spacing-gutter), env(safe-area-inset-left))
+    max(var(--spacing-gutter), env(safe-area-inset-right));
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -134,11 +158,16 @@
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-background text-foreground text-body;
+  }
+  .prose-omot {
+    max-width: 68ch;
   }
   ::selection {
     background: var(--brand-soft);

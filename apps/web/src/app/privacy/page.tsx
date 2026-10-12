@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SITE_URL } from "@oh-my-otter/benchmarks/report";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import Markdown from "react-markdown";
@@ -9,6 +10,7 @@ export const metadata: Metadata = {
   title: "Privacy",
   description:
     "Exactly what omot report sends: the complete anonymous payload, and everything it never collects.",
+  alternates: { canonical: `${SITE_URL}/privacy` },
 };
 
 function repoRoot(): string {
@@ -25,7 +27,7 @@ export default function PrivacyPage() {
   const markdown = readFileSync(path.join(repoRoot(), "PRIVACY.md"), "utf8");
   return (
     <section>
-      <div className="mx-auto max-w-3xl px-5 pt-16 pb-20 sm:px-8 sm:pt-24">
+      <div className="mx-auto max-w-3xl px-gutter pt-[calc(var(--spacing-section)*0.6)] pb-20 sm:pt-section">
         <SectionHeading
           eyebrow="Privacy"
           title="Exactly what omot report sends"

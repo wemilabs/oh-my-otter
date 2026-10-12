@@ -22,12 +22,12 @@ export function SectionHeading({
           {eyebrow}
         </p>
       ) : null}
-      <h2 className="text-3xl leading-[1.1] font-medium tracking-[-0.03em] text-balance sm:text-[2.6rem]">
+      <h2 className="text-h2 leading-[1.06] font-medium tracking-[-0.03em] text-balance">
         {muted ? <span className="block text-faint">{muted}</span> : null}
         {title}
       </h2>
       {children ? (
-        <p className="mt-4 text-lg leading-relaxed text-muted-foreground">
+        <p className="mt-4 text-body leading-relaxed text-muted-foreground">
           {children}
         </p>
       ) : null}
@@ -44,7 +44,7 @@ export function StatsStrip({ reports }: { reports: number }) {
   ];
   return (
     <section className="border-b border-border">
-      <dl className="mx-auto grid max-w-6xl grid-cols-2 sm:px-8 lg:grid-cols-4">
+      <dl className="mx-auto grid max-w-6xl grid-cols-2 px-gutter lg:grid-cols-4">
         {stats.map(([value, label], i) => (
           <div
             key={label}
@@ -86,7 +86,7 @@ function BentoCard({
 export function Features() {
   return (
     <section className="border-b border-border">
-      <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 sm:py-28">
+      <div className="mx-auto max-w-6xl px-gutter py-section">
         <SectionHeading title="Everything a coding agent trips over, measured">
           Agents do their best work in repos with runnable tests, documented
           setup and fast feedback. Oh My Otter checks for all of it and proves
@@ -249,7 +249,7 @@ const STEPS = [
 export function Steps() {
   return (
     <section id="quickstart" className="scroll-mt-20 border-b border-border">
-      <div className="mx-auto max-w-6xl px-5 py-20 sm:px-8 sm:py-28">
+      <div className="mx-auto max-w-6xl px-gutter py-section">
         <SectionHeading
           muted="From a fresh clone,"
           title="to evidence you can share"
@@ -270,7 +270,7 @@ export function Steps() {
                 </p>
                 <Link
                   href={step.href.url}
-                  className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand hover:underline"
+                  className="mt-4 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-brand hover:underline"
                 >
                   {step.href.label} <ChevronRight className="size-3.5" />
                 </Link>
@@ -289,13 +289,15 @@ export function Steps() {
 export function ResultsTeaser({
   reports,
   bands,
+  unavailable = false,
 }: {
   reports: number;
   bands: Group<Grade>[];
+  unavailable?: boolean;
 }) {
   return (
     <section className="border-b border-border">
-      <div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 sm:px-8 sm:py-28 lg:grid-cols-[1fr_1.1fr] lg:items-center">
+      <div className="mx-auto grid max-w-6xl gap-10 px-gutter py-section lg:grid-cols-[1fr_1.1fr] lg:items-center">
         <SectionHeading
           eyebrow="Results"
           title="Does a higher readiness score mean fewer corrections?"
@@ -311,6 +313,11 @@ export function ResultsTeaser({
               n = {reports}
             </span>
           </div>
+          {unavailable ? (
+            <div className="mt-6 rounded-lg border border-dashed border-border bg-wash p-4 text-sm text-muted-foreground">
+              Data temporarily unavailable — results refresh hourly.
+            </div>
+          ) : null}
           <div className="mt-6 space-y-3">
             {bands.map((band) => {
               const rate = band.stats.enough ? band.stats.pass_rate : null;
@@ -329,7 +336,10 @@ export function ResultsTeaser({
                   )}
                   <span className="w-28 text-right text-xs text-muted-foreground">
                     {rate === null ? (
-                      "Not enough data yet"
+                      <>
+                        Not enough ·{" "}
+                        <span className="font-mono">n={band.stats.n}</span>
+                      </>
                     ) : (
                       <>
                         <span className="font-mono">
@@ -345,7 +355,8 @@ export function ResultsTeaser({
           </div>
           <Link
             href="/results"
-            className="mt-6 inline-flex items-center gap-1.5 text-sm font-medium text-brand hover:underline"
+            prefetch={true}
+            className="mt-6 inline-flex min-h-11 items-center gap-1.5 text-sm font-medium text-brand hover:underline"
           >
             Explore all results <ArrowRight className="size-3.5" />
           </Link>
@@ -358,23 +369,24 @@ export function ResultsTeaser({
 export function FinalCta() {
   return (
     <section>
-      <div className="mx-auto max-w-6xl px-5 py-20 text-center sm:px-8 sm:py-28">
-        <h2 className="mx-auto max-w-2xl text-3xl leading-[1.1] font-medium tracking-[-0.03em] text-balance sm:text-[2.6rem]">
+      <div className="mx-auto max-w-6xl px-gutter py-section text-center">
+        <h2 className="mx-auto max-w-2xl text-h2 leading-[1.06] font-medium tracking-[-0.03em] text-balance">
           Make your repo a place coding agents do their best work
         </h2>
-        <p className="mx-auto mt-4 max-w-lg text-lg text-muted-foreground">
+        <p className="mx-auto mt-4 max-w-lg text-body text-muted-foreground">
           One command, no account, no network calls.
         </p>
-        <div className="mt-8 flex flex-wrap justify-center gap-3">
+        <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
           <a
             href="https://github.com/wemilabs/oh-my-otter#quickstart"
-            className="inline-flex h-10 items-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
+            className="inline-flex min-h-11 items-center justify-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
           >
             Read the quickstart
           </a>
           <Link
             href="/results"
-            className="inline-flex h-10 items-center rounded-full border border-border bg-card px-5 text-sm font-medium transition-colors hover:bg-accent"
+            prefetch={true}
+            className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-card px-5 text-sm font-medium transition-colors hover:bg-accent"
           >
             See the results
           </Link>

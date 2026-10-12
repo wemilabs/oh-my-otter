@@ -1,3 +1,4 @@
+import Link from "next/link";
 import {
   MIN_SAMPLE,
   type AgentGroup,
@@ -41,21 +42,103 @@ export function NotEnoughBar({ n }: { n: number }) {
   );
 }
 
+export function DataUnavailable() {
+  return (
+    <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+      <h3 className="text-lg font-medium tracking-tight">
+        Data temporarily unavailable
+      </h3>
+      <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+        Results are refreshed hourly. Please check back shortly.
+      </p>
+    </div>
+  );
+}
+
+function StatsRows({
+  group,
+  linkPrefix,
+}: {
+  group: Group;
+  linkPrefix?: string;
+}) {
+  const rows: Array<[string, React.ReactNode]> = group.stats.enough
+    ? [
+        ["Pass", formatRate(group.stats.pass_rate)],
+        ["Partial", formatRate(group.stats.partial_rate)],
+        ["Fail", formatRate(group.stats.fail_rate)],
+        ["Median corrections", formatNumber(group.stats.median_corrections)],
+        ["Median minutes", formatNumber(group.stats.median_minutes)],
+        ["Median attempts", formatNumber(group.stats.median_attempts)],
+      ]
+    : [
+        ["", <NotEnoughBar key="bar" n={group.stats.n} />] as [
+          string,
+          React.ReactNode,
+        ],
+      ];
+  return (
+    <>
+      <div className="px-5 py-3 font-mono text-[13px] font-medium">
+        {linkPrefix ? (
+          <Link
+            href={`${linkPrefix}${group.key}`}
+            prefetch={true}
+            className="inline-flex min-h-11 items-center hover:underline"
+          >
+            {group.label}
+          </Link>
+        ) : (
+          group.label
+        )}
+        <span className="ml-2 text-muted-foreground">n={group.stats.n}</span>
+      </div>
+      <dl className="space-y-1.5 px-5 pb-4">
+        {rows.map(([label, value], i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between gap-4 text-sm"
+          >
+            {label ? (
+              <>
+                <dt className="text-muted-foreground">{label}</dt>
+                <dd className="font-mono text-[13px]">{value}</dd>
+              </>
+            ) : (
+              <dd className="w-full">{value}</dd>
+            )}
+          </div>
+        ))}
+      </dl>
+    </>
+  );
+}
+
 export function StatsTable({
   title,
   groups,
   showN = true,
+  linkPrefix,
 }: {
   title: string;
   groups: Group[];
   showN?: boolean;
+  /** Prefix group keys into links, e.g. "/tasks/" for task rows. */
+  linkPrefix?: string;
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <div className="border-b border-border px-5 py-4 text-sm font-medium">
         {title}
       </div>
-      <div className="overflow-x-auto">
+      <div className="divide-y divide-border md:hidden">
+        {groups.map((group) => (
+          <div key={group.key} className="py-1">
+            <StatsRows group={group} linkPrefix={linkPrefix} />
+          </div>
+        ))}
+      </div>
+      <div className="hidden overflow-x-auto md:block">
         <table className="w-full min-w-[720px] text-sm">
           <thead>
             <tr className="border-b border-border text-left text-xs tracking-wider text-muted-foreground uppercase">
@@ -83,7 +166,17 @@ export function StatsTable({
             {groups.map((group) => (
               <tr key={group.key}>
                 <td className="px-5 py-3 font-mono text-[13px] whitespace-nowrap">
-                  {group.label}
+                  {linkPrefix ? (
+                    <Link
+                      href={`${linkPrefix}${group.key}`}
+                      prefetch={true}
+                      className="inline-flex min-h-11 items-center hover:underline"
+                    >
+                      {group.label}
+                    </Link>
+                  ) : (
+                    group.label
+                  )}
                 </td>
                 {showN ? (
                   <td className="px-5 py-3 font-mono text-[13px] text-muted-foreground">

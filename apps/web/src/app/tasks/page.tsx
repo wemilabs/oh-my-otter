@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { BUILTIN_TASK_MANIFESTS } from "@oh-my-otter/benchmarks/report";
+import {
+  BUILTIN_TASK_MANIFESTS,
+  SITE_URL,
+} from "@oh-my-otter/benchmarks/report";
 import { SectionHeading } from "@/components/landing/sections";
 import { formatRate, NotEnough } from "@/components/results/stats";
 import { getDataset } from "@/lib/dataset";
@@ -10,17 +13,18 @@ export const metadata: Metadata = {
   title: "Benchmark tasks",
   description:
     "The six standardized omot bench tasks: what each one asks a coding agent to do, its parameters, and its results so far.",
+  alternates: { canonical: `${SITE_URL}/tasks` },
 };
 
-export default function TasksPage() {
-  const { aggregate } = getDataset();
+export default async function TasksPage() {
+  const { aggregate } = await getDataset();
   const statsByTask = new Map(
     aggregate.by_task.map((group) => [group.key, group.stats]),
   );
   return (
     <>
       <section className="border-b border-border">
-        <div className="mx-auto max-w-6xl px-5 pt-16 pb-12 sm:px-8 sm:pt-24">
+        <div className="mx-auto max-w-6xl px-gutter pt-[calc(var(--spacing-section)*0.6)] pb-12 sm:pt-section">
           <SectionHeading eyebrow="Benchmarks" title="Six standardized tasks">
             Each task is a small, well-scoped change verified locally by the
             CLI. Paste the prompt into any coding agent, then omot bench verify
@@ -29,13 +33,14 @@ export default function TasksPage() {
         </div>
       </section>
       <section>
-        <div className="mx-auto grid max-w-6xl gap-5 px-5 py-14 sm:grid-cols-2 sm:px-8 lg:grid-cols-3">
+        <div className="mx-auto grid max-w-6xl gap-5 px-gutter py-14 sm:grid-cols-2 lg:grid-cols-3">
           {BUILTIN_TASK_MANIFESTS.map((task) => {
             const stats = statsByTask.get(task.id)!;
             return (
               <Link
                 key={task.id}
                 href={`/tasks/${task.id}`}
+                prefetch={true}
                 className="group flex flex-col rounded-xl border border-border bg-card p-6 shadow-sm transition-colors hover:bg-accent"
               >
                 <div className="flex items-center justify-between gap-2">

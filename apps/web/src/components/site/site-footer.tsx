@@ -5,7 +5,7 @@ import { NAV_LINKS, REPO_URL } from "./links";
 export function SiteFooter() {
   return (
     <footer className="border-t border-border">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-5 py-10 text-sm text-muted-foreground sm:flex-row sm:items-start sm:justify-between sm:px-8">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-gutter-safe py-10 text-sm text-muted-foreground sm:flex-row sm:items-start sm:justify-between">
         <div className="max-w-sm space-y-2">
           <div className="flex items-center gap-2 font-medium text-foreground">
             <LogoMark className="size-4" /> Oh My Otter
@@ -15,20 +15,26 @@ export function SiteFooter() {
             coding agent vendor.
           </p>
         </div>
-        <nav className="flex flex-wrap gap-x-6 gap-y-2">
+        <nav className="flex flex-wrap gap-x-4">
           {NAV_LINKS.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="hover:text-foreground"
+              className="inline-flex min-h-11 items-center px-1 hover:text-foreground"
             >
               {link.label}
             </Link>
           ))}
-          <Link href="/results/data.json" className="hover:text-foreground">
+          <Link
+            href="/results/data.json"
+            className="inline-flex min-h-11 items-center px-1 hover:text-foreground"
+          >
             Raw data
           </Link>
-          <a href={REPO_URL} className="hover:text-foreground">
+          <a
+            href={REPO_URL}
+            className="inline-flex min-h-11 items-center px-1 hover:text-foreground"
+          >
             GitHub
           </a>
         </nav>

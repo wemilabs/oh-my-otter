@@ -8,8 +8,8 @@ import {
 } from "@/components/landing/sections";
 import { getDataset } from "@/lib/dataset";
 
-export default function Home() {
-  const { dataset, aggregate } = getDataset();
+export default async function Home() {
+  const { dataset, aggregate } = await getDataset();
   const reports = dataset.reports.length;
   return (
     <>
@@ -17,7 +17,11 @@ export default function Home() {
       <StatsStrip reports={reports} />
       <Features />
       <Steps />
-      <ResultsTeaser reports={reports} bands={aggregate.by_band} />
+      <ResultsTeaser
+        reports={reports}
+        bands={aggregate.by_band}
+        unavailable={dataset.status === "unavailable"}
+      />
       <FinalCta />
     </>
   );

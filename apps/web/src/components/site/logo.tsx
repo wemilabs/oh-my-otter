@@ -21,10 +21,11 @@ export function Logo() {
   return (
     <Link
       href="/"
-      className="flex items-center gap-2 text-[15px] font-semibold tracking-tight"
+      className="flex min-h-11 min-w-11 items-center gap-2 text-[15px] font-semibold tracking-tight"
     >
       <LogoMark />
-      Oh My Otter
+      <span className="hidden sm:inline">Oh My Otter</span>
+      <span className="sr-only">Oh My Otter</span>
     </Link>
   );
 }

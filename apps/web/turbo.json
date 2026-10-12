@@ -4,7 +4,7 @@
     "build": {
       "inputs": [
         "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/dataset/**",
+        "$TURBO_ROOT$/dataset/agents.json",
         "$TURBO_ROOT$/PRIVACY.md"
       ]
     }
