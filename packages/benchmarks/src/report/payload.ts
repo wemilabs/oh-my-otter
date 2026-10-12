@@ -17,6 +17,34 @@ import fixFailingTest from "../tasks/fix-failing-test/task.json";
 
 export const REPORT_SCHEMA_VERSION = 1 as const;
 
+const taskJsons = [
+  depPatchBump,
+  addUnitTest,
+  fixLintRule,
+  a11yImgAlt,
+  tsStrictFile,
+  fixFailingTest,
+];
+
+export interface BuiltinTaskManifest {
+  id: string;
+  version: number;
+  title: string;
+  category: string;
+  estimatedScope: string;
+  params: {
+    name: string;
+    kind: string;
+    description: string;
+    example: string;
+  }[];
+  preconditions: string[];
+  criteria: { pass: string; partial: string; fail: string };
+}
+
+export const BUILTIN_TASK_MANIFESTS: BuiltinTaskManifest[] =
+  taskJsons as BuiltinTaskManifest[];
+
 export const BUILTIN_TASK_IDS = [
   depPatchBump.id,
   addUnitTest.id,

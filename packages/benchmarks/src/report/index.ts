@@ -7,13 +7,18 @@ export {
 export type { CheckStatusValue, ScanSummary, Stack } from "./scan";
 export {
   BUILTIN_TASK_IDS,
+  BUILTIN_TASK_MANIFESTS,
   buildReportPayload,
   EXAMPLE_REPORT_PAYLOAD,
   REPORT_SCHEMA_VERSION,
   reportPayloadSchema,
   serializeReportPayload,
 } from "./payload";
-export type { BuildReportOptions, ReportPayload } from "./payload";
+export type {
+  BuildReportOptions,
+  BuiltinTaskManifest,
+  ReportPayload,
+} from "./payload";
 export { agentsFileSchema, canonicalAgent, OTHER_AGENT } from "./agents";
 export type { AgentsFile } from "./agents";
 export { checkReportPlausibility } from "./plausibility";
@@ -21,3 +26,5 @@ export { parseReportsNdjson, serializeReportLine } from "./ndjson";
 export { SITE_URL } from "./site";
 export { extractPayloadJson, ingestIssue, rateLimitProblem } from "./ingest";
 export type { IngestResult, RateLimitIssue } from "./ingest";
+export { aggregateReports, median, MIN_SAMPLE, summarize } from "./aggregate";
+export type { Aggregate, AgentGroup, CellStats, Group } from "./aggregate";
