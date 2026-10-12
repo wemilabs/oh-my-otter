@@ -80,6 +80,8 @@ export const reportPayloadSchema = z
   })
   .strict();
 
+export type ReportPayload = z.infer<typeof reportPayloadSchema>;
+
 export const EXAMPLE_REPORT_PAYLOAD: ReportPayload = {
   schema_version: 1,
   cli_version: "0.3.0",
