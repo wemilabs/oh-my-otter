@@ -524,6 +524,18 @@ describe("targeted checks", () => {
     },
   );
 
+  it("closes CRLF code fences before reading prose", async () => {
+    await withTempRepo(async (root) => {
+      await writeFile(
+        path.join(root, "README.md"),
+        "## Installation\r\n\r\n```sh\r\ncorepack enable\r\n```\r\n\r\nPlease run yarn install when ready.\r\n",
+      );
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("warn");
+    });
+  });
+
   it.each([
     "pnpm install",
     "npm ci",

@@ -64,7 +64,7 @@ function markdownHasCommand(contents: string): boolean {
   let fenceLength = 0;
   let indentedCodeAllowed = false;
   for (let index = 0; index < lines.length; index++) {
-    const line = lines[index]!;
+    const line = lines[index]!.replace(/\r$/, "");
     if (inFence) {
       blank(offsets[index]!, offsets[index]! + line.length);
       if (
