@@ -103,6 +103,30 @@ const coverageFixture = {
       },
     }) + "\n",
 };
+const changedGitignoreFixture = {
+  ...fixture,
+  "package.json":
+    JSON.stringify({
+      name: "f",
+      private: true,
+      type: "module",
+      scripts: {
+        test: `node -e "require('node:fs').appendFileSync('.gitignore', 'coverage/\\n')"`,
+      },
+    }) + "\n",
+};
+const changedNestedRepoFixture = {
+  ...fixture,
+  "package.json":
+    JSON.stringify({
+      name: "f",
+      private: true,
+      type: "module",
+      scripts: {
+        test: `node -e "require('node:fs').writeFileSync('nested/generated.txt', 'generated')"`,
+      },
+    }) + "\n",
+};
 const addTest = `import { test } from "node:test";
 import assert from "node:assert/strict";
 import { add } from "../src/math.mjs";
@@ -120,6 +144,22 @@ const start = [
 
 async function runFile(root: string) {
   return JSON.parse(await readFile(path.join(root, ".omot/run.json"), "utf8"));
+}
+
+async function addDirtyNestedRepo(root: string): Promise<string> {
+  const nested = path.join(root, "nested");
+  await mkdir(nested);
+  await git(nested, ["init", "-q", "--initial-branch=main"]);
+  await git(nested, ["config", "user.name", "Test"]);
+  await git(nested, ["config", "user.email", "test@example.invalid"]);
+  await git(nested, ["config", "commit.gpgsign", "false"]);
+  await writeFile(path.join(nested, "tracked.txt"), "tracked\n");
+  await git(nested, ["add", "tracked.txt"]);
+  await git(nested, ["commit", "-qm", "nested baseline"]);
+  await git(root, ["add", "nested"]);
+  await git(root, ["commit", "-qm", "add nested repo"]);
+  await writeFile(path.join(nested, "untracked.txt"), "pre-existing\n");
+  return nested;
 }
 
 async function waitForFile(file: string) {
@@ -216,7 +256,7 @@ describe("bench start and verify", () => {
     const run = await runFile(root);
     expect(run).toMatchObject({
       schema_version: 2,
-      task: { id: "add-unit-test", version: 3 },
+      task: { id: "add-unit-test", version: 4 },
       params: { file: "src/math.mjs", function: "add" },
       agent: "claude-code",
       baseline: { commit: head },
@@ -244,7 +284,7 @@ describe("bench start and verify", () => {
       { cwd: root },
     );
     expect(verified.code).toBe(0);
-    expect(verified.stdout).toContain("PASS add-unit-test v3");
+    expect(verified.stdout).toContain("PASS add-unit-test v4");
     expect(verified.stdout).toContain("(attempt 1)");
     expect(verified.stdout).toContain("Baseline health recorded");
     expect(verified.stderr).toContain("Nothing was sent anywhere.");
@@ -361,6 +401,52 @@ test("add", () => assert.equal(add(1, 2), 3));
     );
     await expect(access(path.join(root, "coverage.txt"))).rejects.toThrow();
     expect((await runFile(root)).baseline.scripts).toBeUndefined();
+  });
+
+  it("rejects baseline scripts that modify a pre-dirty .gitignore", async () => {
+    const root = await repo(changedGitignoreFixture);
+    await writeFile(path.join(root, ".gitignore"), "node_modules\n.omot/\n");
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Baseline scripts changed the working tree: .gitignore.",
+    );
+    expect(await readFile(path.join(root, ".gitignore"), "utf8")).toContain(
+      "coverage/",
+    );
+  });
+
+  it("allows baseline scripts when a pre-dirty .gitignore is unchanged", async () => {
+    const root = await repo(fixture);
+    await writeFile(path.join(root, ".gitignore"), "node_modules\n.omot/\n");
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(0);
+    expect(await runFile(root)).toMatchObject({
+      task: { id: "add-unit-test", version: 4 },
+    });
+  });
+
+  it("allows an unchanged dirty nested repository directory", async () => {
+    const root = await repo(fixture);
+    await addDirtyNestedRepo(root);
+    expect(
+      await git(root, ["status", "--porcelain", "--untracked-files=all"]),
+    ).toBe(" M nested");
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(0);
+  });
+
+  it("rejects baseline scripts that modify a dirty nested repository directory", async () => {
+    const root = await repo(changedNestedRepoFixture);
+    const nested = await addDirtyNestedRepo(root);
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Baseline scripts changed the working tree: nested.",
+    );
+    expect(await readFile(path.join(nested, "generated.txt"), "utf8")).toBe(
+      "generated",
+    );
   });
 
   it("asks before touching .gitignore and leaves it alone when declined", async () => {

@@ -84,7 +84,14 @@ export default defineTask({
       const source = (await readText(ctx, entry.path)) ?? "";
       if (!importsModule(source, entry.path, file)) continue;
       importing.push(entry.path);
-      if (!referencesIdentifier(source, name)) continue;
+      if (
+        !referencesIdentifier(source, name, {
+          fromFile: entry.path,
+          target: file,
+        })
+      ) {
+        continue;
+      }
       exercising.push(entry.path);
       casesAfter += countTestCases(source);
       if (entry.status !== "added") {

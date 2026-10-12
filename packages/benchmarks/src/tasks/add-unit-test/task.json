@@ -1,6 +1,6 @@
 {
   "id": "add-unit-test",
-  "version": 3,
+  "version": 4,
   "title": "Add unit tests for an untested function",
   "category": "testing",
   "estimatedScope": "small",
