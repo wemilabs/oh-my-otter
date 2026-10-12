@@ -17,7 +17,8 @@ const dynamicEnvPattern =
 const bareEnvPattern =
   /(?:process\s*\.\s*env|import\s*\.\s*meta\s*\.\s*env)\b(?!\s*(?:\.|\[))/;
 const envExampleKeyPattern = /^\s*#?\s*(?:export\s+)?([A-Za-z_]\w*)\s*=/;
-const schemaCallPattern = /\b(?:(?:z|v|t)\s*\.\s*object|createEnv)\s*\(/g;
+const schemaCallPattern =
+  /\b(?:(?:z|v|t|[Jj]oi)\s*\.\s*object|createEnv)\s*\(/g;
 const ignoredDirectories = new Set([
   "node_modules",
   "dist",
@@ -110,42 +111,89 @@ function maskStringsAndComments(contents: string): string {
     }
   };
 
-  for (let index = 0; index < contents.length;) {
-    const char = contents[index];
-    if (char === "'" || char === '"' || char === "`") {
-      let end = index + 1;
-      while (end < contents.length) {
-        if (contents[end] === "\\") {
-          end += 2;
-          continue;
-        }
-        if (contents[end] === char) {
-          end++;
-          break;
-        }
-        end++;
+  const scanString = (start: number): number => {
+    const quote = contents[start];
+    let end = start + 1;
+    while (end < contents.length) {
+      if (contents[end] === "\\") {
+        end += 2;
+        continue;
       }
-      blank(index, end);
-      index = end;
-      continue;
+      if (contents[end] === quote) {
+        end++;
+        break;
+      }
+      end++;
     }
-    if (char === "/" && contents[index + 1] === "/") {
-      let end = index + 2;
-      while (end < contents.length && contents[end] !== "\n") end++;
-      blank(index, end);
-      index = end;
-      continue;
-    }
-    if (char === "/" && contents[index + 1] === "*") {
-      const close = contents.indexOf("*/", index + 2);
-      const end = close < 0 ? contents.length : close + 2;
-      blank(index, end);
-      index = end;
-      continue;
-    }
-    index++;
-  }
+    blank(start, end);
+    return end;
+  };
 
+  const scanCode = (start: number, untilCloseBrace: boolean): number => {
+    let index = start;
+    let depth = 0;
+    while (index < contents.length) {
+      const char = contents[index];
+      if (char === "'" || char === '"') {
+        index = scanString(index);
+        continue;
+      }
+      if (char === "`") {
+        index = scanTemplate(index);
+        continue;
+      }
+      if (char === "/" && contents[index + 1] === "/") {
+        let end = index + 2;
+        while (end < contents.length && contents[end] !== "\n") end++;
+        blank(index, end);
+        index = end;
+        continue;
+      }
+      if (char === "/" && contents[index + 1] === "*") {
+        const close = contents.indexOf("*/", index + 2);
+        const end = close < 0 ? contents.length : close + 2;
+        blank(index, end);
+        index = end;
+        continue;
+      }
+      if (char === "{") depth++;
+      if (char === "}") {
+        if (untilCloseBrace && depth === 0) return index;
+        depth--;
+      }
+      index++;
+    }
+    return contents.length;
+  };
+
+  const scanTemplate = (start: number): number => {
+    let literalStart = start;
+    let index = start + 1;
+    while (index < contents.length) {
+      const char = contents[index];
+      if (char === "\\") {
+        index += 2;
+        continue;
+      }
+      if (char === "`") {
+        blank(literalStart, index + 1);
+        return index + 1;
+      }
+      if (char === "$" && contents[index + 1] === "{") {
+        blank(literalStart, index + 2);
+        const close = scanCode(index + 2, true);
+        blank(close, close + 1);
+        index = close + 1;
+        literalStart = index;
+        continue;
+      }
+      index++;
+    }
+    blank(literalStart, contents.length);
+    return contents.length;
+  };
+
+  scanCode(0, false);
   return masked.join("");
 }
 
@@ -237,6 +285,13 @@ function collectSchemaEnvKeys(contents: string, names: Set<string>): void {
     const openParen = (match.index ?? 0) + match[0].lastIndexOf("(");
     let objectStart = openParen + 1;
     while (/\s/.test(code[objectStart] ?? "")) objectStart++;
+    if (code[objectStart] === ")") {
+      const keysCall = /^\s*\.\s*keys\s*\(\s*\{/.exec(
+        code.slice(objectStart + 1),
+      );
+      if (!keysCall) continue;
+      objectStart = objectStart + keysCall[0].length;
+    }
     const objectEnd = matchingBrace(code, objectStart);
     if (objectEnd === null) continue;
 

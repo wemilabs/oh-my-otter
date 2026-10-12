@@ -582,6 +582,139 @@ describe("targeted checks", () => {
     },
   );
 
+  it("extracts env keys from Joi.object schemas", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const schema = Joi.object({ DATABASE_URL: Joi.string().required(), PORT: Joi.number() }); schema.validate(process.env);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: DATABASE_URL");
+    });
+  });
+
+  it("extracts env keys from Joi.object().keys() schemas", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const schema = Joi.object().keys({ DATABASE_URL: Joi.string().required(), PORT: Joi.number() }); schema.validate(process.env);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: DATABASE_URL");
+    });
+  });
+
+  it("ignores Joi schemas without a bare process.env reference", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const schema = Joi.object({ API_KEY: Joi.string() }); schema.validate(body);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      expect((await envExample.run(createCheckContext(root))).status).toBe(
+        "na",
+      );
+    });
+  });
+
+  it("extracts schema env keys inside template interpolations", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        "const text = `${z.object({ DATABASE_URL: z.string() }).parse(process.env)}`;\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: DATABASE_URL");
+    });
+  });
+
+  it("extracts schema env keys past nested templates and brace strings", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/env.js"),
+        'const t = `a ${`b ${"}"}`} ${z.object({ API_URL: z.string() }).parse(process.env)}`;\n',
+      );
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(".env.example is missing: API_URL");
+    });
+  });
+
+  it.each([
+    "consume(process.env);\nconst doc = `z.object({ SECRET_TOKEN: z.string() })`;\n",
+    'consume(process.env);\nconst doc = "z.object({ SECRET_TOKEN: z.string() })";\n',
+    "consume(process.env);\nconst name = 'x';\nconst s = `${name} z.object({ SECRET_TOKEN: 1 })`;\n",
+  ])("ignores schema text that is not code: %s", async (source) => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(path.join(root, "src/env.js"), source);
+      await writeFile(path.join(root, ".env.example"), "PORT=\n");
+
+      expect((await envExample.run(createCheckContext(root))).status).toBe(
+        "pass",
+      );
+    });
+  });
+
+  it.each([
+    "## Installation\n\nWe use `yarn` workspaces. See the team for setup details.\n",
+    "## Setup\n\nThis repo uses `npx` scripts and `pnpm`.\n",
+    "## Installation\n\nRun pnpm install first.\n",
+  ])("warns when install commands only appear in prose: %s", async (readme) => {
+    await withTempRepo(async (root) => {
+      await writeFile(path.join(root, "README.md"), readme);
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("warn");
+    });
+  });
+
+  it.each([
+    "## Installation\n\nRun `pnpm install` to set up dependencies.\n",
+    "## Installation\n\nRun `yarn` in the repo root.\n",
+    "## Installation\n\nRun `npm ci`.\n",
+    "## Installation\n\n    pnpm install\n",
+    "## Installation\n\n~~~bash\n$ bun install\n~~~\n",
+    "## Installation\n\n<pre>yarn install</pre>\n",
+    "## Installation\n\n```sh\ncd app && yarn\n```\n",
+  ])("recognizes install commands in code: %s", async (readme) => {
+    await withTempRepo(async (root) => {
+      await writeFile(path.join(root, "README.md"), readme);
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("pass");
+    });
+  });
+
+  it("accepts a line-start install command in a plain-text README", async () => {
+    await withTempRepo(async (root) => {
+      await writeFile(
+        path.join(root, "README.txt"),
+        "## Installation\n\nInstallation\n\nnpm install\n",
+      );
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("pass");
+    });
+  });
+
   it("returns valid, create-only fixes for the bare fixture", async () => {
     const fixture = path.resolve(
       path.dirname(new URL(import.meta.url).pathname),

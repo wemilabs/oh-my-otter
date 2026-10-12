@@ -7,16 +7,120 @@ const setupHeading =
 const packageManagerInstallPattern =
   /\b(?:pnpm|npm|bun)\s+(?:install|i|ci|add)\b/i;
 const yarnInstallPattern = /\byarn\s+(?:install|add)\b/i;
-const yarnCommandPattern = /^\s*(?:\$\s*)?yarn\s*$/im;
-const inlineYarnPattern = /`yarn`/i;
+const anchoredInstallPattern = /^(?:pnpm|npm|bun)\s+(?:install|i|ci|add)\b/i;
+const anchoredYarnInstallPattern = /^yarn\s+(?:install|add)\b/i;
+const yarnOnlyPattern = /^yarn(?:\s+--?[\w-]+(?:=\S+)?)*\s*$/;
+const yarnProsePattern = /\b(?:run|running|execute|executing|type|enter)\s*$/i;
 
-function hasInstallCommand(contents: string): boolean {
+function hasPlainYarn(text: string): boolean {
+  return text
+    .split(/&&|\|\||;/)
+    .some((piece) =>
+      yarnOnlyPattern.test(piece.trim().replace(/^[$>]\s+/, "")),
+    );
+}
+
+function codeLineHasCommand(line: string): boolean {
   return (
-    packageManagerInstallPattern.test(contents) ||
-    yarnInstallPattern.test(contents) ||
-    yarnCommandPattern.test(contents) ||
-    inlineYarnPattern.test(contents)
+    packageManagerInstallPattern.test(line) ||
+    yarnInstallPattern.test(line) ||
+    hasPlainYarn(line)
   );
+}
+
+function codeTextHasCommand(text: string): boolean {
+  return text.split("\n").some(codeLineHasCommand);
+}
+
+function plainTextHasCommand(contents: string): boolean {
+  for (const line of contents.split(/\r?\n/)) {
+    const stripped = line.replace(/^\s*(?:[$>]\s+)?/, "");
+    if (
+      anchoredInstallPattern.test(stripped) ||
+      anchoredYarnInstallPattern.test(stripped) ||
+      yarnOnlyPattern.test(stripped)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function markdownHasCommand(contents: string): boolean {
+  const masked = contents.split("");
+  const blank = (start: number, end: number) => {
+    for (let index = start; index < end; index++) masked[index] = " ";
+  };
+  const lines = contents.split("\n");
+  const offsets: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    offsets.push(offset);
+    offset += line.length + 1;
+  }
+
+  let inFence = false;
+  let fenceChar = "";
+  let fenceLength = 0;
+  let indentedCodeAllowed = false;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (inFence) {
+      blank(offsets[index]!, offsets[index]! + line.length);
+      if (
+        new RegExp(`^[ \t]*${fenceChar}{${fenceLength},}[ \t]*$`).test(line)
+      ) {
+        inFence = false;
+      } else if (codeLineHasCommand(line)) {
+        return true;
+      }
+      continue;
+    }
+    const fence = /^[ \t]*(`{3,}|~{3,})/.exec(line);
+    if (fence) {
+      inFence = true;
+      fenceChar = fence[1]![0]!;
+      fenceLength = fence[1]!.length;
+      blank(offsets[index]!, offsets[index]! + line.length);
+      continue;
+    }
+    const indented = /^(?: {4}|\t)/.test(line);
+    if (indented && indentedCodeAllowed && codeLineHasCommand(line)) {
+      return true;
+    }
+    indentedCodeAllowed = indented || line.trim() === "";
+  }
+
+  const stripped = masked.join("");
+  for (const match of stripped.matchAll(
+    /<(pre|code)\b[^>]*>([\s\S]*?)<\/\1>/gi,
+  )) {
+    if (codeTextHasCommand(match[2] ?? "")) return true;
+  }
+  for (const match of stripped.matchAll(/(`+)([\s\S]*?)\1/g)) {
+    const span = match[2] ?? "";
+    if (
+      packageManagerInstallPattern.test(span) ||
+      yarnInstallPattern.test(span)
+    ) {
+      return true;
+    }
+    if (
+      hasPlainYarn(span) &&
+      yarnProsePattern.test(stripped.slice(0, match.index))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasInstallCommand(contents: string, readme: string): boolean {
+  const name = readme.toLowerCase();
+  if (name === "readme" || name === "readme.txt") {
+    return plainTextHasCommand(contents);
+  }
+  return markdownHasCommand(contents);
 }
 
 export default defineCheck({
@@ -36,7 +140,7 @@ export default defineCheck({
     }
     const contents = (await ctx.read(readme)) ?? "";
     const hasHeading = setupHeading.test(contents);
-    const hasCommand = hasInstallCommand(contents);
+    const hasCommand = hasInstallCommand(contents, readme);
     if (hasHeading && hasCommand) {
       return { status: "pass", detail: `${readme} documents installation.` };
     }
