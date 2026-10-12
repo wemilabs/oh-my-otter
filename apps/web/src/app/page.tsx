@@ -9,14 +9,15 @@ import {
 import { getDataset } from "@/lib/dataset";
 
 export default function Home() {
-  const reports = getDataset().dataset.reports.length;
+  const { dataset, aggregate } = getDataset();
+  const reports = dataset.reports.length;
   return (
     <>
       <Hero />
       <StatsStrip reports={reports} />
       <Features />
       <Steps />
-      <ResultsTeaser reports={reports} />
+      <ResultsTeaser reports={reports} bands={aggregate.by_band} />
       <FinalCta />
     </>
   );

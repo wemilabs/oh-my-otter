@@ -148,12 +148,27 @@ describe("aggregateReports", () => {
     const version = claude.versions.find((g) => g.key === "2.1.0")!;
     expect(version.stats.n).toBe(5);
     expect(version.stats.pass_rate).toBe(1);
-    const unspecified = claude.versions.find((g) => g.key === "unspecified")!;
+    const unspecified = claude.versions.find((g) => g.key === "(none)")!;
+    expect(unspecified.label).toBe("not specified");
     expect(unspecified.stats.n).toBe(1);
     expect(unspecified.stats.enough).toBe(false);
     const model = claude.models.find((g) => g.key === "opus")!;
     expect(model.stats.n).toBe(1);
     expect(model.stats.pass_rate).toBeNull();
+  });
+
+  it("keeps a literal unspecified model separate from a missing one", () => {
+    const reports = [
+      report({ agent: "claude-code", model: "unspecified" }),
+      report({ agent: "claude-code" }),
+    ];
+    const aggregate = aggregateReports(reports, agents);
+    const claude = aggregate.by_agent.find((g) => g.key === "claude-code")!;
+    const literal = claude.models.find((g) => g.key === "unspecified")!;
+    const missing = claude.models.find((g) => g.key === "(none)")!;
+    expect(literal.stats.n).toBe(1);
+    expect(missing.stats.n).toBe(1);
+    expect(missing.label).toBe("not specified");
   });
 
   it("computes per-task band and agent aggregates", () => {

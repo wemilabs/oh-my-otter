@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { ArrowRight, ChevronRight } from "lucide-react";
+import type { Grade } from "@oh-my-otter/core";
+import type { Group } from "@oh-my-otter/benchmarks/report";
 import { StatusPill, Window } from "./terminal";
 
 export function SectionHeading({
@@ -284,7 +286,13 @@ export function Steps() {
   );
 }
 
-export function ResultsTeaser({ reports }: { reports: number }) {
+export function ResultsTeaser({
+  reports,
+  bands,
+}: {
+  reports: number;
+  bands: Group<Grade>[];
+}) {
   return (
     <section className="border-b border-border">
       <div className="mx-auto grid max-w-6xl gap-10 px-5 py-20 sm:px-8 sm:py-28 lg:grid-cols-[1fr_1.1fr] lg:items-center">
@@ -304,15 +312,36 @@ export function ResultsTeaser({ reports }: { reports: number }) {
             </span>
           </div>
           <div className="mt-6 space-y-3">
-            {["A", "B", "C", "D"].map((grade) => (
-              <div key={grade} className="flex items-center gap-3 text-sm">
-                <span className="w-4 font-medium">{grade}</span>
-                <div className="h-7 flex-1 rounded-md border border-dashed border-border bg-wash" />
-                <span className="w-28 text-right text-xs text-muted-foreground">
-                  Not enough data yet
-                </span>
-              </div>
-            ))}
+            {bands.map((band) => {
+              const rate = band.stats.enough ? band.stats.pass_rate : null;
+              return (
+                <div key={band.key} className="flex items-center gap-3 text-sm">
+                  <span className="w-4 font-medium">{band.key}</span>
+                  {rate === null ? (
+                    <div className="h-7 flex-1 rounded-md border border-dashed border-border bg-wash" />
+                  ) : (
+                    <div className="h-7 flex-1 rounded-md border border-border bg-wash">
+                      <div
+                        className="h-full rounded-md bg-brand/70"
+                        style={{ width: `${Math.round(rate * 100)}%` }}
+                      />
+                    </div>
+                  )}
+                  <span className="w-28 text-right text-xs text-muted-foreground">
+                    {rate === null ? (
+                      "Not enough data yet"
+                    ) : (
+                      <>
+                        <span className="font-mono">
+                          {Math.round(rate * 100)}%
+                        </span>{" "}
+                        · n={band.stats.n}
+                      </>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
           </div>
           <Link
             href="/results"

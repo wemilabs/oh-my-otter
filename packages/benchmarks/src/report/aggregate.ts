@@ -95,7 +95,7 @@ function dimensionGroups(
 ): Group[] {
   const buckets = new Map<string, ReportPayload[]>();
   for (const report of reports) {
-    const key = pick(report) ?? "unspecified";
+    const key = pick(report) ?? "(none)";
     const bucket = buckets.get(key) ?? [];
     bucket.push(report);
     buckets.set(key, bucket);
@@ -103,7 +103,7 @@ function dimensionGroups(
   return sortGroups(
     [...buckets.entries()].map(([key, bucket]) => ({
       key,
-      label: key,
+      label: key === "(none)" ? "not specified" : key,
       stats: summarize(bucket),
     })),
   );
