@@ -11,12 +11,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  ingest:
+  validate:
     if: github.event.label.name == 'report' && github.event.issue.state == 'open'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      issues: write
+      contents: read
+      issues: read
+    outputs:
+      status: ${{ steps.ingest.outputs.status }}
+      file_name: ${{ steps.ingest.outputs.file_name }}
+      contents: ${{ steps.ingest.outputs.contents }}
+      comment: ${{ steps.ingest.outputs.comment }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -26,46 +31,111 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo run build --filter=@oh-my-otter/benchmarks...
-      - name: Validate and write the report
+      - name: Fetch the author's other report issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          RECENT_ISSUES_FILE: ${{ runner.temp }}/recent-issues.json
+          OPEN_ISSUES_FILE: ${{ runner.temp }}/open-issues.json
+        run: |
+          set -e
+          SINCE=$(date -u -d '-60 min' +%Y-%m-%dT%H:%M:%SZ)
+          gh api -X GET "repos/$GH_REPO/issues" \
+            -f creator="$ISSUE_AUTHOR" -f labels=report -f state=all \
+            -f since="$SINCE" -f per_page=100 > "$RECENT_ISSUES_FILE"
+          gh api -X GET "repos/$GH_REPO/issues" \
+            -f creator="$ISSUE_AUTHOR" -f labels=report -f state=open \
+            -f per_page=100 > "$OPEN_ISSUES_FILE"
+      - name: Validate the report
         id: ingest
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
-          COMMENT_FILE: ${{ runner.temp }}/ingest-comment.md
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          RECENT_ISSUES_FILE: ${{ runner.temp }}/recent-issues.json
+          OPEN_ISSUES_FILE: ${{ runner.temp }}/open-issues.json
         run: node packages/benchmarks/scripts/ingest-report.mjs
-      - name: Commit a valid report
-        if: steps.ingest.outputs.status == 'valid'
+
+  publish:
+    needs: validate
+    if: needs.validate.outputs.status == 'valid'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Write the report file
         env:
-          FILE: ${{ steps.ingest.outputs.file }}
+          FILE_NAME: ${{ needs.validate.outputs.file_name }}
+          CONTENTS: ${{ needs.validate.outputs.contents }}
+        run: |
+          set -e
+          if ! echo "$FILE_NAME" | grep -Eq '^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}\.json$'; then
+            echo "Unexpected file name: $FILE_NAME" >&2
+            exit 1
+          fi
+          FILE="dataset/reports/$FILE_NAME"
+          if [ -e "$FILE" ]; then
+            echo "$FILE already exists" >&2
+            exit 1
+          fi
+          printf '%s' "$CONTENTS" > "$FILE"
+      - name: Push the report branch
+        env:
+          FILE_NAME: ${{ needs.validate.outputs.file_name }}
         run: |
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- "$FILE"
+          git switch -c "report/${FILE_NAME%.json}"
+          git add -- "dataset/reports/$FILE_NAME"
           git commit -m "dataset: add benchmark report"
-          for attempt in 1 2 3; do
-            git pull --rebase && git push && exit 0
-          done
-          echo "Failed to push after 3 attempts" >&2
-          exit 1
-      - name: Comment on the issue
+          git push origin HEAD
+      - name: Open the pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          FILE_NAME: ${{ needs.validate.outputs.file_name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -e
+          URL=$(gh pr create --repo "$GH_REPO" --base main \
+            --head "report/${FILE_NAME%.json}" \
+            --title "dataset: add benchmark report" \
+            --body "Adds one validated benchmark report submitted in #$ISSUE_NUMBER. Only the validated payload fields are stored.")
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+      - name: Comment and close the issue
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          COMMENT_FILE: ${{ runner.temp }}/ingest-comment.md
-        run: gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$COMMENT_FILE"
-      - name: Close a valid report
-        if: steps.ingest.outputs.status == 'valid'
+          COMMENT: ${{ needs.validate.outputs.comment }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+        run: |
+          set -e
+          printf '%s\n\nPull request: %s\n' "$COMMENT" "$PR_URL" > "$RUNNER_TEMP/comment.md"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/comment.md"
+          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason completed
+
+  reject:
+    needs: validate
+    if: needs.validate.outputs.status == 'invalid'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Comment and close the issue
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-        run: gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason completed
-      - name: Close an invalid report
-        if: steps.ingest.outputs.status != 'valid'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-        run: gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason "not planned"
+          COMMENT: ${{ needs.validate.outputs.comment }}
+        run: |
+          set -e
+          printf '%s\n' "$COMMENT" > "$RUNNER_TEMP/comment.md"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/comment.md"
+          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason "not planned"
