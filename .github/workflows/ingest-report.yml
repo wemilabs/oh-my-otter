@@ -34,8 +34,10 @@ jobs:
         run: |
           set -e
           # Queued runs carry a stale event snapshot; an earlier run may have ingested this issue.
-          if gh issue view "$ISSUE_NUMBER" --repo "$GH_REPO" --json state,labels \
-            --jq '.state == "OPEN" and ([.labels[].name] | index("ingested") | not)' | grep -qx true; then
+          # Fails the run (no skip) if the API call fails, so the report can be retried.
+          LIVE=$(gh issue view "$ISSUE_NUMBER" --repo "$GH_REPO" --json state,labels \
+            --jq '.state == "OPEN" and ([.labels[].name] | index("ingested") | not)')
+          if [ "$LIVE" = "true" ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
           else
             echo "skip=true" >> "$GITHUB_OUTPUT"
