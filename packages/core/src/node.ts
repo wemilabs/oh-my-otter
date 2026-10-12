@@ -88,6 +88,7 @@ export function createCheckContext(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
         if ((error as NodeJS.ErrnoException).code === "ENOTDIR") return false;
+        if ((error as NodeJS.ErrnoException).code === "ELOOP") return false;
         throw error;
       }
     },
@@ -98,7 +99,13 @@ export function createCheckContext(
         return await readFile(target, "utf8");
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
-        if (code === "ENOENT" || code === "EISDIR") return null;
+        if (
+          code === "ENOENT" ||
+          code === "EISDIR" ||
+          code === "ENOTDIR" ||
+          code === "ELOOP"
+        )
+          return null;
         throw error;
       }
     },
@@ -145,6 +152,8 @@ export function createCheckContext(
           if (
             (error as NodeJS.ErrnoException).code !== "ENOENT" &&
             (error as NodeJS.ErrnoException).code !== "EISDIR" &&
+            (error as NodeJS.ErrnoException).code !== "ENOTDIR" &&
+            (error as NodeJS.ErrnoException).code !== "ELOOP" &&
             !(error instanceof SyntaxError)
           ) {
             throw error;
