@@ -278,7 +278,7 @@ describe("targeted checks", () => {
         JSON.stringify({ packageManager: "pnpm@10.1.0" }),
       );
       const plan = await ciConfig.fix!(createCheckContext(root));
-      expect(plan[0]?.contents).not.toContain("version: 10");
+      expect(plan[0]?.contents).not.toContain("version: 12");
     });
 
     await withTempRepo(async (root) => {
@@ -289,7 +289,7 @@ describe("targeted checks", () => {
       );
       const plan = await ciConfig.fix!(createCheckContext(root));
       expect(plan[0]?.contents).toContain(
-        "      - uses: pnpm/action-setup@v4\n        with:\n          version: 10\n",
+        "      - uses: pnpm/action-setup@v4\n        with:\n          version: 12\n",
       );
     });
   });

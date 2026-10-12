@@ -26,7 +26,7 @@ function workflow(
       ? `      - uses: pnpm/action-setup@v4\n${
           hasDeclaredPackageManager
             ? ""
-            : "        with:\n          version: 10\n"
+            : "        with:\n          version: 12\n"
         }`
       : manager === "bun"
         ? "      - uses: oven-sh/setup-bun@v2\n"
