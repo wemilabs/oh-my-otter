@@ -295,6 +295,78 @@ describe("bench start and verify", () => {
     expect(JSON.parse(verified.stdout).result.outcome).toBe("fail");
   });
 
+  it("records --agent-version and --model as slugs and lets verify override them", async () => {
+    const root = await repo(fixture);
+    const started = await invoke(
+      [
+        ...start,
+        "--agent",
+        "Codex",
+        "--agent-version",
+        "1.2.3 Beta",
+        "--model",
+        "GPT 5.5 Codex",
+        "--yes",
+      ],
+      { cwd: root },
+    );
+    expect(started.code).toBe(0);
+    expect(started.stderr).toContain(
+      "(agent: codex, version: 1.2.3-beta, model: gpt-5.5-codex)",
+    );
+    expect(await runFile(root)).toMatchObject({
+      agent: "codex",
+      agent_version: "1.2.3-beta",
+      model: "gpt-5.5-codex",
+    });
+    await writeFile(
+      path.join(root, "add.test.mjs"),
+      addTest.replace("../src", "./src"),
+    );
+    const verified = await invoke(
+      [
+        "bench",
+        "verify",
+        "--corrections",
+        "0",
+        "--minutes",
+        "1",
+        "--model",
+        "o9",
+      ],
+      { cwd: root },
+    );
+    expect(verified.code).toBe(0);
+    expect(await runFile(root)).toMatchObject({
+      agent: "codex",
+      agent_version: "1.2.3-beta",
+      model: "o9",
+    });
+  });
+
+  it("refuses to start with uncommitted changes", async () => {
+    const root = await repo(fixture);
+    await writeFile(
+      path.join(root, "src/math.mjs"),
+      "export const add = () => 0;\n",
+    );
+    const result = await invoke([...start, "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("uncommitted changes (src/math.mjs)");
+  });
+
+  it("does not silently replace an invalid run file", async () => {
+    const root = await repo(fixture);
+    await mkdir(path.join(root, ".omot"));
+    await writeFile(path.join(root, ".omot/run.json"), "{ nope");
+    const result = await invoke(start, { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("not a valid run file");
+    expect(await readFile(path.join(root, ".omot/run.json"), "utf8")).toBe(
+      "{ nope",
+    );
+  });
+
   it("explains how to start when there is no run", async () => {
     const root = await repo(fixture);
     const result = await invoke(

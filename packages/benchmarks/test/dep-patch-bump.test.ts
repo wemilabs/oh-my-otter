@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import task, { compatibilityLine } from "../src/tasks/dep-patch-bump/verify";
+import task, {
+  compatibilityLine,
+  lockfileVersions,
+} from "../src/tasks/dep-patch-bump/verify";
 import {
   failingTest,
   npmPackage,
@@ -97,5 +100,19 @@ describe("dep-patch-bump", () => {
     ["latest", null],
   ])("compatibility line of %s is %s", (spec, line) => {
     expect(compatibilityLine(spec)).toBe(line);
+  });
+});
+
+describe("lockfileVersions", () => {
+  it("reads resolved versions from pnpm, yarn, and bun lockfiles", () => {
+    const pnpm = `packages:\n  zod@4.1.0:\n    resolution: {}\n  eslint-config-zod@1.0.0:\n  '@x/zod@9.9.9':\n`;
+    expect(lockfileVersions(pnpm, "zod")).toEqual(["4.1.0"]);
+    const yarn = `"zod@^4.0.0":\n  version "4.1.2"\n  resolved "x"\n\nzod-extra@^1.0.0:\n  version "1.0.0"\n`;
+    expect(lockfileVersions(yarn, "zod")).toEqual(["4.1.2"]);
+    const bun = `{ "packages": { "zod": ["zod@4.1.3", "", {}] } }`;
+    expect(lockfileVersions(bun, "zod")).toEqual(["4.1.3"]);
+    expect(
+      lockfileVersions("  '@types/node@22.1.0':\n", "@types/node"),
+    ).toEqual(["22.1.0"]);
   });
 });

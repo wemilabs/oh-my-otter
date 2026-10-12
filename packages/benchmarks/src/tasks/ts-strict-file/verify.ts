@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { commandFailure, readText } from "../../context";
 import { countExplicitAny, countTypeSuppressions } from "../../lib/lexer";
+import { changedScripts, scriptChangeReason } from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError, type RepoContext } from "../../types";
 import manifest from "./task.json";
@@ -67,6 +68,11 @@ export default defineTask<Data>({
       reasons.push(
         `Type-check suppressions added: ${before.suppressions} → ${suppressions}.`,
       );
+    }
+    const scripts = await changedScripts(ctx, ["typecheck"]);
+    if (scripts.length > 0) {
+      partial = true;
+      reasons.push(scriptChangeReason(scripts));
     }
     const result = await typecheck(ctx);
     if (result === null || result.code !== 0) {

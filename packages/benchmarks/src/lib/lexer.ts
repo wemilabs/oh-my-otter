@@ -136,6 +136,12 @@ function previousToken(masked: string, index: number): string {
   return masked.slice(cursor + 1, end);
 }
 
+function isArrow(masked: string, index: number): boolean {
+  let cursor = index - 1;
+  while (cursor >= 0 && /\s/.test(masked[cursor] as string)) cursor -= 1;
+  return masked[cursor] === ">" && masked[cursor - 1] === "=";
+}
+
 function nextChar(masked: string, index: number): string {
   let cursor = index;
   while (cursor < masked.length && /\s/.test(masked[cursor] as string))
@@ -152,7 +158,12 @@ export function countExplicitAny(source: string): number {
     const before = previousToken(masked, start);
     const after = nextChar(masked, start + 3);
     if (after === ":" || after === "?") continue;
-    if (typeChars.has(before) || typeWords.has(before)) count += 1;
+    if (
+      typeChars.has(before) ||
+      typeWords.has(before) ||
+      isArrow(masked, start)
+    )
+      count += 1;
   }
   return count;
 }

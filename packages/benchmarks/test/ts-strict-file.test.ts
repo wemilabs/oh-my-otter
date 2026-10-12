@@ -74,6 +74,7 @@ describe("ts-strict-file", () => {
 
   it("counts explicit any lexically", () => {
     expect(countExplicitAny("let a: any = 1;")).toBe(1);
+    expect(countExplicitAny("type Handler = () => any;")).toBe(1);
     expect(countExplicitAny("const xs: any[] = [];")).toBe(1);
     expect(countExplicitAny("type T = Record<string, any>;")).toBe(1);
     expect(

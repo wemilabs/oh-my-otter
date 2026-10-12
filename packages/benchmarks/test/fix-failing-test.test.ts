@@ -52,6 +52,17 @@ describe("fix-failing-test", () => {
     expect(result.outcome).toBe("pass");
   });
 
+  it("fails when the test script is replaced", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "package.json": npmPackage({ test: "node -e 0" }),
+    });
+    expect(result.outcome).toBe("fail");
+    expect(result.reasons).toContain(
+      "package.json scripts changed since the baseline: test.",
+    );
+  });
+
   it("is partial when test files were modified", async () => {
     const started = await startTask(task, base, params);
     const result = await verifyTask(task, started, params, {

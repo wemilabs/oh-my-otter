@@ -42,8 +42,8 @@ Use `--run` to execute the repository's test script. `--fix` previews create-onl
 ```sh
 omot bench list [--json]
 omot bench show <id> [--param key=value ...] [--json]
-omot bench start <id> [path] [--param key=value ...] [--agent <name>] [--yes]
-omot bench verify [path] [--corrections <n>] [--minutes <n>] [--agent <name>] [--json]
+omot bench start <id> [path] [--param key=value ...] [--agent <name>] [--agent-version <version>] [--model <name>] [--yes]
+omot bench verify [path] [--corrections <n>] [--minutes <n>] [--agent <name>] [--agent-version <version>] [--model <name>] [--json]
 ```
 
 | Task               | What the agent does                                | Params             |
@@ -62,6 +62,10 @@ Each task has a docs page in [`docs/benchmarks`](docs/benchmarks).
 3. Run `omot bench verify`. The verifier compares the repo with the baseline and runs the repository's own scripts (build, test, lint, typecheck) locally, then prints pass, partial, or fail with reasons. It asks how many times you corrected the agent and how many minutes of human effort it took; pass `--corrections <n> --minutes <n>` to skip the questions in scripts. It exits 1 on fail.
 
 `--agent` is optional and works with any coding agent. It is stored as a lowercase slug of at most 40 characters from `[a-z0-9._-]` (for example `"Claude Code"` becomes `claude-code`); the default is `unknown`. `verify --agent` overrides the value from `start`.
+
+`--agent-version` and `--model` are optional too and are never prompted for. They use the same slug style: the agent version is at most 40 characters and the model at most 60 (for example `--model "Claude Opus 4"` becomes `claude-opus-4`). They are left out of `.omot/run.json` when not given, and `verify` can override either one.
+
+`bench start` needs a clean working tree, so only the agent's changes are measured. Commit or stash first.
 
 `start` offers to append one line, `.omot/`, to `.gitignore` (or create it); confirm or pass `--yes`. That is the only existing file it edits. `fix-failing-test` asks first, then creates a branch named `omot/fix-failing-test-<timestamp>` and commits a one-operator bug there; your current branch is untouched. Results stay in `.omot/run.json`; `omot bench` sends nothing anywhere.
 

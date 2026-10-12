@@ -9,9 +9,13 @@ export function getTask(id: string): Task | undefined {
 
 export {
   AGENT_PATTERN,
+  AGENT_VERSION_PATTERN,
+  MODEL_PATTERN,
   DEFAULT_AGENT,
   RUN_SCHEMA_VERSION,
   normalizeAgent,
+  normalizeAgentVersion,
+  normalizeModel,
   parseParams,
   renderPrompt,
   runFileSchema,

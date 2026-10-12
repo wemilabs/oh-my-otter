@@ -76,17 +76,38 @@ export type VerifyResult = z.infer<typeof verifyResultSchema>;
 export const AGENT_PATTERN = /^[a-z0-9._-]{1,40}$/;
 export const DEFAULT_AGENT = "unknown";
 
-export function normalizeAgent(value: string | undefined): string {
-  if (value === undefined) return DEFAULT_AGENT;
-  const slug = value
+export const AGENT_VERSION_PATTERN = /^[a-z0-9._-]{1,40}$/;
+export const MODEL_PATTERN = /^[a-z0-9._-]{1,60}$/;
+
+function slugify(value: string, max: number): string {
+  return value
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9._-]+/g, "-")
     .replace(/-{2,}/g, "-")
     .replace(/^[-.]+|[-.]+$/g, "")
-    .slice(0, 40)
+    .slice(0, max)
     .replace(/[-.]+$/g, "");
+}
+
+export function normalizeAgent(value: string | undefined): string {
+  if (value === undefined) return DEFAULT_AGENT;
+  const slug = slugify(value, 40);
   return slug.length > 0 ? slug : DEFAULT_AGENT;
+}
+
+/** Normalizes `--agent-version`; returns undefined when nothing usable is left. */
+export function normalizeAgentVersion(
+  value: string | undefined,
+): string | undefined {
+  if (value === undefined) return undefined;
+  return slugify(value, 40) || undefined;
+}
+
+/** Normalizes `--model`; returns undefined when nothing usable is left. */
+export function normalizeModel(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return slugify(value, 60) || undefined;
 }
 
 export const agentSchema = z.string().regex(AGENT_PATTERN);
@@ -107,6 +128,8 @@ export const runFileSchema = z
       .strict(),
     params: z.record(z.string(), z.string()),
     agent: agentSchema.default(DEFAULT_AGENT),
+    agent_version: z.string().regex(AGENT_VERSION_PATTERN).optional(),
+    model: z.string().regex(MODEL_PATTERN).optional(),
     baseline: z
       .object({
         commit: commitSchema,

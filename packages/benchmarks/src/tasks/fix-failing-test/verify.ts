@@ -3,6 +3,7 @@ import { z } from "zod";
 import { commandFailure, readText, resolveInside } from "../../context";
 import { isTestFile, summarizeList } from "../../lib/files";
 import { applyMutation, findMutations } from "../../lib/mutations";
+import { changedScripts, scriptChangeReason } from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError } from "../../types";
 import manifest from "./task.json";
@@ -102,21 +103,34 @@ export default defineTask<Data>({
 
     const absolute = await resolveInside(ctx.root, file);
     await ctx.git(["switch", "--quiet", "-c", branch]);
-    for (const mutation of candidates) {
-      await writeFile(absolute, applyMutation(source, mutation));
-      const result = await ctx.runScript("test");
-      if (result !== null && result.code !== 0) {
-        await ctx.git([...commitArgs, "--", file]);
-        const described = `line ${mutation.line}: ${mutation.from} → ${mutation.to}`;
-        ctx.log(
-          `Introduced a failing test on ${branch} (${file}, ${described}).`,
-        );
-        return { file, branch, original_branch: original, mutation: described };
+    const restore = async () => {
+      await writeFile(absolute, source);
+      await ctx.git(["switch", "--quiet", original]);
+      await ctx.git(["branch", "--quiet", "-D", branch]);
+    };
+    try {
+      for (const mutation of candidates) {
+        await writeFile(absolute, applyMutation(source, mutation));
+        const result = await ctx.runScript("test");
+        if (result !== null && result.code !== 0) {
+          await ctx.git([...commitArgs, "--", file]);
+          const described = `line ${mutation.line}: ${mutation.from} → ${mutation.to}`;
+          ctx.log(
+            `Introduced a failing test on ${branch} (${file}, ${described}).`,
+          );
+          return {
+            file,
+            branch,
+            original_branch: original,
+            mutation: described,
+          };
+        }
       }
+    } catch (error) {
+      await restore().catch(() => {});
+      throw error;
     }
-    await writeFile(absolute, source);
-    await ctx.git(["switch", "--quiet", original]);
-    await ctx.git(["branch", "--quiet", "-D", branch]);
+    await restore();
     throw new TaskPreconditionError(
       `None of the first ${candidates.length} operator flips in ${file} made a test fail; pick a file with stronger test coverage.`,
     );
@@ -147,6 +161,11 @@ export default defineTask<Data>({
     if (skipsAdded > 0) {
       failed = true;
       reasons.push(`${skipsAdded} test(s) skipped, focused, or marked todo.`);
+    }
+    const scripts = await changedScripts(ctx, ["test"]);
+    if (scripts.length > 0) {
+      failed = true;
+      reasons.push(scriptChangeReason(scripts));
     }
     const result = await ctx.runScript("test");
     if (result === null || result.code !== 0) {

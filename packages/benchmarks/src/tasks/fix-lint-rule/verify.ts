@@ -2,6 +2,7 @@ import { z } from "zod";
 import { commandFailure } from "../../context";
 import { countDisables, isEslintConfig, runEslint } from "../../lib/eslint";
 import { summarizeList } from "../../lib/files";
+import { changedScripts, scriptChangeReason } from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError } from "../../types";
 import manifest from "./task.json";
@@ -75,6 +76,11 @@ export default defineTask<Data>({
       reasons.push(`${added} new eslint-disable comment(s) cover ${rule}.`);
     }
 
+    const scripts = await changedScripts(ctx, ["test"]);
+    if (scripts.length > 0) {
+      partial = true;
+      reasons.push(scriptChangeReason(scripts));
+    }
     const result = await ctx.runScript("test");
     if (result === null || result.code !== 0) {
       partial = true;

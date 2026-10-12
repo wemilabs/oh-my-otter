@@ -1,3 +1,4 @@
+import { access } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
 import pc from "picocolors";
@@ -13,6 +14,8 @@ import {
   getTask,
   headCommit,
   normalizeAgent,
+  normalizeAgentVersion,
+  normalizeModel,
   parseParams,
   planGitignore,
   readRunFile,
@@ -33,9 +36,14 @@ export interface BenchIO {
   ask: (question: string) => Promise<string>;
 }
 
-interface StartOptions {
-  param?: string[];
+interface AgentOptions {
   agent?: string;
+  agentVersion?: string;
+  model?: string;
+}
+
+interface StartOptions extends AgentOptions {
+  param?: string[];
   yes?: boolean;
 }
 
@@ -44,10 +52,9 @@ interface ShowOptions {
   json?: boolean;
 }
 
-interface VerifyOptions {
+interface VerifyOptions extends AgentOptions {
   corrections?: string;
   minutes?: string;
-  agent?: string;
   json?: boolean;
 }
 
@@ -91,9 +98,62 @@ function parseSelfReport(name: string, value: string): number {
   return parsed.data;
 }
 
-function agentNote(raw: string | undefined, agent: string, io: BenchIO): void {
-  if (raw !== undefined && raw !== agent) {
-    io.stderr(pc.dim(`Agent "${raw}" recorded as "${agent}".\n`));
+type AgentFields = Pick<RunFile, "agent" | "agent_version" | "model">;
+
+function agentFields(
+  options: AgentOptions,
+  previous?: AgentFields,
+): AgentFields {
+  const agent =
+    options.agent === undefined
+      ? (previous?.agent ?? normalizeAgent(undefined))
+      : normalizeAgent(options.agent);
+  const agentVersion =
+    options.agentVersion === undefined
+      ? previous?.agent_version
+      : normalizeAgentVersion(options.agentVersion);
+  const model =
+    options.model === undefined
+      ? previous?.model
+      : normalizeModel(options.model);
+  return {
+    agent,
+    ...(agentVersion === undefined ? {} : { agent_version: agentVersion }),
+    ...(model === undefined ? {} : { model }),
+  };
+}
+
+function describeAgent(fields: AgentFields): string {
+  return [
+    `agent: ${fields.agent}`,
+    fields.agent_version === undefined
+      ? null
+      : `version: ${fields.agent_version}`,
+    fields.model === undefined ? null : `model: ${fields.model}`,
+  ]
+    .filter((part) => part !== null)
+    .join(", ");
+}
+
+function agentNote(
+  options: AgentOptions,
+  fields: AgentFields,
+  io: BenchIO,
+): void {
+  const notes: [string, string | undefined, string | undefined][] = [
+    ["Agent", options.agent, fields.agent],
+    ["Agent version", options.agentVersion, fields.agent_version],
+    ["Model", options.model, fields.model],
+  ];
+  for (const [label, raw, value] of notes) {
+    if (raw === undefined || raw === value) continue;
+    io.stderr(
+      pc.dim(
+        value === undefined
+          ? `${label} "${raw}" ignored (nothing left after normalizing).\n`
+          : `${label} "${raw}" recorded as "${value}".\n`,
+      ),
+    );
   }
 }
 
@@ -193,19 +253,37 @@ async function startTask(
 ): Promise<number> {
   const task = requireTask(id);
   const params = parseParams(task.manifest, options.param ?? []);
-  const agent = normalizeAgent(options.agent);
+  const fields = agentFields(options);
   const root = await resolveRepoRoot(path.resolve(io.cwd, target ?? "."));
-  await headCommit(root);
+  const head = await headCommit(root);
+  const dirty = await createVerifyContext(root, {
+    commit: head,
+    data: undefined,
+  }).changedFiles();
+  if (dirty.length > 0) {
+    const files = dirty.map((file) => file.path);
+    throw new Error(
+      `The working tree has uncommitted changes (${files.slice(0, 5).join(", ")}${files.length > 5 ? ", ..." : ""}); commit or stash them first so the baseline matches your files.`,
+    );
+  }
 
-  const previous = await readRunFile(root).catch(() => null);
-  if (previous && !previous.result && !options.yes) {
-    const question = `${RUN_FILE} has an unverified ${previous.task.id} run. Replace it?`;
+  const hasRun = await access(path.join(root, RUN_FILE)).then(
+    () => true,
+    () => false,
+  );
+  const previous = hasRun ? await readRunFile(root).catch(() => null) : null;
+  const conflict = !hasRun
+    ? null
+    : previous === null
+      ? `${RUN_FILE} exists but is not a valid run file`
+      : previous.result
+        ? null
+        : `${RUN_FILE} has an unverified ${previous.task.id} run`;
+  if (conflict && !options.yes) {
     if (!io.isTTY) {
-      throw new Error(
-        `${question.replace(/ Replace it\?$/, "")}; re-run with --yes to replace it.`,
-      );
+      throw new Error(`${conflict}; re-run with --yes to replace it.`);
     }
-    if (!(await io.confirm(question))) {
+    if (!(await io.confirm(`${conflict}. Replace it?`))) {
       io.stderr("Cancelled.\n");
       return 1;
     }
@@ -225,7 +303,7 @@ async function startTask(
     schema_version: RUN_SCHEMA_VERSION,
     task: { id: task.manifest.id, version: task.manifest.version },
     params,
-    agent,
+    ...fields,
     baseline: {
       commit,
       started_at: new Date().toISOString(),
@@ -233,9 +311,9 @@ async function startTask(
     },
   };
   await writeRunFile(root, run);
-  agentNote(options.agent, agent, io);
+  agentNote(options, fields, io);
   io.stderr(
-    `Started ${pc.bold(task.manifest.id)} v${task.manifest.version} at ${commit.slice(0, 12)} (agent: ${agent}). Baseline saved to ${RUN_FILE}.\n\n${PASTE_HEADING}\n\n`,
+    `Started ${pc.bold(task.manifest.id)} v${task.manifest.version} at ${commit.slice(0, 12)} (${describeAgent(fields)}). Baseline saved to ${RUN_FILE}.\n\n${PASTE_HEADING}\n\n`,
   );
   io.stdout(renderPrompt(task.prompt, params));
   io.stderr(`\nWhen the agent is done, run: omot bench verify\n`);
@@ -277,8 +355,7 @@ async function verifyRun(
       "Pass --corrections <n> and --minutes <n> when not running interactively.",
     );
   }
-  const agent =
-    options.agent === undefined ? run.agent : normalizeAgent(options.agent);
+  const fields = agentFields(options, run);
 
   if (!options.json)
     io.stderr(
@@ -312,7 +389,7 @@ async function verifyRun(
   );
   const updated: RunFile = {
     ...run,
-    agent,
+    ...fields,
     result: {
       outcome: result.outcome,
       reasons: result.reasons,
@@ -322,12 +399,12 @@ async function verifyRun(
     },
   };
   await writeRunFile(root, updated);
-  agentNote(options.agent, agent, io);
+  agentNote(options, fields, io);
   if (options.json) {
     io.stdout(`${JSON.stringify(updated, null, 2)}\n`);
   } else {
     io.stderr(
-      `Saved to ${RUN_FILE} (agent: ${agent}, corrections: ${corrections}, minutes: ${minutes}). Nothing was sent anywhere.\n`,
+      `Saved to ${RUN_FILE} (${describeAgent(fields)}, corrections: ${corrections}, minutes: ${minutes}). Nothing was sent anywhere.\n`,
     );
   }
   return result.outcome === "fail" ? 1 : 0;
@@ -371,6 +448,8 @@ export function addBenchCommand(
       "--agent <name>",
       "Coding agent you are benchmarking (stored as a slug)",
     )
+    .option("--agent-version <version>", "Version of the coding agent")
+    .option("--model <name>", "Model the coding agent used (stored as a slug)")
     .option(
       "-y, --yes",
       "Confirm .gitignore and fix-failing-test changes without prompting",
@@ -387,6 +466,11 @@ export function addBenchCommand(
     .option("--corrections <n>", "Times you corrected or redirected the agent")
     .option("--minutes <n>", "Minutes of human effort")
     .option("--agent <name>", "Override the agent recorded at start")
+    .option(
+      "--agent-version <version>",
+      "Override the agent version recorded at start",
+    )
+    .option("--model <name>", "Override the model recorded at start")
     .option("--json", "Print the updated run as JSON")
     .action(async (target: string | undefined, options: VerifyOptions) => {
       setExitCode(await verifyRun(target, options, io));

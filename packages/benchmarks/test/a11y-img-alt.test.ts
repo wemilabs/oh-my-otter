@@ -25,7 +25,11 @@ const params = { dir: "src/components" };
 describe("a11y-img-alt", () => {
   it("passes when every image gets alt and the build passes", async () => {
     const started = await startTask(task, base, params);
-    expect(started.data).toEqual({ missing: 2, total: 3 });
+    expect(started.data).toEqual({
+      missing: 2,
+      total: 3,
+      files: { "src/components/Hero.jsx": 3 },
+    });
     const result = await verifyTask(task, started, params, {
       "src/components/Hero.jsx": hero
         .replace(
@@ -38,6 +42,20 @@ describe("a11y-img-alt", () => {
       outcome: "pass",
       reasons: ["Image tags missing alt: 2 → 0.", "build script passed."],
     });
+  });
+
+  it("is partial when a missing-alt image is swapped for a new one", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "src/components/Hero.jsx": hero
+        .replace('<img src="/logo.png" />', "")
+        .replace("<Image src={photo}", '<Image alt="" src={photo}'),
+      "src/components/New.jsx": '<img src="/new.png" alt="New" />\n',
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "Image tags removed from: src/components/Hero.jsx.",
+    );
   });
 
   it("is partial when some images still miss alt", async () => {

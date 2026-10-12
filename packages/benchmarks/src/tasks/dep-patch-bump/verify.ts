@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { commandFailure } from "../../context";
 import { isLockfile } from "../../lib/files";
+import { changedScripts, scriptChangeReason } from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError, type RepoContext } from "../../types";
 import manifest from "./task.json";
@@ -75,6 +76,48 @@ function npmLockVersions(json: unknown, pkg: string): string {
   return versions.sort().join(",");
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Resolved versions of `pkg` in a pnpm, yarn, or bun text lockfile. */
+export function lockfileVersions(text: string | null, pkg: string): string[] {
+  if (text === null) return [];
+  const name = escapeRegExp(pkg);
+  const versions = new Set<string>();
+  const inline = new RegExp(
+    `(?<![\\w.@/-]|@[\\w.-]+/)${name}@(?:npm:)?v?(\\d+\\.\\d+\\.\\d+[\\w.+-]*)`,
+    "g",
+  );
+  for (const match of text.matchAll(inline)) versions.add(match[1] as string);
+  const header = new RegExp(`(?:^|[\\s",])"?${name}@`);
+  const lines = text.split(/\r?\n/);
+  lines.forEach((line, index) => {
+    if (!/^\S/.test(line) || !header.test(line)) return;
+    for (let next = index + 1; next < lines.length; next += 1) {
+      const entry = lines[next] as string;
+      if (!/^\s/.test(entry)) break;
+      const version = /^\s+version:?\s+"?([^"\s]+)"?/.exec(entry);
+      if (version) {
+        versions.add(version[1] as string);
+        break;
+      }
+    }
+  });
+  return [...versions].sort();
+}
+
+function changedDependencyNames(
+  before: DependencyMap,
+  after: DependencyMap,
+  pkg: string,
+): string[] {
+  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+  return [...keys]
+    .filter((key) => !key.endsWith(`:${pkg}`) && before[key] !== after[key])
+    .map((key) => key.split(":").slice(1).join(":"));
+}
+
 async function manifestFiles(ctx: RepoContext): Promise<string[]> {
   const files = await ctx.glob("**/package.json");
   return files.filter((file) => !file.split("/").includes("node_modules"));
@@ -141,6 +184,12 @@ export default defineTask<Data>({
         "--",
         file.path,
       ]);
+      const before = lockfileVersions(await ctx.readBaseline(file.path), pkg);
+      const after = lockfileVersions(await ctx.read(file.path), pkg);
+      if (before.length > 0 || after.length > 0) {
+        if (before.join(",") !== after.join(",")) lockfileUpdated = true;
+        continue;
+      }
       const added = diff
         .split(/\r?\n/)
         .filter((line) => line.startsWith("+") && !line.startsWith("+++"));
@@ -178,21 +227,33 @@ export default defineTask<Data>({
       } else if (before !== after) {
         reasons.push(`${file}: ${pkg} ${before} → ${after}.`);
       }
-      const others = new Set([
-        ...Object.keys(beforeDeps),
-        ...Object.keys(afterDeps),
-      ]);
-      const changedOthers = [...others].filter(
-        (key) => !key.endsWith(`:${pkg}`) && beforeDeps[key] !== afterDeps[key],
+      const changedOthers = changedDependencyNames(beforeDeps, afterDeps, pkg);
+      if (changedOthers.length > 0) {
+        partial = true;
+        reasons.push(
+          `Other dependencies changed in ${file}: ${changedOthers.join(", ")}.`,
+        );
+      }
+    }
+    for (const file of changed) {
+      if (!/(?:^|\/)package\.json$/.test(file.path)) continue;
+      if (file.path in data.declarations) continue;
+      const changedOthers = changedDependencyNames(
+        dependencies(parseJson(await ctx.readBaseline(file.path))),
+        dependencies(parseJson(await ctx.read(file.path))),
+        pkg,
       );
       if (changedOthers.length > 0) {
         partial = true;
         reasons.push(
-          `Other dependencies changed in ${file}: ${changedOthers
-            .map((key) => key.split(":").slice(1).join(":"))
-            .join(", ")}.`,
+          `Other dependencies changed in ${file.path}: ${changedOthers.join(", ")}.`,
         );
       }
+    }
+    const scripts = await changedScripts(ctx, ["build", "test"]);
+    if (scripts.length > 0) {
+      partial = true;
+      reasons.push(scriptChangeReason(scripts));
     }
 
     for (const script of ["build", "test"]) {
