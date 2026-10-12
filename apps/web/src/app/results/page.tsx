@@ -56,12 +56,13 @@ export default function ResultsPage() {
 
 async function ResultsStats() {
   const { dataset, aggregate } = await getDataset();
-  const unavailable = dataset.status === "unavailable";
+  if (dataset.status === "unavailable") {
+    return <DataUnavailable />;
+  }
   const empty = aggregate.total === 0;
   return (
     <>
-      {unavailable ? <DataUnavailable /> : null}
-      {empty && !unavailable ? (
+      {empty ? (
         <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
           <h3 className="text-lg font-medium tracking-tight">
             No reports yet — be the first
