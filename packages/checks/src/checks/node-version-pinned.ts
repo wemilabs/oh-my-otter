@@ -1,4 +1,5 @@
 import { defineCheck } from "@oh-my-otter/core";
+import { DEFAULT_NODE_MAJOR } from "../lib/node-version";
 
 export default defineCheck({
   id: "node-version-pinned",
@@ -43,8 +44,6 @@ export default defineCheck({
     };
   },
   async fix() {
-    return [
-      { path: ".nvmrc", contents: `${process.versions.node.split(".")[0]}\n` },
-    ];
+    return [{ path: ".nvmrc", contents: `${DEFAULT_NODE_MAJOR}\n` }];
   },
 });

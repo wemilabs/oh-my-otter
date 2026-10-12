@@ -94,6 +94,19 @@ describe("scan command", () => {
     expect(invalid.stderr).toContain("Invalid --min-score");
   });
 
+  it("warns when --yes is used without --fix", async () => {
+    const root = await tempDir();
+    await cp(fixture("bare"), root, { recursive: true });
+    const result = await invoke(["scan", root, "--yes"]);
+
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Score: 3 · D");
+    expect(result.stderr).toBe("--yes has no effect without --fix.\n");
+    await expect(
+      readFile(path.join(root, ".nvmrc"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("returns a tool error for missing paths", async () => {
     const result = await invoke(["scan", "/path/that/does/not/exist"]);
     expect(result.code).toBe(1);

@@ -3,6 +3,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { execa } from "execa";
 import fastGlob from "fast-glob";
+import ignore from "ignore";
 import type { CheckContext, FixPlan } from "./types";
 import { RunDisabledError } from "./runner";
 
@@ -73,6 +74,7 @@ export function createCheckContext(
     if (realRoot === undefined) realRoot = realpathSync.native(absoluteRoot);
     return realRoot;
   };
+  let rootGitignorePromise: Promise<string | null> | undefined;
   const resolveRealPathInsideRoot = async (relativePath: string) => {
     const target = resolveInside(absoluteRoot, relativePath);
     const rootRealPath = getRealRoot();
@@ -118,17 +120,19 @@ export function createCheckContext(
       ) {
         throw new Error(`Path escapes repository root: ${pattern}`);
       }
-      return (
-        await fastGlob(pattern, {
-          cwd: absoluteRoot,
-          dot: true,
-          onlyFiles: true,
-          followSymbolicLinks: false,
-          ignore: ["**/node_modules/**", "**/.git/**"],
-        })
-      )
-        .map((file) => file.split(path.sep).join("/"))
-        .sort();
+      const files = await fastGlob(pattern, {
+        cwd: absoluteRoot,
+        dot: true,
+        onlyFiles: true,
+        followSymbolicLinks: false,
+        ignore: ["**/node_modules/**", "**/.git/**"],
+      });
+      rootGitignorePromise ??= context.read(".gitignore");
+      const gitignoreContents = await rootGitignorePromise;
+      const normalized = files.map((file) => file.split(path.sep).join("/"));
+      if (gitignoreContents === null) return normalized.sort();
+      const gitignore = ignore().add(gitignoreContents);
+      return normalized.filter((file) => !gitignore.ignores(file)).sort();
     },
     get packageJson() {
       if (!packageJsonLoaded) {

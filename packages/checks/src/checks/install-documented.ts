@@ -4,8 +4,16 @@ import { detectPackageManager, installCommand } from "../lib/package-manager";
 
 const setupHeading =
   /^#{1,6}\s+.*(?:install|setup|set up|getting started|quick ?start|development)/im;
-const installCommandPattern =
-  /\b(?:npm|pnpm|yarn|bun)\s+(?:install|i|ci|add)\b|\byarn\b|\b(?:npx|corepack|bunx)\b/i;
+const packageManagerInstallPattern =
+  /\b(?:pnpm|npm|bun)\s+(?:install|i|ci|add)\b/i;
+const yarnCommandPattern = /^\s*(?:\$\s*)?yarn(?:\s+install(?:\s+.*)?)?\s*$/i;
+
+function hasInstallCommand(contents: string): boolean {
+  return (
+    packageManagerInstallPattern.test(contents) ||
+    contents.split(/\r?\n/).some((line) => yarnCommandPattern.test(line))
+  );
+}
 
 export default defineCheck({
   id: "install-documented",
@@ -24,7 +32,7 @@ export default defineCheck({
     }
     const contents = (await ctx.read(readme)) ?? "";
     const hasHeading = setupHeading.test(contents);
-    const hasCommand = installCommandPattern.test(contents);
+    const hasCommand = hasInstallCommand(contents);
     if (hasHeading && hasCommand) {
       return { status: "pass", detail: `${readme} documents installation.` };
     }

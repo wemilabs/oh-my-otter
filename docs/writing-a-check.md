@@ -2,7 +2,7 @@
 
 A check is a read-only test of one repository-readiness property. It has a stable kebab-case `id`, a title, one of the `setup`, `verification`, `docs`, or `hygiene` categories, a weight from 1 to 5, a one-sentence `why`, and an async `run` function.
 
-Checks should be deterministic and local. They must not make network requests or modify scanned files. An optional `fix` returns a `FixPlan` of files to create; the fix applier never overwrites existing files.
+Checks should be deterministic and local. They must not make network requests or modify scanned files. `ctx.glob` excludes `node_modules` and `.git`, then applies the repository root's `.gitignore`; nested `.gitignore` files are not loaded. `ctx.read` and `ctx.exists` are not filtered by `.gitignore`. An optional `fix` returns a `FixPlan` of files to create; the fix applier never overwrites existing files.
 
 ```ts
 export interface CheckContext {

@@ -1,4 +1,5 @@
 import { defineCheck, type CheckContext } from "@oh-my-otter/core";
+import { isGitignored } from "../lib/gitignore";
 
 const sourcePattern = "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,vue,svelte,astro}";
 const envPatterns = [
@@ -15,6 +16,7 @@ const dynamicEnvPattern =
   /(?:process\s*\.\s*env|import\s*\.\s*meta\s*\.\s*env)\s*\[\s*(?!["'])[^)\]]+\]/;
 const bareEnvPattern =
   /(?:process\s*\.\s*env|import\s*\.\s*meta\s*\.\s*env)\b(?!\s*(?:\.|\[))/;
+const schemaEnvKeyPattern = /(?:^|[,{])\s*([A-Z][A-Z0-9_]*)\s*:/g;
 const envExampleKeyPattern = /^\s*#?\s*(?:export\s+)?([A-Za-z_]\w*)\s*=/;
 const ignoredDirectories = new Set([
   "node_modules",
@@ -138,7 +140,13 @@ async function collectEnvUsage(
       }
     }
     if (dynamicEnvPattern.test(contents)) hasUsage = true;
-    if (bareEnvPattern.test(bareSearchContents)) hasUsage = true;
+    if (bareEnvPattern.test(bareSearchContents)) {
+      hasUsage = true;
+      for (const match of contents.matchAll(schemaEnvKeyPattern)) {
+        const name = match[1];
+        if (name) addVariable(name, names);
+      }
+    }
   }
 
   return { names, hasUsage };
@@ -170,15 +178,30 @@ export default defineCheck({
     }
     if (exampleFiles.length > 0) {
       const missing = [...names].filter((name) => !documented.has(name)).sort();
-      if (missing.length > 0) {
+      const allIgnored = (
+        await Promise.all(exampleFiles.map((file) => isGitignored(ctx, file)))
+      ).every(Boolean);
+      if (missing.length > 0 || allIgnored) {
         const listed = missing.slice(0, 10).join(", ");
         const additional = missing.length - 10;
+        const detail = [];
+        const fix = [];
+        if (missing.length > 0) {
+          detail.push(
+            `${exampleFiles[0]} is missing: ${listed}${
+              additional > 0 ? `, and ${additional} more` : ""
+            }`,
+          );
+          fix.push(`Add the missing variable names to ${exampleFiles[0]}.`);
+        }
+        if (allIgnored) {
+          detail.push(`${exampleFiles[0]} is ignored by .gitignore`);
+          fix.push("Add !.env.example to .gitignore so it can be committed.");
+        }
         return {
           status: "warn",
-          detail: `${exampleFiles[0]} is missing: ${listed}${
-            additional > 0 ? `, and ${additional} more` : ""
-          }`,
-          fix: `Add the missing variable names to ${exampleFiles[0]}.`,
+          detail: detail.join("; "),
+          fix: fix.join(" "),
         };
       }
       return {

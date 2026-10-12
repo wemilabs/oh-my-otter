@@ -1,5 +1,5 @@
 import { defineCheck } from "@oh-my-otter/core";
-import { hasUsableTestScript } from "../lib/scripts";
+import { hasUsableTestScript, packageScripts } from "../lib/scripts";
 
 export default defineCheck({
   id: "test-script",
@@ -12,6 +12,17 @@ export default defineCheck({
       return {
         status: "pass",
         detail: "A usable scripts.test command is configured.",
+      };
+    }
+    const scripts = packageScripts(ctx);
+    const testScripts = Object.keys(scripts)
+      .filter((name) => name.startsWith("test:"))
+      .sort();
+    if (!scripts.test && testScripts.length > 0) {
+      return {
+        status: "warn",
+        detail: `No scripts.test; found ${testScripts.join(", ")}.`,
+        fix: "Add a scripts.test that runs the main test suite.",
       };
     }
     return {

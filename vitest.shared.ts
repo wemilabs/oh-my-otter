@@ -5,6 +5,7 @@ import type { UserConfig } from "vitest/config";
 const root = fileURLToPath(new URL(".", import.meta.url));
 
 export const sharedConfig: UserConfig = {
+  fsModuleCachePath: resolve(process.cwd(), "node_modules/.vitest-cache"),
   resolve: {
     alias: [
       {

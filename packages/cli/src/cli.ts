@@ -529,6 +529,10 @@ async function scan(
     io.stdout(jsonReport(report, badge, fixes));
   }
 
+  if (options.yes && !options.fix) {
+    io.stderr("--yes has no effect without --fix.\n");
+  }
+
   if (minScore !== undefined && report.score.score < minScore) {
     io.stderr(
       `Score ${report.score.score} is below the required minimum score of ${minScore}.\n`,

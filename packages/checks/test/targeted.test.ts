@@ -5,7 +5,9 @@ import { fixPlanSchema } from "@oh-my-otter/core";
 import { createCheckContext } from "@oh-my-otter/core/node";
 import { builtinChecks } from "../src";
 import installDocumented from "../src/checks/install-documented";
+import nodeVersionPinned from "../src/checks/node-version-pinned";
 import packageManagerLockfile from "../src/checks/package-manager-lockfile";
+import testScript from "../src/checks/test-script";
 import testsPass from "../src/checks/tests-pass";
 import typecheckScript from "../src/checks/typecheck-script";
 import ciConfig from "../src/checks/ci-config";
@@ -95,6 +97,81 @@ describe("targeted checks", () => {
         "Add the missing variable names to .env.example.",
       );
       expect(await envExample.fix!(createCheckContext(root))).toEqual([]);
+    });
+  });
+
+  it("warns when every existing environment example is gitignored", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(path.join(root, "src/index.js"), "process.env.API_KEY;");
+      await writeFile(path.join(root, ".gitignore"), ".env*\n");
+      await writeFile(path.join(root, ".env.example"), "API_KEY=\n");
+
+      const context = createCheckContext(root);
+      expect(await envExample.run(context)).toMatchObject({
+        status: "warn",
+        detail: ".env.example is ignored by .gitignore",
+        fix: "Add !.env.example to .gitignore so it can be committed.",
+      });
+
+      await writeFile(path.join(root, ".gitignore"), ".env*\n!.env.example\n");
+      expect((await envExample.run(context)).status).toBe("pass");
+    });
+  });
+
+  it("warns after creating an environment example ignored by git", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(path.join(root, "src/index.js"), "process.env.API_KEY;");
+      await writeFile(path.join(root, ".gitignore"), ".env*\n");
+
+      const context = createCheckContext(root);
+      const plan = await envExample.fix!(context);
+      expect(plan[0]?.path).toBe(".env.example");
+      await writeFile(path.join(root, ".env.example"), plan[0]?.contents ?? "");
+
+      expect(await envExample.run(context)).toMatchObject({
+        status: "warn",
+        detail: ".env.example is ignored by .gitignore",
+      });
+    });
+  });
+
+  it("combines missing-variable and gitignore warnings", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/index.js"),
+        "process.env.API_KEY;\nprocess.env.SECRET;\n",
+      );
+      await writeFile(path.join(root, ".gitignore"), ".env*\n");
+      await writeFile(path.join(root, ".env.example"), "API_KEY=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("warn");
+      expect(result.detail).toBe(
+        ".env.example is missing: SECRET; .env.example is ignored by .gitignore",
+      );
+      expect(result.fix).toBe(
+        "Add the missing variable names to .env.example. Add !.env.example to .gitignore so it can be committed.",
+      );
+    });
+  });
+
+  it("extracts env keys from object schemas passed a bare process.env", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "lib"));
+      await writeFile(
+        path.join(root, "lib/env.ts"),
+        "const envSchema = z.object({ DATABASE_URL: z.string(), NEON_AUTH_BASE_URL: z.string().url(), NODE_ENV: z.enum(['dev', 'prod']) });\n" +
+          "export const env = envSchema.parse(process.env);\n",
+      );
+
+      const context = createCheckContext(root);
+      expect((await envExample.run(context)).status).toBe("fail");
+      expect((await envExample.fix!(context))[0]?.contents).toBe(
+        "DATABASE_URL=\nNEON_AUTH_BASE_URL=\n",
+      );
     });
   });
 
@@ -279,6 +356,10 @@ describe("targeted checks", () => {
       );
       const plan = await ciConfig.fix!(createCheckContext(root));
       expect(plan[0]?.contents).not.toContain("version: 12");
+      expect(plan[0]?.contents).toContain("actions/checkout@v7");
+      expect(plan[0]?.contents).toContain("pnpm/action-setup@v6");
+      expect(plan[0]?.contents).toContain("actions/setup-node@v7");
+      expect(plan[0]?.contents).toContain("node-version: 24");
     });
 
     await withTempRepo(async (root) => {
@@ -289,8 +370,48 @@ describe("targeted checks", () => {
       );
       const plan = await ciConfig.fix!(createCheckContext(root));
       expect(plan[0]?.contents).toContain(
-        "      - uses: pnpm/action-setup@v4\n        with:\n          version: 12\n",
+        "      - uses: pnpm/action-setup@v6\n        with:\n          version: 12\n",
       );
+    });
+  });
+
+  it.each([".nvmrc", ".node-version"])(
+    "uses an existing %s in generated CI",
+    async (file) => {
+      await withTempRepo(async (root) => {
+        await writeFile(path.join(root, file), "20\n");
+        const plan = await ciConfig.fix!(createCheckContext(root));
+        expect(plan[0]?.contents).toContain(`node-version-file: ${file}`);
+        expect(plan[0]?.contents).not.toContain("node-version: 24");
+      });
+    },
+  );
+
+  it("pins .nvmrc to the shared default Node major", async () => {
+    await withTempRepo(async (root) => {
+      expect(
+        (await nodeVersionPinned.fix!(createCheckContext(root)))[0],
+      ).toEqual({ path: ".nvmrc", contents: "24\n" });
+    });
+  });
+
+  it("warns when test-specific scripts exist without scripts.test", async () => {
+    await withTempRepo(async (root) => {
+      await writeFile(
+        path.join(root, "package.json"),
+        JSON.stringify({
+          scripts: {
+            "test:unit": "vitest run",
+            "test:e2e": "playwright test",
+          },
+        }),
+      );
+
+      expect(await testScript.run(createCheckContext(root))).toEqual({
+        status: "warn",
+        detail: "No scripts.test; found test:e2e, test:unit.",
+        fix: "Add a scripts.test that runs the main test suite.",
+      });
     });
   });
 
@@ -324,6 +445,42 @@ describe("targeted checks", () => {
       expect(
         (await installDocumented.run(createCheckContext(root))).status,
       ).toBe("warn");
+    });
+  });
+
+  it.each([
+    "## Installation\n\nRun `npx drizzle-kit generate`.\n",
+    "## Installation\n\nWe use yarn for package management.\n",
+    "## Installation\n\n```sh\ncorepack enable\n```\n",
+  ])(
+    "does not treat non-install mentions as install commands",
+    async (readme) => {
+      await withTempRepo(async (root) => {
+        await writeFile(path.join(root, "README.md"), readme);
+        expect(
+          (await installDocumented.run(createCheckContext(root))).status,
+        ).toBe("warn");
+      });
+    },
+  );
+
+  it.each([
+    "pnpm install",
+    "npm ci",
+    "bun add example",
+    "yarn",
+    "$ yarn",
+    "yarn install --frozen-lockfile",
+    "corepack enable\npnpm install",
+  ])("recognizes install command %s", async (command) => {
+    await withTempRepo(async (root) => {
+      await writeFile(
+        path.join(root, "README.md"),
+        `## Installation\n\n\`\`\`sh\n${command}\n\`\`\`\n`,
+      );
+      expect(
+        (await installDocumented.run(createCheckContext(root))).status,
+      ).toBe("pass");
     });
   });
 

@@ -78,6 +78,26 @@ describe("createCheckContext", () => {
     expect(await createCheckContext(root).glob("**/*.js")).toEqual(["src.js"]);
   });
 
+  it("filters glob results with root .gitignore but leaves read and exists unfiltered", async () => {
+    const root = await tempDir();
+    await writeFile(path.join(root, ".gitignore"), "out2/\n.vercel/\n");
+    await mkdir(path.join(root, "out2"), { recursive: true });
+    await mkdir(path.join(root, ".vercel/output"), { recursive: true });
+    await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(path.join(root, "out2/foo.test.ts"), "ignored");
+    await writeFile(path.join(root, ".vercel/output/x.js"), "ignored");
+    await writeFile(path.join(root, "src/foo.test.ts"), "visible");
+    await writeFile(path.join(root, "src/index.js"), "visible");
+
+    const context = createCheckContext(root);
+    expect(await context.glob("**/*.{ts,js}")).toEqual([
+      "src/foo.test.ts",
+      "src/index.js",
+    ]);
+    expect(await context.exists("out2/foo.test.ts")).toBe(true);
+    expect(await context.read(".vercel/output/x.js")).toBe("ignored");
+  });
+
   it.each([
     "/outside/**/*.js",
     "C:\\outside\\*.js",

@@ -1,5 +1,6 @@
 import { defineCheck } from "@oh-my-otter/core";
 import { detectPackageManager } from "../lib/package-manager";
+import { DEFAULT_NODE_MAJOR } from "../lib/node-version";
 import { packageScripts } from "../lib/scripts";
 
 const ciPatterns = [
@@ -20,10 +21,11 @@ function workflow(
   manager: string,
   scripts: string[],
   hasDeclaredPackageManager: boolean,
+  nodeVersionFile: string | undefined,
 ): string {
   const setup =
     manager === "pnpm"
-      ? `      - uses: pnpm/action-setup@v4\n${
+      ? `      - uses: pnpm/action-setup@v6\n${
           hasDeclaredPackageManager
             ? ""
             : "        with:\n          version: 12\n"
@@ -48,7 +50,11 @@ function workflow(
   const checks = scripts
     .map((script) => `      - run: ${managerCmd} ${script}`)
     .join("\n");
-  return `name: CI\n\non: [push, pull_request]\n\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n${setup}      - uses: actions/setup-node@v4\n        with:\n          node-version: 22\n      - run: ${install}${checks ? `\n${checks}` : ""}\n`;
+  const nodeVersion =
+    nodeVersionFile === undefined
+      ? `          node-version: ${DEFAULT_NODE_MAJOR}\n`
+      : `          node-version-file: ${nodeVersionFile}\n`;
+  return `name: CI\n\non: [push, pull_request]\n\njobs:\n  verify:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v7\n${setup}      - uses: actions/setup-node@v7\n        with:\n${nodeVersion}      - run: ${install}${checks ? `\n${checks}` : ""}\n`;
 }
 
 export default defineCheck({
@@ -78,6 +84,11 @@ export default defineCheck({
     const hasDeclaredPackageManager =
       typeof ctx.packageJson?.packageManager === "string" &&
       ctx.packageJson.packageManager.length > 0;
+    const nodeVersionFile = (await ctx.exists(".nvmrc"))
+      ? ".nvmrc"
+      : (await ctx.exists(".node-version"))
+        ? ".node-version"
+        : undefined;
     return [
       {
         path: ".github/workflows/ci.yml",
@@ -87,6 +98,7 @@ export default defineCheck({
             Boolean(scripts[name]),
           ),
           hasDeclaredPackageManager,
+          nodeVersionFile,
         ),
       },
     ];
