@@ -164,6 +164,14 @@ async function branchExists(root: string, branch: string): Promise<boolean> {
   }
 }
 
+async function currentBranchRef(root: string): Promise<string | null> {
+  try {
+    return (await runGit(root, ["symbolic-ref", "--quiet", "HEAD"])).trim();
+  } catch {
+    return null;
+  }
+}
+
 async function validateNewBranch(root: string, branch: string): Promise<void> {
   try {
     await runGit(root, ["check-ref-format", "--branch", branch]);
@@ -377,10 +385,14 @@ async function startTask(
     }
   }
 
+  const originalRef =
+    options.branch === undefined ? null : await currentBranchRef(root);
   const originalBranch =
     options.branch === undefined
       ? undefined
-      : (await runGit(root, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+      : originalRef?.startsWith("refs/heads/")
+        ? originalRef.slice("refs/heads/".length)
+        : "HEAD";
   const startedAt = new Date().toISOString();
   if (options.branch !== undefined) {
     await runGit(root, ["switch", "--quiet", "-c", options.branch]);
@@ -546,7 +558,10 @@ async function hasLegacyFixFailingTestProvenance(
   branch: string,
 ): Promise<boolean> {
   try {
-    const roots = (await runGit(root, ["rev-list", "--max-parents=0", branch]))
+    const branchRef = `refs/heads/${branch}`;
+    const roots = (
+      await runGit(root, ["rev-list", "--max-parents=0", branchRef])
+    )
       .trim()
       .split(/\s+/)
       .filter(Boolean);
@@ -590,7 +605,7 @@ async function isOmotBranch(
         "merge-base",
         "--is-ancestor",
         branch.commit,
-        branch.branch,
+        `refs/heads/${branch.branch}`,
       ]);
     }
     return true;
@@ -717,10 +732,8 @@ async function cleanRun(
 
   let switchedTo: string | null = null;
   if (deleteBranch && branchInfo) {
-    const current = (
-      await runGit(root, ["rev-parse", "--abbrev-ref", "HEAD"])
-    ).trim();
-    if (current === branchInfo.branch) {
+    const currentRef = await currentBranchRef(root);
+    if (currentRef === `refs/heads/${branchInfo.branch}`) {
       if (branchInfo.original === "HEAD") {
         if (!branchInfo.commit) {
           throw new Error(
@@ -764,11 +777,9 @@ async function cleanRun(
   }
 
   if (!options.deleteBranch && branchInfo) {
-    const current = (
-      await runGit(root, ["rev-parse", "--abbrev-ref", "HEAD"])
-    ).trim();
+    const currentRef = await currentBranchRef(root);
     const switchCommand =
-      current === branchInfo.branch
+      currentRef === `refs/heads/${branchInfo.branch}`
         ? branchInfo.original === "HEAD" && branchInfo.commit
           ? `git switch --detach ${branchInfo.commit} && `
           : `git switch ${branchInfo.original} && `

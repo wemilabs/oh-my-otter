@@ -1194,6 +1194,45 @@ describe("bench branches and clean", () => {
     );
   });
 
+  it("uses the branch ref when a same-named tag points elsewhere", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--branch", "bench/tag-shadow", "--yes"], {
+      cwd: root,
+    });
+    const run = await runFile(root);
+    const { stdout: emptyTree } = await execa("git", ["mktree"], {
+      cwd: root,
+      input: "",
+    });
+    const unrelatedRoot = await git(root, [
+      "commit-tree",
+      emptyTree.trim(),
+      "-m",
+      "unrelated root",
+    ]);
+    await git(root, ["tag", "bench/tag-shadow", unrelatedRoot]);
+    expect(await git(root, ["rev-parse", "refs/tags/bench/tag-shadow"])).toBe(
+      unrelatedRoot,
+    );
+    expect(await git(root, ["rev-parse", "refs/heads/bench/tag-shadow"])).toBe(
+      run.baseline.commit,
+    );
+
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Deleted branch bench/tag-shadow");
+    expect(await git(root, ["branch", "--show-current"])).toBe("main");
+    await expect(
+      git(root, ["rev-parse", "--verify", "refs/heads/bench/tag-shadow"]),
+    ).rejects.toThrow();
+    expect(await git(root, ["rev-parse", "refs/tags/bench/tag-shadow"])).toBe(
+      unrelatedRoot,
+    );
+  });
+
   it("refuses a forged descendant branch without an ownership marker", async () => {
     const root = await repo(cleanBranchFixture);
     await invoke([...start, "--branch", "bench/created", "--yes"], {
