@@ -59,7 +59,7 @@ omot bench clean [path] [--delete-branch] [--yes]
 | `ts-strict-file`   | Remove explicit `any` from one file                | `file`             |
 | `fix-failing-test` | Fix a bug omot introduces on a throwaway branch    | `file`             |
 
-Each task has a docs page in [`docs/benchmarks`](docs/benchmarks).
+Each task has a docs page in [`docs/benchmarks`](docs/benchmarks). New to omot? Follow [Run a benchmark and submit it](docs/run-a-benchmark.md) for a step-by-step guide.
 
 1. Commit your work, then run `omot bench start add-unit-test --param file=src/format.ts --param function=formatPrice --agent claude-code`. It records the baseline commit, start time, a readiness scan of your repo at start, and exit codes from the task's available scripts in `.omot/run.json`, then prints the prompt. Use `--skip-baseline-scripts` to skip those checks; verification will then report baseline health as unknown.
 2. Paste the prompt into your coding agent and let it work. Pull or merge its changes into your working tree.

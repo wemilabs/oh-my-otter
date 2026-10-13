@@ -161,9 +161,14 @@ export default function ContributePage() {
                 issue; nothing is submitted without your confirmation.
               </li>
             </ol>
-            <Link href="/privacy" className={`${linkClass} mt-4`}>
-              Review what a report contains
-            </Link>
+            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
+              <Link href="/docs/run-a-benchmark" className={linkClass}>
+                Read the step-by-step guide
+              </Link>
+              <Link href="/privacy" className={linkClass}>
+                Review what a report contains
+              </Link>
+            </div>
           </article>
 
           <article className={cardClass}>
