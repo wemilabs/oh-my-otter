@@ -78,10 +78,13 @@ omot bench start <id> [path] [options]
 | `--agent <name>`            | Coding agent being benchmarked; stored as a slug.                      |
 | `--agent-version <version>` | Version of the coding agent.                                           |
 | `--model <name>`            | Model used by the coding agent; stored as a slug.                      |
+| `--branch <name>`           | Create and switch to a new branch for this run.                        |
 | `--skip-baseline-scripts`   | Skip task scripts at start; baseline health will be unknown.           |
 | `-y, --yes`                 | Confirm `.gitignore` and `fix-failing-test` changes without prompting. |
 
 The working tree must be clean so the baseline matches the repository. Starting a task records its baseline and readiness scan, runs available baseline scripts unless `--skip-baseline-scripts` is set, and writes `.omot/run.json`. It may append `.omot/` to `.gitignore` or create that file. Use `-y` to confirm those changes and any replacement of an existing run without prompting.
+
+With `--branch`, `start` creates and switches to the named branch before recording the baseline. If startup fails after switching, omot best-effort restores the original branch and removes the new branch. `fix-failing-test` creates its own branch and does not accept `--branch`.
 
 ### `omot bench verify [path]`
 
@@ -101,6 +104,21 @@ omot bench verify [path] [options]
 | `--json`                    | Print the updated run as JSON.                         |
 
 When run interactively, `verify` asks for the correction and effort values if they are not supplied. In a non-interactive terminal, pass both `--corrections <n>` and `--minutes <n>`. It exits with code 1 for a failed verification; pass and partial outcomes exit with code 0.
+
+### `omot bench clean [path]`
+
+Remove the local run file and lock, leaving `.gitignore` untouched.
+
+```sh
+omot bench clean [path] [--delete-branch] [--yes]
+```
+
+| Option            | Description                                          |
+| ----------------- | ---------------------------------------------------- |
+| `--delete-branch` | Also delete the branch created by omot for this run. |
+| `-y, --yes`       | Confirm cleanup without prompting.                   |
+
+If no run file exists, the command prints `Nothing to clean.` A confirmation is required before deleting the run file or branch: interactive terminals prompt once; non-interactive runs must pass `--yes`. Branch deletion is refused when there are uncommitted changes outside `.omot/`. Without `--delete-branch`, omot keeps the branch and prints the Git commands to remove it manually.
 
 ## `omot report [path]`
 

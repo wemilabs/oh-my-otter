@@ -45,15 +45,16 @@ Use `--run` to execute the repository's test script. `--fix` previews create-onl
 ```sh
 omot bench list [--json]
 omot bench show <id> [--param key=value ...] [--json]
-omot bench start <id> [path] [--param key=value ...] [--agent <name>] [--agent-version <version>] [--model <name>] [--skip-baseline-scripts] [--yes]
+omot bench start <id> [path] [--param key=value ...] [--agent <name>] [--agent-version <version>] [--model <name>] [--branch <name>] [--skip-baseline-scripts] [--yes]
 omot bench verify [path] [--corrections <n>] [--minutes <n>] [--agent <name>] [--agent-version <version>] [--model <name>] [--json]
+omot bench clean [path] [--delete-branch] [--yes]
 ```
 
 | Task               | What the agent does                                | Params             |
 | ------------------ | -------------------------------------------------- | ------------------ |
 | `dep-patch-bump`   | Bump one dependency within its major version       | `package`          |
 | `add-unit-test`    | Add tests for one function without touching source | `file`, `function` |
-| `fix-lint-rule`    | Fix every violation of one ESLint rule             | `rule`             |
+| `fix-lint-rule`    | Fix every violation of an ESLint or Biome rule     | `rule`             |
 | `a11y-img-alt`     | Add missing `alt` attributes under a directory     | `dir`              |
 | `ts-strict-file`   | Remove explicit `any` from one file                | `file`             |
 | `fix-failing-test` | Fix a bug omot introduces on a throwaway branch    | `file`             |

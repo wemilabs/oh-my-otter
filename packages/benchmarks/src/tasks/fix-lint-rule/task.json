@@ -1,25 +1,25 @@
 {
   "id": "fix-lint-rule",
-  "version": 2,
-  "title": "Fix every violation of one ESLint rule",
+  "version": 5,
+  "title": "Fix every violation of one lint rule (ESLint or Biome)",
   "category": "lint",
   "estimatedScope": "medium",
   "params": [
     {
       "name": "rule",
       "kind": "rule",
-      "description": "The ESLint rule ID to fix.",
+      "description": "An ESLint rule ID or Biome rule in group/rule or lint/group/rule form.",
       "example": "prefer-const"
     }
   ],
   "preconditions": [
-    "ESLint is installed locally and configured with the rule enabled.",
+    "The selected linter is installed locally and configured with the rule enabled.",
     "At least one violation of the rule at the baseline.",
     "A test script (scripts.test)."
   ],
   "criteria": {
-    "pass": "ESLint reports zero violations of the rule, no new disable comments or ESLint config changes, and the test script passes.",
-    "partial": "Violations dropped but not to zero, or they reached zero by disabling the rule, or tests fail.",
-    "fail": "The violation count did not drop, or ESLint could not run."
+    "pass": "The linter reports zero violations of the rule, no new disable or ignore comments or linter config changes, and the test script passes.",
+    "partial": "Violations dropped but not to zero, or they reached zero by disabling or ignoring the rule, changing the linter configuration, tests fail, or new parse/internal errors hide violations.",
+    "fail": "The violation count did not drop, or the linter could not run."
   }
 }

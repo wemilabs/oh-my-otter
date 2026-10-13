@@ -43,15 +43,22 @@ export {
   OMOT_IGNORE_LINE,
   applyGitignore,
   planGitignore,
+  withoutOmotLines,
   type GitignorePlan,
 } from "./lib/gitignore";
 export {
   RUN_FILE,
   appendVerification,
+  assertRunFileUnchanged,
+  removeStaleRunFileLock,
+  removeRunFile,
+  removeRunFileUnlocked,
   readRunFile,
+  readRunFileSnapshot,
   replaceRunFile,
   updateRunFile,
   writeRunFile,
+  withRunFileLock,
 } from "./lib/run-file";
 export { detectStack, summarizeScan } from "./report/stack";
 export { defineTask } from "./task";

@@ -4,6 +4,7 @@ export interface LintRun {
   count: number;
   files: string[];
   fatal: number;
+  fatalFiles: string[];
 }
 
 interface EslintMessage {
@@ -36,20 +37,24 @@ export function parseEslintJson(
   let count = 0;
   let fatal = 0;
   const files: string[] = [];
+  const fatalFiles = new Set<string>();
   const prefix = root.replace(/\\/g, "/").replace(/\/$/, "") + "/";
   for (const entry of parsed as EslintFileResult[]) {
     const messages = entry.messages ?? [];
+    const file = (entry.filePath ?? "").replace(/\\/g, "/");
+    const relative = file.startsWith(prefix) ? file.slice(prefix.length) : file;
+    const fatalMessages = messages.filter((message) => message.fatal);
+    fatal += fatalMessages.length;
+    if (fatalMessages.length > 0 && relative) fatalFiles.add(relative);
     const matching = messages.filter(
       (message) => message.ruleId === rule,
     ).length;
-    fatal += messages.filter((message) => message.fatal).length;
     if (matching > 0) {
       count += matching;
-      const file = (entry.filePath ?? "").replace(/\\/g, "/");
-      files.push(file.startsWith(prefix) ? file.slice(prefix.length) : file);
+      files.push(relative);
     }
   }
-  return { count, files, fatal };
+  return { count, files, fatal, fatalFiles: [...fatalFiles].sort() };
 }
 
 export async function runEslint(

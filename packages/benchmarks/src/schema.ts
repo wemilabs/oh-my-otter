@@ -120,6 +120,8 @@ const baselineSchema = z
   .object({
     commit: commitSchema,
     started_at: timestampSchema,
+    branch: z.string().optional(),
+    original_branch: z.string().optional(),
     data: z.unknown().optional(),
     scripts: z.record(z.string(), z.number().int()).optional(),
     scan: scanSummarySchema.optional(),

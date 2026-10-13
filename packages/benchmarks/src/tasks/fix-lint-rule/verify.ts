@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  biomeRule,
+  countBiomeSuppressions,
+  isBiomeConfig,
+  runBiome,
+} from "../../lib/biome";
 import { countDisables, isEslintConfig, runEslint } from "../../lib/eslint";
 import { summarizeList } from "../../lib/files";
 import {
@@ -12,7 +18,11 @@ import { TaskPreconditionError } from "../../types";
 import manifest from "./task.json";
 import prompt from "./prompt.md";
 
-const dataSchema = z.object({ violations: z.number().int().min(0) });
+const dataSchema = z.object({
+  violations: z.number().int().min(0),
+  fatal: z.number().int().nonnegative().default(0),
+  fatalFiles: z.array(z.string()).default([]),
+});
 type Data = z.infer<typeof dataSchema>;
 
 export default defineTask<Data>({
@@ -20,31 +30,46 @@ export default defineTask<Data>({
   prompt,
   scripts: ["test"],
   async prepare(ctx) {
-    const rule = ctx.params.rule as string;
+    const requestedRule = ctx.params.rule as string;
+    const biome = biomeRule(requestedRule);
+    const rule = biome ?? requestedRule;
     if (!ctx.hasScript("test")) {
       throw new TaskPreconditionError(missingScript("test"));
     }
     let run;
     try {
-      run = await runEslint(ctx, rule);
+      run = biome
+        ? await runBiome(ctx, biome)
+        : await runEslint(ctx, requestedRule);
     } catch (error) {
       throw new TaskPreconditionError((error as Error).message);
     }
     if (run.count === 0) {
       throw new TaskPreconditionError(
-        `ESLint reports no violations of ${rule}; pick a rule that is enabled and violated.`,
+        biome
+          ? `Biome reports no violations of ${rule}; pick a rule that is enabled and violated.`
+          : `ESLint reports no violations of ${rule}; pick a rule that is enabled and violated.`,
       );
     }
     ctx.log(`Baseline: ${run.count} violation(s) of ${rule}.`);
-    return { violations: run.count };
+    return {
+      violations: run.count,
+      fatal: run.fatal,
+      fatalFiles: run.fatalFiles,
+    };
   },
   async verify(ctx) {
-    const rule = ctx.params.rule as string;
-    const { violations: before } = dataSchema.parse(ctx.baseline.data);
+    const {
+      violations: before,
+      fatal: baselineFatal,
+      fatalFiles: baselineFatalFiles,
+    } = dataSchema.parse(ctx.baseline.data);
     const reasons: string[] = [];
+    const biome = biomeRule(ctx.params.rule as string);
+    const rule = biome ?? (ctx.params.rule as string);
     let run;
     try {
-      run = await runEslint(ctx, rule);
+      run = biome ? await runBiome(ctx, biome) : await runEslint(ctx, rule);
     } catch (error) {
       return { outcome: "fail", reasons: [(error as Error).message] };
     }
@@ -52,15 +77,37 @@ export default defineTask<Data>({
     if (run.count > 0) {
       reasons.push(`Remaining in: ${summarizeList(run.files)}.`);
     }
+    let partial = false;
+    const baselineFatalFileSet = new Set(baselineFatalFiles);
+    const newFatal = run.fatalFiles.filter(
+      (file) => !baselineFatalFileSet.has(file),
+    );
+    const linter = biome ? "Biome" : "ESLint";
+    if (newFatal.length > 0) {
+      partial = true;
+      reasons.push(
+        `${linter} reported new parse or internal errors in ${summarizeList(newFatal)}; violations of ${rule} there are not counted.`,
+      );
+    } else if (run.fatal > baselineFatal) {
+      const increase = run.fatal - baselineFatal;
+      partial = true;
+      reasons.push(
+        `${linter} reported ${increase} new parse or internal error(s); violations of ${rule} in those files are not counted.`,
+      );
+    }
     if (run.count >= before) return { outcome: "fail", reasons };
 
-    let partial = run.count > 0;
+    partial ||= run.count > 0;
     const changed = await ctx.changedFiles();
-    const configs = changed.filter((file) => isEslintConfig(file.path));
+    const configs = changed.filter((file) =>
+      biome ? isBiomeConfig(file.path) : isEslintConfig(file.path),
+    );
     if (configs.length > 0) {
       partial = true;
       reasons.push(
-        `ESLint configuration changed: ${summarizeList(configs.map((file) => file.path))}.`,
+        biome
+          ? `Biome configuration changed: ${summarizeList(configs.map((file) => file.path))}.`
+          : `ESLint configuration changed: ${summarizeList(configs.map((file) => file.path))}.`,
       );
     }
     let added = 0;
@@ -73,12 +120,21 @@ export default defineTask<Data>({
           : ((await ctx.readBaseline(file.path)) ?? "");
       added += Math.max(
         0,
-        countDisables(after, rule) - countDisables(previous, rule),
+        (biome
+          ? countBiomeSuppressions(after, biome)
+          : countDisables(after, rule)) -
+          (biome
+            ? countBiomeSuppressions(previous, biome)
+            : countDisables(previous, rule)),
       );
     }
     if (added > 0) {
       partial = true;
-      reasons.push(`${added} new eslint-disable comment(s) cover ${rule}.`);
+      reasons.push(
+        biome
+          ? `${added} new biome-ignore comment(s) cover ${rule}.`
+          : `${added} new eslint-disable comment(s) cover ${rule}.`,
+      );
     }
 
     const scripts = await changedScripts(ctx, ["test"]);

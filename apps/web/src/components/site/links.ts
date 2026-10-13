@@ -1,7 +1,10 @@
+import type { Route } from "next";
+
 export const REPO_URL = "https://github.com/wemilabs/oh-my-otter";
 
 export const NAV_LINKS = [
-  { href: "/docs", label: "Docs" },
+  // typegen omits the bare base of the optional catch-all docs route.
+  { href: "/docs" as Route, label: "Docs" },
   { href: "/checks", label: "Checks" },
   { href: "/tasks", label: "Tasks" },
   { href: "/results", label: "Results" },

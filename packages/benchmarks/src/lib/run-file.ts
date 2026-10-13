@@ -29,35 +29,54 @@ async function assertNotSymlink(file: string, label: string): Promise<boolean> {
   }
 }
 
-export async function readRunFile(root: string): Promise<RunFile> {
+export async function readRunFileSnapshot(
+  root: string,
+): Promise<{ bytes: Buffer; run: RunFile | null; error?: unknown }> {
   const file = path.join(root, OMOT_DIR, "run.json");
   await assertNotSymlink(path.join(root, OMOT_DIR), OMOT_DIR);
-  let contents: string;
+  let bytes: Buffer;
   try {
-    contents = await readFile(file, "utf8");
+    bytes = await readFile(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(
+      const missing = new Error(
         `No benchmark run found at ${RUN_FILE}; start one with "omot bench start <id>".`,
         { cause: error },
-      );
+      ) as NodeJS.ErrnoException;
+      missing.code = "ENOENT";
+      throw missing;
     }
     throw error;
   }
+  const contents = bytes.toString("utf8");
   let value: unknown;
   try {
     value = JSON.parse(contents);
   } catch (error) {
-    throw new Error(`${RUN_FILE} is not valid JSON.`, { cause: error });
+    return {
+      bytes,
+      run: null,
+      error: new Error(`${RUN_FILE} is not valid JSON.`, { cause: error }),
+    };
   }
   const parsed = runFileSchema.safeParse(value);
-  if (parsed.success) return parsed.data;
+  if (parsed.success) return { bytes, run: parsed.data };
   const migrated = migrateRunFile(value);
-  if (migrated) return migrated;
+  if (migrated) return { bytes, run: migrated };
   const issues = parsed.error.issues
     .map((issue) => `${issue.path.join(".") || "run"}: ${issue.message}`)
     .join("; ");
-  throw new Error(`Invalid ${RUN_FILE}: ${issues}`);
+  return {
+    bytes,
+    run: null,
+    error: new Error(`Invalid ${RUN_FILE}: ${issues}`),
+  };
+}
+
+export async function readRunFile(root: string): Promise<RunFile> {
+  const snapshot = await readRunFileSnapshot(root);
+  if (snapshot.run) return snapshot.run;
+  throw snapshot.error;
 }
 
 export function appendVerification(run: RunFile, entry: Verification): RunFile {
@@ -167,6 +186,74 @@ async function acquireRunFileLock(root: string): Promise<() => Promise<void>> {
       }
       if (releaseError) throw releaseError;
     };
+  }
+}
+
+const changedRunFileError = () =>
+  new Error(
+    ".omot/run.json changed since clean started; nothing was removed. Re-run omot bench clean.",
+  );
+
+export async function withRunFileLock<T>(
+  root: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const release = await acquireRunFileLock(root);
+  try {
+    return await fn();
+  } finally {
+    await release();
+  }
+}
+
+export async function assertRunFileUnchanged(
+  root: string,
+  expected: Buffer,
+): Promise<boolean> {
+  let current: Buffer;
+  try {
+    current = await readFile(path.join(root, RUN_FILE));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  if (!current.equals(expected)) throw changedRunFileError();
+  return true;
+}
+
+export async function removeRunFileUnlocked(root: string): Promise<void> {
+  await unlink(path.join(root, RUN_FILE)).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  });
+}
+
+export async function removeRunFile(
+  root: string,
+  expected: Buffer,
+): Promise<void> {
+  await withRunFileLock(root, async () => {
+    if (await assertRunFileUnchanged(root, expected)) {
+      await removeRunFileUnlocked(root);
+    }
+  });
+}
+
+export async function removeStaleRunFileLock(root: string): Promise<boolean> {
+  const file = path.join(root, RUN_FILE_LOCK);
+  try {
+    const info = await lstat(file);
+    if (Date.now() - info.mtimeMs <= LOCK_STALE_MS) return false;
+    try {
+      await unlink(file);
+      return true;
+    } catch (unlinkError) {
+      if ((unlinkError as NodeJS.ErrnoException).code === "ENOENT")
+        return false;
+      throw unlinkError;
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
   }
 }
 

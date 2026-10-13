@@ -60,7 +60,7 @@ function StatsRows({
   linkPrefix,
 }: {
   group: Group;
-  linkPrefix?: string;
+  linkPrefix?: "/tasks/";
 }) {
   const rows: Array<[string, React.ReactNode]> = group.stats.enough
     ? [
@@ -124,7 +124,7 @@ export function StatsTable({
   groups: Group[];
   showN?: boolean;
   /** Prefix group keys into links, e.g. "/tasks/" for task rows. */
-  linkPrefix?: string;
+  linkPrefix?: "/tasks/";
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
