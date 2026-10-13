@@ -256,7 +256,7 @@ describe("bench start and verify", () => {
     const run = await runFile(root);
     expect(run).toMatchObject({
       schema_version: 3,
-      task: { id: "add-unit-test", version: 5 },
+      task: { id: "add-unit-test", version: 6 },
       params: { file: "src/math.mjs", function: "add" },
       agent: "claude-code",
       baseline: { commit: head },
@@ -284,7 +284,7 @@ describe("bench start and verify", () => {
       { cwd: root },
     );
     expect(verified.code).toBe(0);
-    expect(verified.stdout).toContain("PASS add-unit-test v5");
+    expect(verified.stdout).toContain("PASS add-unit-test v6");
     expect(verified.stdout).toContain("(attempt 1)");
     expect(verified.stdout).toContain("Baseline health recorded");
     expect(verified.stderr).toContain("Nothing was sent anywhere.");
@@ -422,7 +422,7 @@ test("add", () => assert.equal(add(1, 2), 3));
     const result = await invoke([...start, "--yes"], { cwd: root });
     expect(result.code).toBe(0);
     expect(await runFile(root)).toMatchObject({
-      task: { id: "add-unit-test", version: 5 },
+      task: { id: "add-unit-test", version: 6 },
     });
   });
 

@@ -23,8 +23,8 @@ omot bench start add-unit-test --param file=src/utils/format.ts --param function
 
 ## Outcomes
 
-- **pass**: New or changed test files reference the function, the test script passes, and no non-test files changed.
-- **partial**: Tests were added and pass, but non-test files changed, test files were deleted, or no test references the function.
+- **pass**: New or changed test files reference the function, the test script passes, and, when omot can inject bugs into the function (up to three operator flips), the tests catch at least one; no non-test files changed.
+- **partial**: Tests were added and pass, but non-test files changed, test files were deleted, or the tests caught none of the injected bugs.
 - **fail**: No test files were added or changed, or the test script fails.
 
 ## How it is verified
@@ -34,5 +34,6 @@ omot bench start add-unit-test --param file=src/utils/format.ts --param function
 - Checks that a changed test file imports the target (including extensionless, index, and `@/`/`~/` aliases), uses the function in code, and adds at least one test case in a file that uses the function; comments and strings do not count.
 - Requires `scripts.test` and verifies it passes at the baseline before starting. If it is missing, `omot scan --fix` can generate the test script and other CI pieces.
 - Runs the `test` script after changes; the start-time test result is retained as baseline health.
+- **Mutation check**: finds the function body with a source-offset-preserving lexical mask, flips up to three supported operators inside it, and runs the full test script once per flip. The original file bytes are restored after every run, including line endings. The check is skipped when no body or supported operator is found.
 
 The prompt and verifier live in [`packages/benchmarks/src/tasks/add-unit-test`](https://github.com/wemilabs/oh-my-otter/tree/v1-dev/packages/benchmarks/src/tasks/add-unit-test). Changing either requires a `version` bump in `task.json`.

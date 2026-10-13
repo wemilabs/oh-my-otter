@@ -164,12 +164,13 @@ describe("fix-failing-test", () => {
 
   it("finds operator mutations outside comments and strings", () => {
     const mutations = findMutations(
-      "const a = b === 'x >= y' && c >= 1; // a || b\n",
+      "const a = b === 'x >= y' && c >= 1; const sum = c + 1; // a || b\n",
     );
     expect(mutations.map((entry) => `${entry.from}${entry.to}`)).toEqual([
       "===!==",
       "&&||",
       ">=>",
+      "+-",
     ]);
     expect(
       applyMutation("a >= b", { index: 2, line: 1, from: ">=", to: ">" }),

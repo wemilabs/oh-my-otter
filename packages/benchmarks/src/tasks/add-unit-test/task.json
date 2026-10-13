@@ -1,6 +1,6 @@
 {
   "id": "add-unit-test",
-  "version": 5,
+  "version": 6,
   "title": "Add unit tests for an untested function",
   "category": "testing",
   "estimatedScope": "small",
@@ -23,8 +23,8 @@
     "The named file exists and contains the named function."
   ],
   "criteria": {
-    "pass": "A new or changed test file imports the target module and uses the function in code, the changed test files contain more test cases that use the function than at baseline, the test script passes, and no non-test files changed.",
-    "partial": "All pass conditions hold, but non-test files changed or test files were deleted.",
+    "pass": "A new or changed test file imports the target module and uses the function in code, the changed test files contain more test cases that use the function than at baseline, the test script passes, and, when omot can inject bugs into the function (up to 3 operator flips), the tests catch at least one; no non-test files changed.",
+    "partial": "All pass conditions hold, but non-test files changed, test files were deleted, or the tests caught none of the injected bugs.",
     "fail": "No test file was added or changed, none imports the target module and uses the function in code (comments and strings do not count), no new test cases that use the function were added to changed files, or the test script fails."
   }
 }

@@ -1,4 +1,7 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { createVerifyContext } from "../src/index";
 import task from "../src/tasks/add-unit-test/verify";
 import {
   failingTest,
@@ -6,6 +9,7 @@ import {
   passingTest,
   startTask,
   verifyTask,
+  writeFiles,
   type Files,
 } from "./helpers";
 
@@ -40,8 +44,91 @@ describe("add-unit-test", () => {
         "add is used in test/add.test.mjs, which imports src/math.mjs.",
         "Test cases that use add in changed test files: 0 → 1.",
         "test script passed.",
+        "Mutation check: the tests caught 1 of 1 injected bugs in add (line 2: + → -).",
       ],
     });
+  });
+
+  it("is partial when the new test does not catch injected bugs", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": `import { test } from "node:test";
+import { add } from "../src/math.mjs";
+test("add", () => { add(2, 3); });
+`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "Mutation check: the tests caught 0 of 1 injected bugs in add (line 2: + → -).",
+    );
+    expect(result.reasons).toContain(
+      "The new tests pass but caught none of 1 injected bugs in add.",
+    );
+  });
+
+  it("skips the mutation check when the function has no supported operators", async () => {
+    const files: Files = {
+      ...base,
+      "src/math.mjs": "export function add(value) { return value; }\n",
+    };
+    const started = await startTask(task, files, params);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { add } from "../src/math.mjs";
+test("add", () => assert.equal(add(2), 2));
+`,
+    });
+    expect(result.outcome).toBe("pass");
+    expect(result.reasons).toContain(
+      "Mutation check skipped: no operator in add that omot can flip.",
+    );
+  });
+
+  it("restores CRLF source bytes after testing mutations", async () => {
+    const source = Buffer.from(
+      "export function add(a, b) {\r\n  return a + b;\r\n}\r\n",
+    );
+    const files: Files = {
+      ...base,
+      "src/math.mjs": source.toString("utf8"),
+    };
+    const started = await startTask(task, files, params);
+    await verifyTask(task, started, params, { "test/add.test.mjs": addTest });
+    expect(await readFile(path.join(started.root, "src/math.mjs"))).toEqual(
+      source,
+    );
+  });
+
+  it("restores source bytes when the test runner throws during a mutation", async () => {
+    const source = Buffer.from(base["src/math.mjs"]!);
+    const started = await startTask(task, base, params);
+    await writeFiles(started.root, { "test/add.test.mjs": addTest });
+    const ctx = createVerifyContext(
+      started.root,
+      {
+        commit: started.commit,
+        data: started.data,
+        scripts: started.scripts,
+      },
+      { params },
+    );
+    let calls = 0;
+    ctx.runScript = async () => {
+      calls += 1;
+      if (calls > 1) throw new Error("script runner failed");
+      return {
+        code: 0,
+        stdout: "",
+        stderr: "",
+        output: "",
+        timedOut: false,
+      };
+    };
+    await expect(task.verify(ctx)).rejects.toThrow("script runner failed");
+    expect(await readFile(path.join(started.root, "src/math.mjs"))).toEqual(
+      source,
+    );
   });
 
   it("passes when the function is imported under an alias", async () => {

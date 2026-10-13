@@ -1,16 +1,88 @@
-import { readText } from "../../context";
+import { createHash } from "node:crypto";
+import { open, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { readText, resolveInside } from "../../context";
 import { isTestFile, summarizeList } from "../../lib/files";
+import { findFunctionBody } from "../../lib/functions";
 import {
   countTargetTestCases,
   importsModule,
   referencesIdentifier,
 } from "../../lib/imports";
 import { maskNonCode } from "../../lib/lexer";
+import { applyMutation, findMutations } from "../../lib/mutations";
 import { checkScript, missingScript, withOutput } from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError } from "../../types";
+import type { VerifyContext } from "../../types";
 import manifest from "./task.json";
 import prompt from "./prompt.md";
+
+const MAX_MUTANTS = 3;
+const MUTATION_LOCK_TIMEOUT_MS = 60 * 60_000;
+
+async function removeStaleMutationLock(lockPath: string): Promise<boolean> {
+  let owner: number;
+  try {
+    owner = Number((await readFile(lockPath, "utf8")).trim());
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+    throw error;
+  }
+  if (!Number.isSafeInteger(owner) || owner <= 0) return false;
+  try {
+    process.kill(owner, 0);
+    return false;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") return false;
+    await rm(lockPath, { force: true });
+    return true;
+  }
+}
+
+async function withMutationLock<T>(
+  root: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const lockPath = path.join(
+    tmpdir(),
+    `omot-mutation-${createHash("sha256").update(path.resolve(root)).digest("hex")}.lock`,
+  );
+  const started = Date.now();
+  while (true) {
+    let lock;
+    try {
+      lock = await open(lockPath, "wx");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (await removeStaleMutationLock(lockPath)) continue;
+      if (Date.now() - started >= MUTATION_LOCK_TIMEOUT_MS) {
+        throw new Error("Timed out waiting for the unit-test mutation lock.", {
+          cause: error,
+        });
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 25));
+      continue;
+    }
+    try {
+      await lock.writeFile(`${process.pid}\n`);
+      return await action();
+    } finally {
+      try {
+        await lock.close();
+      } finally {
+        await rm(lockPath, { force: true });
+      }
+    }
+  }
+}
+
+function lockVerifier<TContext extends { root: string }, TResult>(
+  verify: (ctx: TContext) => Promise<TResult>,
+): (ctx: TContext) => Promise<TResult> {
+  return (ctx) => withMutationLock(ctx.root, () => verify(ctx));
+}
 
 function mentions(source: string, name: string): boolean {
   const escaped = name.replace(/[$]/g, "\\$");
@@ -52,7 +124,7 @@ export default defineTask({
     }
     return {};
   },
-  async verify(ctx) {
+  verify: lockVerifier(async (ctx: VerifyContext) => {
     const file = ctx.params.file as string;
     const name = ctx.params.function as string;
     const reasons: string[] = [];
@@ -146,9 +218,59 @@ export default defineTask({
     const test = await checkScript(ctx, "test", { target: true });
     reasons.push(test.result === null ? "No test script." : test.reason);
     if (test.result === null || test.counted) failed = true;
+    if (!failed) {
+      const absolute = await resolveInside(ctx.root, file);
+      const original = await readFile(absolute);
+      const source = original.toString("utf8");
+      const body = findFunctionBody(source, name);
+      const mutations = body
+        ? findMutations(source)
+            .filter(
+              (mutation) =>
+                mutation.index >= body.start && mutation.index < body.end,
+            )
+            .slice(0, MAX_MUTANTS)
+        : [];
+      if (mutations.length === 0) {
+        reasons.push(
+          `Mutation check skipped: no operator in ${name} that omot can flip.`,
+        );
+      } else {
+        ctx.log(
+          `Mutation check: running the tests against ${mutations.length} injected bugs in ${name}...`,
+        );
+        let caught = 0;
+        for (const mutation of mutations) {
+          try {
+            await writeFile(absolute, applyMutation(source, mutation));
+            const result = await ctx.runScript("test");
+            if (result !== null && (result.code !== 0 || result.timedOut)) {
+              caught += 1;
+            }
+          } finally {
+            await writeFile(absolute, original);
+          }
+        }
+        const descriptions = mutations
+          .map(
+            (mutation) =>
+              `line ${mutation.line}: ${mutation.from} → ${mutation.to}`,
+          )
+          .join(", ");
+        reasons.push(
+          `Mutation check: the tests caught ${caught} of ${mutations.length} injected bugs in ${name} (${descriptions}).`,
+        );
+        if (caught === 0) {
+          reasons.push(
+            `The new tests pass but caught none of ${mutations.length} injected bugs in ${name}.`,
+          );
+          partial = true;
+        }
+      }
+    }
     return {
       outcome: failed ? "fail" : partial ? "partial" : "pass",
       reasons,
     };
-  },
+  }),
 });
