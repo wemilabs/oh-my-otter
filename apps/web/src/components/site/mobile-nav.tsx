@@ -29,13 +29,15 @@ export function MobileNav() {
       <button
         ref={buttonRef}
         type="button"
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded-md border border-border bg-card transition-colors hover:bg-accent"
+        className="group -ml-1 inline-flex size-11 shrink-0 items-center justify-center"
         aria-expanded={open}
         aria-controls="mobile-nav"
         aria-label={open ? "Close menu" : "Open menu"}
         onClick={() => setOpen(!open)}
       >
-        {open ? <X className="size-4" /> : <Menu className="size-4" />}
+        <span className="inline-flex size-9 items-center justify-center rounded-md transition-colors group-hover:bg-accent">
+          {open ? <X className="size-4" /> : <Menu className="size-4" />}
+        </span>
       </button>
       {open ? (
         <nav

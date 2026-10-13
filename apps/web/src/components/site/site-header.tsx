@@ -23,15 +23,21 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center">
           <ThemeToggle />
-          <GitHubStars />
-          <Link
-            href="/#quickstart"
-            className="inline-flex h-9 shrink-0 items-center rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
-          >
-            Get started
-          </Link>
+          <div className="sm:mx-1">
+            <GitHubStars />
+          </div>
+          <div className="ml-1">
+            <Link
+              href="/#quickstart"
+              className="group -mr-1 inline-flex min-h-11 shrink-0 items-center"
+            >
+              <span className="inline-flex h-9 items-center rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity group-hover:opacity-85">
+                Get started
+              </span>
+            </Link>
+          </div>
         </div>
       </div>
     </header>
