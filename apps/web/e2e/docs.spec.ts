@@ -7,9 +7,42 @@ test("docs index renders", async ({ page, baseURL }) => {
   ).toBeVisible();
 });
 
+test("benchmark docs index renders and links from the sidebar", async ({
+  page,
+  baseURL,
+}) => {
+  const response = await page.goto(`${baseURL}/docs/benchmarks`);
+  expect(response?.status()).toBe(200);
+  await expect(
+    page.getByRole("heading", { name: "Benchmarks", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Benchmarks", exact: true }).first(),
+  ).toHaveAttribute("href", "/docs/benchmarks");
+});
+
+test("methodology links to the benchmark docs index", async ({
+  page,
+  baseURL,
+}) => {
+  await page.goto(`${baseURL}/methodology`);
+  await page
+    .getByRole("link", { name: "Browse benchmark documentation" })
+    .click();
+  await expect(page).toHaveURL(`${baseURL}/docs/benchmarks`);
+  const response = await page.request.get(page.url());
+  expect(response.status()).toBe(200);
+  await expect(
+    page.getByRole("heading", { name: "Benchmarks", exact: true }),
+  ).toBeVisible();
+});
+
 test("sidebar navigates to a benchmark page", async ({ page, baseURL }) => {
   await page.goto(`${baseURL}/docs`);
-  await page.getByRole("button", { name: "Benchmarks" }).click();
+  await page.getByRole("link", { name: "Benchmarks", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Benchmarks", exact: true }),
+  ).toBeVisible();
   await page.getByRole("link", { name: "add-unit-test" }).first().click();
   await page.waitForURL(`${baseURL}/docs/benchmarks/add-unit-test`);
   await expect(

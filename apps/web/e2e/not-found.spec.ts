@@ -1,7 +1,12 @@
 import { test, expect } from "@playwright/test";
 
 test("404 pages render one set of chrome", async ({ page, baseURL }) => {
-  for (const path of ["/tasks/nope", "/nope", "/docs/nope"]) {
+  for (const path of [
+    "/tasks/nope",
+    "/nope",
+    "/docs/nope",
+    "/docs/benchmarks/nope",
+  ]) {
     await page.goto(`${baseURL}${path}`);
     await expect(
       page.getByRole("heading", { name: "Page not found" }),
