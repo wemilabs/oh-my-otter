@@ -170,6 +170,36 @@ async function acquireRunFileLock(root: string): Promise<() => Promise<void>> {
   }
 }
 
+export async function removeRunFile(root: string): Promise<void> {
+  const release = await acquireRunFileLock(root);
+  try {
+    await unlink(path.join(root, RUN_FILE)).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    });
+  } finally {
+    await release();
+  }
+}
+
+export async function removeStaleRunFileLock(root: string): Promise<boolean> {
+  const file = path.join(root, RUN_FILE_LOCK);
+  try {
+    const info = await lstat(file);
+    if (Date.now() - info.mtimeMs <= LOCK_STALE_MS) return false;
+    try {
+      await unlink(file);
+      return true;
+    } catch (unlinkError) {
+      if ((unlinkError as NodeJS.ErrnoException).code === "ENOENT")
+        return false;
+      throw unlinkError;
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
 export async function replaceRunFile(
   root: string,
   run: RunFile,

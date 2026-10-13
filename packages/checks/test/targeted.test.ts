@@ -100,6 +100,23 @@ describe("targeted checks", () => {
     });
   });
 
+  it("finds environment variables in a schema expression after a regex in a template", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(
+        path.join(root, "src/index.ts"),
+        'const label = `${/}/.test(x) ? "a" : "b"}`;\n' +
+          "export const env = z.object({ DATABASE_URL: z.string(), API_KEY: z.string() }).parse(process.env);\n",
+      );
+      await writeFile(path.join(root, ".env.example"), "DATABASE_URL=\n");
+
+      expect(await envExample.run(createCheckContext(root))).toMatchObject({
+        status: "warn",
+        detail: ".env.example is missing: API_KEY",
+      });
+    });
+  });
+
   it("warns when every existing environment example is gitignored", async () => {
     await withTempRepo(async (root) => {
       await mkdir(path.join(root, "src"));
@@ -468,8 +485,28 @@ describe("targeted checks", () => {
 
       expect(await testScript.run(createCheckContext(root))).toEqual({
         status: "warn",
-        detail: "No scripts.test; found test:e2e, test:unit.",
-        fix: "Add a scripts.test that runs the main test suite.",
+        detail:
+          "No scripts.test, but found test:unit, test:e2e; agents and CI usually run the test script.",
+        fix: 'Add a "test" script that runs them, for example "test": "npm run test:unit".',
+      });
+    });
+  });
+
+  it("warns when the placeholder test script and test-specific scripts exist", async () => {
+    await withTempRepo(async (root) => {
+      await writeFile(
+        path.join(root, "package.json"),
+        JSON.stringify({
+          scripts: {
+            test: 'echo "Error: no test specified" && exit 1',
+            "test:unit": "vitest run",
+          },
+        }),
+      );
+      expect(await testScript.run(createCheckContext(root))).toMatchObject({
+        status: "warn",
+        detail:
+          "No usable scripts.test, but found test:unit; agents and CI usually run the test script.",
       });
     });
   });

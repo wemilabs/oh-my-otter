@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises";
+import { access, lstat, readFile, rmdir } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
 import pc from "picocolors";
@@ -18,6 +18,8 @@ import {
   normalizeModel,
   parseParams,
   planGitignore,
+  removeRunFile,
+  removeStaleRunFileLock,
   readRunFile,
   renderPrompt,
   resolveRepoRoot,
@@ -25,6 +27,8 @@ import {
   replaceRunFile,
   updateRunFile,
   TaskPreconditionError,
+  runGit,
+  withoutOmotLines,
   type RunFile,
   type Task,
   type VerifyResult,
@@ -49,6 +53,12 @@ interface AgentOptions {
 interface StartOptions extends AgentOptions {
   param?: string[];
   skipBaselineScripts?: boolean;
+  branch?: string;
+  yes?: boolean;
+}
+
+interface CleanOptions {
+  deleteBranch?: boolean;
   yes?: boolean;
 }
 
@@ -138,6 +148,77 @@ function describeAgent(fields: AgentFields): string {
   ]
     .filter((part) => part !== null)
     .join(", ");
+}
+
+async function branchExists(root: string, branch: string): Promise<boolean> {
+  try {
+    await runGit(root, [
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `refs/heads/${branch}`,
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function currentBranchRef(root: string): Promise<string | null> {
+  try {
+    return (await runGit(root, ["symbolic-ref", "--quiet", "HEAD"])).trim();
+  } catch {
+    return null;
+  }
+}
+
+async function validateNewBranch(root: string, branch: string): Promise<void> {
+  try {
+    await runGit(root, ["check-ref-format", "--branch", branch]);
+  } catch {
+    throw new Error(`Invalid branch name: ${branch}.`);
+  }
+  if (await branchExists(root, branch)) {
+    throw new Error(
+      `Branch ${branch} already exists; pick another name or drop --branch.`,
+    );
+  }
+}
+
+async function preconditionScriptHint(
+  cwd: string,
+  target: string | undefined,
+  task: Task,
+): Promise<string[]> {
+  try {
+    const root = await resolveRepoRoot(path.resolve(cwd, target ?? "."));
+    const pkg = JSON.parse(
+      await readFile(path.join(root, "package.json"), "utf8"),
+    ) as { scripts?: unknown };
+    if (
+      pkg.scripts === null ||
+      typeof pkg.scripts !== "object" ||
+      Array.isArray(pkg.scripts)
+    ) {
+      return [];
+    }
+    const scripts = pkg.scripts as Record<string, unknown>;
+    return task.scripts.flatMap((name) => {
+      if (typeof scripts[name] === "string" && scripts[name].trim()) return [];
+      const pattern = new RegExp(
+        `^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}[:_-]`,
+      );
+      const matches = Object.keys(scripts).filter((script) =>
+        pattern.test(script),
+      );
+      if (matches.length === 0) return [];
+      return [
+        `Found ${matches.join(", ")}; omot runs scripts.${name}, so add "${name}": "npm run ${matches[0]}" (pick the suite to measure).`,
+      ];
+    });
+  } catch {
+    return [];
+  }
 }
 
 function agentNote(
@@ -260,10 +341,18 @@ async function startTask(
   options: StartOptions,
   io: BenchIO,
 ): Promise<number> {
+  if (id === "fix-failing-test" && options.branch !== undefined) {
+    throw new Error(
+      "fix-failing-test creates its own omot/fix-failing-test-* branch; drop --branch.",
+    );
+  }
   const task = requireTask(id);
   const params = parseParams(task.manifest, options.param ?? []);
   const fields = agentFields(options);
   const root = await resolveRepoRoot(path.resolve(io.cwd, target ?? "."));
+  if (options.branch !== undefined) {
+    await validateNewBranch(root, options.branch);
+  }
   const head = await headCommit(root);
   const dirty = await createVerifyContext(root, {
     commit: head,
@@ -296,68 +385,409 @@ async function startTask(
     }
   }
 
-  const baselineScan = await scanBaseline(root);
-  io.stderr(
-    pc.dim(
-      `Readiness at start: ${baselineScan.score} · ${baselineScan.grade}\n`,
-    ),
-  );
-
-  const ctx = createPrepareContext(root, {
-    params,
-    scripts: task.scripts,
-    skipBaselineScripts: Boolean(options.skipBaselineScripts),
-    yes: Boolean(options.yes),
-    isTTY: io.isTTY,
-    confirm: io.confirm,
-    log: (text) => io.stderr(pc.dim(`${text}\n`)),
-  });
-  const data = task.prepare ? await task.prepare(ctx) : undefined;
-  const baselineScripts = await ctx.recordBaseline();
-  if (baselineScripts === null) {
+  const originalRef =
+    options.branch === undefined ? null : await currentBranchRef(root);
+  const originalBranch =
+    options.branch === undefined
+      ? undefined
+      : originalRef?.startsWith("refs/heads/")
+        ? originalRef.slice("refs/heads/".length)
+        : "HEAD";
+  const startedAt = new Date().toISOString();
+  if (options.branch !== undefined) {
+    await runGit(root, ["switch", "--quiet", "-c", options.branch]);
+  }
+  try {
+    if (options.branch !== undefined) {
+      await runGit(root, [
+        "config",
+        "--local",
+        `branch.${options.branch}.omot-run`,
+        startedAt,
+      ]);
+    }
+    const baselineScan = await scanBaseline(root);
     io.stderr(
       pc.dim(
-        "Baseline scripts skipped; verify will report baseline health as unknown.\n",
+        `Readiness at start: ${baselineScan.score} · ${baselineScan.grade}\n`,
       ),
     );
-  } else {
-    const summary = Object.entries(baselineScripts)
-      .map(([name, result]) => `${name} exit ${result.code}`)
-      .join(", ");
-    io.stderr(pc.dim(`Baseline scripts: ${summary || "none available"}\n`));
+
+    const ctx = createPrepareContext(root, {
+      params,
+      scripts: task.scripts,
+      skipBaselineScripts: Boolean(options.skipBaselineScripts),
+      yes: Boolean(options.yes),
+      isTTY: io.isTTY,
+      confirm: io.confirm,
+      log: (text) => io.stderr(pc.dim(`${text}\n`)),
+    });
+    const data = task.prepare ? await task.prepare(ctx) : undefined;
+    if (
+      task.manifest.id === "fix-failing-test" &&
+      typeof data === "object" &&
+      data !== null &&
+      "branch" in data &&
+      typeof data.branch === "string"
+    ) {
+      await runGit(root, [
+        "config",
+        "--local",
+        `branch.${data.branch}.omot-run`,
+        startedAt,
+      ]);
+    }
+    const baselineScripts = await ctx.recordBaseline();
+    if (baselineScripts === null) {
+      io.stderr(
+        pc.dim(
+          "Baseline scripts skipped; verify will report baseline health as unknown.\n",
+        ),
+      );
+    } else {
+      const summary = Object.entries(baselineScripts)
+        .map(([name, result]) => `${name} exit ${result.code}`)
+        .join(", ");
+      io.stderr(pc.dim(`Baseline scripts: ${summary || "none available"}\n`));
+    }
+    const commit = await headCommit(root);
+    await ensureGitignore(root, Boolean(options.yes), io);
+    const run: RunFile = {
+      schema_version: RUN_SCHEMA_VERSION,
+      task: { id: task.manifest.id, version: task.manifest.version },
+      params,
+      ...fields,
+      baseline: {
+        commit,
+        started_at: startedAt,
+        ...(data === undefined ? {} : { data }),
+        ...(options.branch === undefined
+          ? {}
+          : {
+              branch: options.branch,
+              original_branch: originalBranch!,
+            }),
+        ...(baselineScripts === null
+          ? {}
+          : {
+              scripts: Object.fromEntries(
+                Object.entries(baselineScripts).map(([name, result]) => [
+                  name,
+                  result.code,
+                ]),
+              ),
+            }),
+        scan: baselineScan.summary,
+      },
+      verifications: [],
+    };
+    await replaceRunFile(root, run);
+    agentNote(options, fields, io);
+    io.stderr(
+      `Started ${pc.bold(task.manifest.id)} v${task.manifest.version} at ${commit.slice(0, 12)}${options.branch === undefined ? "" : ` on branch ${options.branch}`} (${describeAgent(fields)}). Baseline saved to ${RUN_FILE}.\n\n${PASTE_HEADING}\n\n`,
+    );
+    io.stdout(renderPrompt(task.prompt, params));
+    io.stderr(`\nWhen the agent is done, run: omot bench verify\n`);
+    return 0;
+  } catch (error) {
+    if (options.branch !== undefined && originalBranch !== undefined) {
+      try {
+        if (originalBranch === "HEAD") {
+          await runGit(root, ["switch", "--quiet", "--detach", head]);
+        } else {
+          await runGit(root, ["switch", "--quiet", originalBranch]);
+        }
+        await runGit(root, ["branch", "-D", options.branch]);
+      } catch {
+        // Preserve the error that caused the start to fail.
+      }
+    }
+    throw error;
   }
-  const commit = await headCommit(root);
-  await ensureGitignore(root, Boolean(options.yes), io);
-  const run: RunFile = {
-    schema_version: RUN_SCHEMA_VERSION,
-    task: { id: task.manifest.id, version: task.manifest.version },
-    params,
-    ...fields,
-    baseline: {
-      commit,
-      started_at: new Date().toISOString(),
-      ...(data === undefined ? {} : { data }),
-      ...(baselineScripts === null
-        ? {}
-        : {
-            scripts: Object.fromEntries(
-              Object.entries(baselineScripts).map(([name, result]) => [
-                name,
-                result.code,
-              ]),
-            ),
-          }),
-      scan: baselineScan.summary,
-    },
-    verifications: [],
+}
+
+function omotBranch(run: RunFile): {
+  branch: string;
+  original: string;
+  commit?: string;
+  source: "baseline" | "fix-failing-test";
+  startedAt: string;
+} | null {
+  if (
+    typeof run.baseline.branch === "string" &&
+    typeof run.baseline.original_branch === "string"
+  ) {
+    return {
+      branch: run.baseline.branch,
+      original: run.baseline.original_branch,
+      commit: run.baseline.commit,
+      source: "baseline",
+      startedAt: run.baseline.started_at,
+    };
+  }
+  if (
+    run.task.id !== "fix-failing-test" ||
+    typeof run.baseline.data !== "object" ||
+    run.baseline.data === null
+  ) {
+    return null;
+  }
+  const data = run.baseline.data as Record<string, unknown>;
+  if (
+    typeof data.branch !== "string" ||
+    typeof data.original_branch !== "string"
+  ) {
+    return null;
+  }
+  return {
+    branch: data.branch,
+    original: data.original_branch,
+    ...(typeof data.original_commit === "string"
+      ? { commit: data.original_commit }
+      : {}),
+    source: "fix-failing-test",
+    startedAt: run.baseline.started_at,
   };
-  await replaceRunFile(root, run);
-  agentNote(options, fields, io);
-  io.stderr(
-    `Started ${pc.bold(task.manifest.id)} v${task.manifest.version} at ${commit.slice(0, 12)} (${describeAgent(fields)}). Baseline saved to ${RUN_FILE}.\n\n${PASTE_HEADING}\n\n`,
-  );
-  io.stdout(renderPrompt(task.prompt, params));
-  io.stderr(`\nWhen the agent is done, run: omot bench verify\n`);
+}
+
+// Keep in sync with BASELINE_MESSAGE in packages/benchmarks/src/tasks/fix-failing-test/verify.ts.
+const FIX_FAILING_TEST_BASELINE_MESSAGE = "bench baseline";
+
+async function hasLegacyFixFailingTestProvenance(
+  root: string,
+  branch: string,
+): Promise<boolean> {
+  try {
+    const branchRef = `refs/heads/${branch}`;
+    const roots = (
+      await runGit(root, ["rev-list", "--max-parents=0", branchRef])
+    )
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (roots.length !== 1) return false;
+    const [rootCommit] = roots;
+    if (!rootCommit) return false;
+    const subject = await runGit(root, [
+      "log",
+      "-1",
+      "--format=%s",
+      rootCommit,
+    ]);
+    return subject.trim() === FIX_FAILING_TEST_BASELINE_MESSAGE;
+  } catch {
+    return false;
+  }
+}
+
+async function isOmotBranch(
+  root: string,
+  branch: NonNullable<ReturnType<typeof omotBranch>>,
+): Promise<boolean> {
+  if (
+    branch.branch === branch.original ||
+    (branch.source === "fix-failing-test" &&
+      !branch.branch.startsWith("omot/fix-failing-test-"))
+  ) {
+    return false;
+  }
+  try {
+    const marker = await runGit(root, [
+      "config",
+      "--local",
+      "--get",
+      `branch.${branch.branch}.omot-run`,
+    ]);
+    if (marker.trim() !== branch.startedAt) return false;
+    if (branch.source === "baseline") {
+      if (!branch.commit) return false;
+      await runGit(root, [
+        "merge-base",
+        "--is-ancestor",
+        branch.commit,
+        `refs/heads/${branch.branch}`,
+      ]);
+    }
+    return true;
+  } catch {
+    return (
+      branch.source === "fix-failing-test" &&
+      hasLegacyFixFailingTestProvenance(root, branch.branch)
+    );
+  }
+}
+
+async function cleanRun(
+  target: string | undefined,
+  options: CleanOptions,
+  io: BenchIO,
+): Promise<number> {
+  const root = await resolveRepoRoot(path.resolve(io.cwd, target ?? "."));
+  const directory = path.join(root, ".omot");
+  try {
+    if ((await lstat(directory)).isSymbolicLink()) {
+      throw new Error(".omot is a symbolic link; refusing to clean it.");
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const file = path.join(directory, "run.json");
+  const lock = `${file}.lock`;
+  try {
+    await access(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      const removedLock = await removeStaleRunFileLock(root);
+      if (!removedLock) {
+        try {
+          await access(lock);
+          io.stdout(
+            "Nothing to clean; a bench command holds .omot/run.json.lock.\n",
+          );
+          return 0;
+        } catch (lockError) {
+          if ((lockError as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw lockError;
+          }
+        }
+      } else {
+        try {
+          await rmdir(directory);
+        } catch (rmdirError) {
+          if (
+            !["ENOENT", "ENOTEMPTY"].includes(
+              (rmdirError as NodeJS.ErrnoException).code ?? "",
+            )
+          ) {
+            throw rmdirError;
+          }
+        }
+      }
+      io.stdout("Nothing to clean.\n");
+      return 0;
+    }
+    throw error;
+  }
+
+  const run = await readRunFile(root).catch(() => null);
+  let branchInfo = run === null ? null : omotBranch(run);
+  if (branchInfo && !(await branchExists(root, branchInfo.branch))) {
+    branchInfo = null;
+  }
+  if (branchInfo && !(await isOmotBranch(root, branchInfo))) {
+    if (options.deleteBranch) {
+      throw new Error(
+        `Refusing to delete ${branchInfo.branch}: it is not the branch omot created for this run.`,
+      );
+    }
+    branchInfo = null;
+  }
+
+  const deleteBranch = Boolean(options.deleteBranch && branchInfo);
+  if (deleteBranch && branchInfo) {
+    const status = await runGit(root, [
+      "status",
+      "--porcelain",
+      "--untracked-files=all",
+    ]);
+    const outside: string[] = [];
+    for (const line of status.split(/\r?\n/)) {
+      if (!line.trim() || line.slice(3).startsWith(".omot/")) continue;
+      if (line.slice(3) === ".gitignore") {
+        const current = await readFile(path.join(root, ".gitignore"), "utf8");
+        if (line.startsWith("?? ")) {
+          if (withoutOmotLines(current).trim() === "") continue;
+        } else {
+          try {
+            const baseline = await runGit(root, ["show", "HEAD:.gitignore"]);
+            if (withoutOmotLines(current) === withoutOmotLines(baseline)) {
+              continue;
+            }
+          } catch {
+            // An untracked or otherwise unavailable baseline is not omot-only.
+          }
+        }
+      }
+      outside.push(line);
+    }
+    if (outside.length > 0) {
+      throw new Error(
+        `The working tree has uncommitted changes outside .omot/; commit or stash them before deleting ${branchInfo.branch}.`,
+      );
+    }
+  }
+
+  const question = `Remove .omot/run.json${deleteBranch && branchInfo ? ` and delete branch ${branchInfo.branch}` : ""}?`;
+  if (!options.yes) {
+    if (!io.isTTY) {
+      throw new Error(
+        `${question.slice(0, -1)}; re-run with --yes to confirm.`,
+      );
+    }
+    if (!(await io.confirm(question))) {
+      io.stderr("Cancelled.\n");
+      return 1;
+    }
+  }
+
+  let switchedTo: string | null = null;
+  if (deleteBranch && branchInfo) {
+    const currentRef = await currentBranchRef(root);
+    if (currentRef === `refs/heads/${branchInfo.branch}`) {
+      if (branchInfo.original === "HEAD") {
+        if (!branchInfo.commit) {
+          throw new Error(
+            `Cannot restore the detached original commit before deleting ${branchInfo.branch}.`,
+          );
+        }
+        await runGit(root, [
+          "switch",
+          "--quiet",
+          "--detach",
+          branchInfo.commit,
+        ]);
+        switchedTo = "HEAD";
+      } else {
+        await runGit(root, ["switch", "--quiet", branchInfo.original]);
+        switchedTo = branchInfo.original;
+      }
+    }
+    await runGit(root, ["branch", "-D", branchInfo.branch]);
+    io.stdout(
+      `Deleted branch ${branchInfo.branch}${switchedTo ? `; now on ${switchedTo}` : ""}.\n`,
+    );
+  }
+
+  await removeRunFile(root);
+  io.stdout("Removed .omot/run.json.\n");
+  try {
+    await rmdir(directory);
+  } catch (error) {
+    if (
+      !["ENOENT", "ENOTEMPTY"].includes(
+        (error as NodeJS.ErrnoException).code ?? "",
+      )
+    ) {
+      throw error;
+    }
+  }
+
+  if (options.deleteBranch && !branchInfo) {
+    io.stdout("No omot-created branch to delete.\n");
+  }
+
+  if (!options.deleteBranch && branchInfo) {
+    const currentRef = await currentBranchRef(root);
+    const switchCommand =
+      currentRef === `refs/heads/${branchInfo.branch}`
+        ? branchInfo.original === "HEAD" && branchInfo.commit
+          ? `git switch --detach ${branchInfo.commit} && `
+          : `git switch ${branchInfo.original} && `
+        : "";
+    io.stderr(
+      `Branch ${branchInfo.branch} was created by omot and was kept; to delete it, run ${switchCommand}git branch -D ${branchInfo.branch} (omot bench clean --delete-branch does this together with the cleanup).\n`,
+    );
+  }
   return 0;
 }
 
@@ -473,6 +903,11 @@ async function verifyRun(
     io.stderr(
       `Saved to ${RUN_FILE} (${describeAgent(fields)}, corrections: ${corrections}, minutes: ${minutes}). Nothing was sent anywhere.\n`,
     );
+    io.stderr(
+      pc.dim(
+        "Next: omot report to share it anonymously, or omot bench clean to remove the run file.\n",
+      ),
+    );
   }
   return result.outcome === "fail" ? 1 : 0;
 }
@@ -521,6 +956,7 @@ export function addBenchCommand(
       "--skip-baseline-scripts",
       "Skip task scripts at start (baseline health will be unknown)",
     )
+    .option("--branch <name>", "Create and switch to a branch for this run")
     .option(
       "-y, --yes",
       "Confirm .gitignore and fix-failing-test changes without prompting",
@@ -532,6 +968,13 @@ export function addBenchCommand(
         } catch (error) {
           if (error instanceof TaskPreconditionError) {
             io.stderr(`Cannot start ${id}: ${error.message}\n`);
+            for (const hint of await preconditionScriptHint(
+              io.cwd,
+              target,
+              requireTask(id),
+            )) {
+              io.stderr(`${hint}\n`);
+            }
             setExitCode(1);
             return;
           }
@@ -554,5 +997,14 @@ export function addBenchCommand(
     .option("--json", "Print the updated run as JSON")
     .action(async (target: string | undefined, options: VerifyOptions) => {
       setExitCode(await verifyRun(target, options, io));
+    });
+
+  bench
+    .command("clean [path]")
+    .description("Remove the local benchmark run file")
+    .option("--delete-branch", "Delete a branch created by omot for this run")
+    .option("-y, --yes", "Confirm cleanup without prompting")
+    .action(async (target: string | undefined, options: CleanOptions) => {
+      setExitCode(await cleanRun(target, options, io));
     });
 }

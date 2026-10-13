@@ -43,11 +43,14 @@ export {
   OMOT_IGNORE_LINE,
   applyGitignore,
   planGitignore,
+  withoutOmotLines,
   type GitignorePlan,
 } from "./lib/gitignore";
 export {
   RUN_FILE,
   appendVerification,
+  removeStaleRunFileLock,
+  removeRunFile,
   readRunFile,
   replaceRunFile,
   updateRunFile,

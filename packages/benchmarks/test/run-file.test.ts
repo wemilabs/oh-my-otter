@@ -14,6 +14,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendVerification,
   readRunFile,
+  removeRunFile,
   replaceRunFile,
   updateRunFile,
   writeRunFile,
@@ -369,6 +370,34 @@ describe("run file migration", () => {
         throw new Error("abort");
       }),
     ).rejects.toThrow("abort");
+    await expect(readFile(lock, "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("waits for the run-file lock before removing the run", async () => {
+    const root = await createRepo({
+      "src/math.ts": "export const add = 1;\n",
+    });
+    await writeRunFile(root, {
+      schema_version: 3,
+      task: { id: "add-unit-test", version: 4 },
+      params: {},
+      agent: "cursor",
+      baseline: {
+        commit: "a".repeat(40),
+        started_at: "2026-10-12T16:00:00.000Z",
+      },
+      verifications: [],
+    });
+    const lock = path.join(root, ".omot/run.json.lock");
+    await writeFile(lock, "held");
+    const removing = removeRunFile(root);
+    await new Promise<void>((resolve) => setTimeout(resolve, 75));
+    expect((await readRunFile(root)).task.id).toBe("add-unit-test");
+    await unlink(lock);
+    await removing;
+    await expect(readRunFile(root)).rejects.toThrow("No benchmark run found");
     await expect(readFile(lock, "utf8")).rejects.toMatchObject({
       code: "ENOENT",
     });
