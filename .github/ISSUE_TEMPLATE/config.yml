@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/wemilabs/oh-my-otter/blob/main/CONTRIBUTING.md
+    about: Setup, the PR flow, and how to add checks and tasks.
+  - name: Writing a check
+    url: https://github.com/wemilabs/oh-my-otter/blob/main/docs/writing-a-check.md
+    about: The check API, plugins, and built-in checks.
+  - name: Writing a benchmark task
+    url: https://github.com/wemilabs/oh-my-otter/blob/main/docs/writing-a-task.md
+    about: Task folders, verifiers, and version bumps.
+  - name: Report a security vulnerability
+    url: https://github.com/wemilabs/oh-my-otter/security/advisories/new
+    about: Report vulnerabilities privately, not in a public issue.
