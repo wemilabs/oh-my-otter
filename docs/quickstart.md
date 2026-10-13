@@ -32,4 +32,4 @@ To include repository test scripts in the scan, pass `--run`:
 omot scan --run
 ```
 
-See the [CLI reference](./cli) for all commands and options, or [CI usage](./ci) to enforce a minimum score.
+See the [CLI reference](./cli.md) for all commands and options, or [CI usage](./ci.md) to enforce a minimum score.

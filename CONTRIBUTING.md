@@ -41,7 +41,7 @@ A task is one folder, one registry line, one docs page, and tests:
 
 1. Create `packages/benchmarks/src/tasks/<id>/` with `task.json`, `prompt.md`, and `verify.ts`.
 2. Add one line to `packages/benchmarks/src/registry.ts`.
-3. Add `docs/benchmarks/<id>.md`.
+3. Add `docs/benchmarks/<id>.md`. Start it with YAML frontmatter containing `title: <id>` and do not add a duplicate `# <id>` heading.
 4. Add pass, partial, and fail tests in `packages/benchmarks/test/<id>.test.ts`.
 
 Any change to an existing task's `prompt.md` or `verify.ts` needs a `version` bump in its `task.json`, so results from different versions are never mixed. CI enforces this and the docs page; run it locally with `node packages/benchmarks/scripts/check-task-versions.mjs --base origin/v1-dev`. See [writing a task](docs/writing-a-task.md) for details. To propose a task first, open a [new task issue](https://github.com/wemilabs/oh-my-otter/issues/new?template=new-task.yml).

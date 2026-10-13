@@ -43,4 +43,4 @@ export default {
 
 The CLI recognizes `omot.config.ts`, `.mts`, `.js`, and `.mjs` files and loads config and plugin modules through jiti. Plugin modules should use a default export containing an array of checks. Zod validates the config and check shapes; that validation is not a security boundary and does not sandbox module execution.
 
-See [Writing a check](./writing-a-check) for the check contract and execution context.
+See [Writing a check](./writing-a-check.md) for the check contract and execution context.
