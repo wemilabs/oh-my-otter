@@ -135,6 +135,10 @@ jobs:
           LINE: ${{ needs.validate.outputs.line }}
         run: |
           set -e
+          if [ -z "$LINE" ] || [ "$LINE" != "${LINE%%$'\n'*}" ] || [ "${LINE#\{}" = "$LINE" ]; then
+            echo "Invalid report line" >&2
+            exit 1
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for attempt in 1 2 3 4 5; do
