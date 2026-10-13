@@ -25,7 +25,12 @@ export type { AgentsFile } from "./agents";
 export { checkReportPlausibility } from "./plausibility";
 export { parseReportsNdjson, serializeReportLine } from "./ndjson";
 export { SITE_URL } from "./site";
-export { extractPayloadJson, ingestIssue, rateLimitProblem } from "./ingest";
+export {
+  extractPayloadJson,
+  ingestIssue,
+  rateLimitProblem,
+  REPORT_EDITED_LABEL,
+} from "./ingest";
 export type { IngestResult, RateLimitIssue } from "./ingest";
 export { aggregateReports, median, MIN_SAMPLE, summarize } from "./aggregate";
 export type { Aggregate, AgentGroup, CellStats, Group } from "./aggregate";

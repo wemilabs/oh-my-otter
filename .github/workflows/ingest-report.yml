@@ -176,6 +176,8 @@ jobs:
         run: |
           set -e
           gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body "This issue was edited while it was being ingested, so nothing was stored. Please open a new report issue with the current \`omot report\` output."
+          gh label create report-edited --repo "$GH_REPO" --color BFD4F2 --description "Report edited during ingest; nothing stored" --force
+          gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label report-edited
           gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason "not planned"
 
   close:

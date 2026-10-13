@@ -90,10 +90,13 @@ function invalidComment(lines: string[]): string {
   ].join("\n");
 }
 
+export const REPORT_EDITED_LABEL = "report-edited";
+
 export interface RateLimitIssue {
   number?: number;
   created_at?: string;
   pull_request?: unknown;
+  labels?: readonly { name?: string }[];
 }
 
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
@@ -114,7 +117,11 @@ export function rateLimitProblem(input: {
   const recentCount = relevant(input.recent).filter(
     (issue) =>
       issue.created_at !== undefined &&
-      input.now.getTime() - Date.parse(issue.created_at) < RATE_LIMIT_WINDOW_MS,
+      input.now.getTime() - Date.parse(issue.created_at) <
+        RATE_LIMIT_WINDOW_MS &&
+      // Issues edited mid-ingest stored nothing; the replacement must not be
+      // rate-limited by them. They still count toward the open-issue limit.
+      !issue.labels?.some((label) => label.name === REPORT_EDITED_LABEL),
   ).length;
   if (recentCount >= RATE_LIMIT || relevant(input.open).length >= RATE_LIMIT) {
     return (
