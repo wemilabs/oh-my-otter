@@ -623,6 +623,84 @@ left-pad@1.0.0:
     );
   });
 
+  const bunLock = (entries: Record<string, string>): string =>
+    `{
+  "lockfileVersion": 0,
+  "workspaces": {
+    "": { "name": "fixture" },
+    "packages/a": { "name": "a" },
+    "packages/b": { "name": "b" },
+  },
+  "packages": {
+${Object.entries(entries)
+  .map(([key, version]) => `    "${key}": ["left-pad@${version}", "", {}],`)
+  .join("\n")}
+  },
+}
+`;
+  const bunWorkspaces: Files = {
+    ".gitignore": "node_modules/\n",
+    "package.json": npmPackage(
+      {},
+      { packageManager: "bun@1.2.0", workspaces: ["packages/*"] },
+    ),
+    "bun.lock": bunLock({
+      "left-pad": "1.0.0",
+      "other/left-pad": "1.0.0",
+    }),
+    "packages/a/package.json": dep("^1.0.0"),
+    "packages/b/package.json": dep("^1.0.0"),
+    "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+    "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+  };
+
+  it("uses the bun package entry for the workspace, not the whole lockfile", async () => {
+    const started = await startTask(task, bunWorkspaces, params);
+    const result = await verifyTask(task, started, params, {
+      "packages/a/package.json": dep("^1.0.1"),
+      // a now resolves 1.0.1; another workspace still pins 1.0.0.
+      "bun.lock": bunLock({
+        "left-pad": "1.0.1",
+        "other/left-pad": "1.0.0",
+      }),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "node_modules has left-pad 1.0.0 but the lockfile says 1.0.1; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("keeps a nested bun entry on its own version", async () => {
+    const started = await startTask(
+      task,
+      {
+        ...bunWorkspaces,
+        "bun.lock": bunLock({
+          "left-pad": "1.0.0",
+          "b/left-pad": "0.9.0",
+          "other/left-pad": "1.0.0",
+        }),
+        "packages/b/package.json": dep("^0.9.0"),
+        "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "0.9.0" })}\n`,
+      },
+      params,
+    );
+    const result = await verifyTask(task, started, params, {
+      "packages/a/package.json": dep("^1.0.1"),
+      "bun.lock": bunLock({
+        "left-pad": "1.0.1",
+        "b/left-pad": "0.9.0",
+        "other/left-pad": "1.0.0",
+      }),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
+    });
+    expect(result.outcome).toBe("pass");
+    expect(result.reasons).toContain(
+      "Installed left-pad 0.9.0 matches the lockfile.",
+    );
+  });
+
   it("does not let an extraneous install match another workspace's lock entry", async () => {
     const wsLock = (hoisted: string): string =>
       `${JSON.stringify({

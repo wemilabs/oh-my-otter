@@ -355,6 +355,42 @@ function yarnLockedVersion(
   return null;
 }
 
+/** The version `pkg` resolves to for `importer` in a bun.lock (JSONC). */
+function bunLockedVersion(
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null {
+  let json: unknown;
+  try {
+    // bun.lock is JSONC; trailing commas never appear inside its strings.
+    json = JSON.parse(text.replace(/,(\s*[}\]])/g, "$1"));
+  } catch {
+    return null;
+  }
+  if (json === null || typeof json !== "object") return null;
+  const root = json as { workspaces?: unknown; packages?: unknown };
+  const workspaces =
+    root.workspaces !== null && typeof root.workspaces === "object"
+      ? (root.workspaces as Record<string, unknown>)
+      : {};
+  const packages =
+    root.packages !== null && typeof root.packages === "object"
+      ? (root.packages as Record<string, unknown>)
+      : {};
+  const workspace =
+    (workspaces[importer === "." ? "" : importer] as { name?: unknown })
+      ?.name ?? null;
+  const entry =
+    (typeof workspace === "string"
+      ? packages[`${workspace}/${pkg}`]
+      : undefined) ?? packages[pkg];
+  const resolved = Array.isArray(entry) ? entry[0] : undefined;
+  if (typeof resolved !== "string") return null;
+  const version = resolved.slice(resolved.lastIndexOf("@") + 1);
+  return semverStart.test(version) ? version : null;
+}
+
 /**
  * The version the lockfile resolves for the workspace at `importer` (the
  * declaring dir relative to the lockfile's dir, "." for the lockfile dir).
@@ -370,6 +406,7 @@ function lockedVersion(
   const name = lockPath.split("/").at(-1) ?? "";
   if (name === "pnpm-lock.yaml") return pnpmLockedVersion(text, importer, pkg);
   if (name === "yarn.lock") return yarnLockedVersion(text, pkg, spec);
+  if (name === "bun.lock") return bunLockedVersion(text, importer, pkg);
   return null;
 }
 
