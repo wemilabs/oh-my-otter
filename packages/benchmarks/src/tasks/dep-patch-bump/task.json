@@ -1,6 +1,6 @@
 {
   "id": "dep-patch-bump",
-  "version": 2,
+  "version": 3,
   "title": "Bump a dependency within its major version",
   "category": "dependencies",
   "estimatedScope": "small",
@@ -19,7 +19,7 @@
   ],
   "criteria": {
     "pass": "The lockfile changed for the package, its major version (minor for 0.x) is unchanged, no other dependency changed, and the build and test scripts pass.",
-    "partial": "The package was updated within its major version, but the build or tests fail, or other dependencies changed.",
+    "partial": "The package was updated within its major version, but the bumped version is not installed, the build or tests fail, or other dependencies changed.",
     "fail": "The lockfile was not updated for the package, the package was removed, or its major version changed."
   }
 }

@@ -1,5 +1,7 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
-import { isLockfile } from "../../lib/files";
+import { isLockfile, lockfileNames } from "../../lib/files";
 import {
   changedScripts,
   checkScript,
@@ -18,6 +20,7 @@ const dependencyFields = [
 
 const dataSchema = z.object({
   declarations: z.record(z.string(), z.string()),
+  pnp: z.boolean().optional(),
 });
 type Data = z.infer<typeof dataSchema>;
 
@@ -65,18 +68,102 @@ export function compatibilityLine(spec: string): string | null {
     : `0.${minor}`;
 }
 
-function npmLockVersions(json: unknown, pkg: string): string {
-  if (json === null || typeof json !== "object") return "";
+function npmLockPackages(json: unknown): Record<string, unknown> {
+  if (json === null || typeof json !== "object") return {};
   const packages = (json as { packages?: unknown }).packages;
-  if (packages === null || typeof packages !== "object") return "";
+  return packages !== null && typeof packages === "object"
+    ? (packages as Record<string, unknown>)
+    : {};
+}
+
+function npmLockVersions(json: unknown, pkg: string): string {
   const versions: string[] = [];
-  for (const [key, value] of Object.entries(packages)) {
+  for (const [key, value] of Object.entries(npmLockPackages(json))) {
     if (key !== `node_modules/${pkg}` && !key.endsWith(`/node_modules/${pkg}`))
       continue;
     const version = (value as { version?: unknown } | null)?.version;
     versions.push(`${key}@${typeof version === "string" ? version : ""}`);
   }
   return versions.sort().join(",");
+}
+
+/** Every resolved version of `pkg` in an npm lockfile's `packages` map. */
+function npmLockVersionList(json: unknown, pkg: string): string[] {
+  const versions = new Set<string>();
+  for (const [key, value] of Object.entries(npmLockPackages(json))) {
+    if (key !== `node_modules/${pkg}` && !key.endsWith(`/node_modules/${pkg}`))
+      continue;
+    const version = (value as { version?: unknown } | null)?.version;
+    if (typeof version === "string" && version !== "") versions.add(version);
+  }
+  return [...versions].sort();
+}
+
+/** The directory part of a repo-relative path; "" for files at the root. */
+function dirOf(file: string): string {
+  const index = file.lastIndexOf("/");
+  return index === -1 ? "" : file.slice(0, index);
+}
+
+const npmLockPattern = /(?:^|\/)(?:package-lock|npm-shrinkwrap)\.json$/;
+
+/**
+ * The lockfile that governs `dir`: the nearest existing one walking up to the
+ * repo root. When one directory has several, a changed one wins.
+ */
+async function findLockfile(
+  ctx: RepoContext,
+  dir: string,
+  changed: ReadonlySet<string>,
+): Promise<string | null> {
+  let current = dir;
+  while (true) {
+    let fallback: string | null = null;
+    for (const name of lockfileNames) {
+      const file = current === "" ? name : `${current}/${name}`;
+      if (!(await ctx.exists(file))) continue;
+      if (changed.has(file)) return file;
+      fallback ??= file;
+    }
+    if (fallback !== null) return fallback;
+    if (current === "") return null;
+    current = dirOf(current);
+  }
+}
+
+/**
+ * Resolves `pkg` like Node: from `dir` upward to the repo root, the first
+ * `node_modules/<pkg>/package.json` wins. Reads through pnpm symlinks.
+ */
+async function installedPackage(
+  root: string,
+  dir: string,
+  pkg: string,
+): Promise<{ path: string; version: string } | null> {
+  let current = dir;
+  while (true) {
+    const pkgDir =
+      current === "" ? `node_modules/${pkg}` : `${current}/node_modules/${pkg}`;
+    try {
+      const text = await readFile(
+        path.join(root, pkgDir, "package.json"),
+        "utf8",
+      );
+      const version = (JSON.parse(text) as { version?: unknown }).version;
+      return {
+        path: pkgDir,
+        version: typeof version === "string" ? version : "unknown",
+      };
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return { path: pkgDir, version: "unknown" };
+      }
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+    }
+    if (current === "") return null;
+    current = dirOf(current);
+  }
 }
 
 function escapeRegExp(value: string): string {
@@ -108,6 +195,322 @@ export function lockfileVersions(text: string | null, pkg: string): string[] {
     }
   });
   return [...versions].sort();
+}
+
+const dependencySections = [
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+];
+
+const semverStart = /^\d+\.\d+\.\d+/;
+
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+function unquote(value: string): string {
+  const text = value.trim();
+  return text.length > 1 &&
+    ((text.startsWith('"') && text.endsWith('"')) ||
+      (text.startsWith("'") && text.endsWith("'")))
+    ? text.slice(1, -1)
+    : text;
+}
+
+/** The unquoted `key:` / `key: value` pair of a YAML-style line, or null. */
+function yamlKeyValue(line: string): { key: string; value: string } | null {
+  const match =
+    /^\s*(?:"([^"]*)"|'([^']*)'|([^:'"][^:]*?)):(?:\s+(.*?))?\s*$/.exec(line);
+  if (match === null) return null;
+  return {
+    key: match[1] ?? match[2] ?? (match[3] ?? "").trim(),
+    value: match[4] ?? "",
+  };
+}
+
+/** Unquotes a lockfile value and strips any `(...)` peer suffix. */
+function lockValue(raw: string): string {
+  return unquote(raw)
+    .replace(/\s*\(.*\)\s*$/, "")
+    .trim();
+}
+
+/** A dependency entry inside a lockfile section: inline or nested fields. */
+interface DepEntry {
+  /** Inline value (`pkg: 1.0.1`) or the nested `version:` line. */
+  value: string;
+  /** The nested `specifier:` line, when the format records one. */
+  specifier?: string;
+}
+
+/** The `pkg` entry inside one dependency section's key list. */
+function depSectionEntry(
+  lines: string[],
+  from: number,
+  sectionIndent: number,
+  pkg: string,
+): DepEntry | undefined {
+  for (let i = from; i < lines.length; i += 1) {
+    const line = lines[i] as string;
+    if (line.trim() === "") continue;
+    const indent = indentOf(line);
+    if (indent <= sectionIndent) return undefined;
+    const entry = yamlKeyValue(line);
+    if (entry === null || entry.key !== pkg) continue;
+    if (entry.value !== "") return { value: entry.value };
+    let value = "";
+    let specifier: string | undefined;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const sub = lines[j] as string;
+      if (sub.trim() === "") continue;
+      if (indentOf(sub) <= indent) break;
+      const pair = yamlKeyValue(sub);
+      if (pair?.key === "version") value = pair.value;
+      if (pair?.key === "specifier") specifier = pair.value;
+    }
+    return { value, specifier };
+  }
+  return undefined;
+}
+
+/** The `pkg` entry the importer's dependency sections record, if any. */
+function pnpmDepEntry(
+  text: string,
+  importer: string,
+  pkg: string,
+): DepEntry | null {
+  const lines = text.split(/\r?\n/);
+  let start = 0;
+  let end = lines.length;
+  let baseIndent = -1;
+  const importers = lines.findIndex((line) => /^importers:\s*$/.test(line));
+  if (importers !== -1) {
+    start = -1;
+    let keyIndent = -1;
+    for (let i = importers + 1; i < lines.length; i += 1) {
+      const line = lines[i] as string;
+      if (line.trim() === "") continue;
+      const indent = indentOf(line);
+      if (indent === 0) break;
+      if (keyIndent === -1) keyIndent = indent;
+      if (indent !== keyIndent) continue;
+      const entry = yamlKeyValue(line);
+      if (entry === null) break;
+      if (entry.key !== importer) continue;
+      start = i + 1;
+      baseIndent = indent;
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const next = lines[j] as string;
+        if (next.trim() !== "" && indentOf(next) <= indent) {
+          end = j;
+          break;
+        }
+      }
+      break;
+    }
+    if (start === -1) return null;
+  } else if (importer !== ".") {
+    return null;
+  }
+  for (let i = start; i < end; i += 1) {
+    const line = lines[i] as string;
+    if (line.trim() === "") continue;
+    const indent = indentOf(line);
+    if (indent <= baseIndent) break;
+    const entry = yamlKeyValue(line);
+    if (entry === null || !dependencySections.includes(entry.key)) continue;
+    const found = depSectionEntry(lines, i + 1, indent, pkg);
+    if (found !== undefined) return found;
+  }
+  return null;
+}
+
+/** The version `pkg` resolves to for `importer` in a pnpm-lock.yaml. */
+function pnpmLockedVersion(
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null {
+  const entry = pnpmDepEntry(text, importer, pkg);
+  if (entry === null) return null;
+  const resolved = lockValue(entry.value);
+  return semverStart.test(resolved) ? resolved : null;
+}
+
+/** The specifier pnpm records for `pkg` under `importer`. */
+function pnpmLockedSpec(
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null | undefined {
+  const entry = pnpmDepEntry(text, importer, pkg);
+  if (entry === null) return null;
+  // An inline value (older format) has no recorded specifier.
+  return entry.specifier === undefined ? undefined : unquote(entry.specifier);
+}
+
+/** The version the `${pkg}@${spec}` (or `npm:`) entry resolves in yarn.lock. */
+function yarnLockedVersion(
+  text: string,
+  pkg: string,
+  spec: string,
+): string | null {
+  const wanted = new Set([`${pkg}@${spec}`, `${pkg}@npm:${spec}`]);
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] as string;
+    const trimmed = line.trimEnd();
+    if (trimmed === "" || /^\s/.test(line) || !trimmed.endsWith(":")) continue;
+    // Classic quotes each descriptor; berry quotes the whole list.
+    const descriptors = trimmed
+      .slice(0, -1)
+      .replace(/"/g, "")
+      .split(",")
+      .map((descriptor) => descriptor.trim());
+    if (!descriptors.some((descriptor) => wanted.has(descriptor))) continue;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const entry = lines[j] as string;
+      if (entry.trim() === "") continue;
+      if (!/^\s/.test(entry)) break;
+      // Handles both `version "1.0.1"` (classic) and `version: 1.0.1`.
+      const version = /^\s+version:?\s+"?([^"\s]+)"?\s*$/.exec(entry);
+      if (version === null) continue;
+      const resolved = lockValue(version[1] as string);
+      return semverStart.test(resolved) ? resolved : null;
+    }
+    return null;
+  }
+  return null;
+}
+
+/** Parses a bun.lock (JSONC with trailing commas) into its two maps. */
+function parseBunLock(text: string): {
+  workspaces: Record<string, unknown>;
+  packages: Record<string, unknown>;
+} | null {
+  let json: unknown;
+  try {
+    // Trailing commas never appear inside bun.lock's strings.
+    json = JSON.parse(text.replace(/,(\s*[}\]])/g, "$1"));
+  } catch {
+    return null;
+  }
+  if (json === null || typeof json !== "object") return null;
+  const root = json as { workspaces?: unknown; packages?: unknown };
+  return {
+    workspaces:
+      root.workspaces !== null && typeof root.workspaces === "object"
+        ? (root.workspaces as Record<string, unknown>)
+        : {},
+    packages:
+      root.packages !== null && typeof root.packages === "object"
+        ? (root.packages as Record<string, unknown>)
+        : {},
+  };
+}
+
+/** The version `pkg` resolves to for `importer` in a bun.lock (JSONC). */
+function bunLockedVersion(
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null {
+  const lock = parseBunLock(text);
+  if (lock === null) return null;
+  const workspace =
+    (lock.workspaces[importer === "." ? "" : importer] as { name?: unknown })
+      ?.name ?? null;
+  const entry =
+    (typeof workspace === "string"
+      ? lock.packages[`${workspace}/${pkg}`]
+      : undefined) ?? lock.packages[pkg];
+  const resolved = Array.isArray(entry) ? entry[0] : undefined;
+  if (typeof resolved !== "string") return null;
+  const version = resolved.slice(resolved.lastIndexOf("@") + 1);
+  return semverStart.test(version) ? version : null;
+}
+
+const specFields = [...dependencySections, "peerDependencies"];
+
+/** The spec `manifest` declares for `pkg`, in any dependency field. */
+function manifestSpec(
+  manifest: unknown,
+  pkg: string,
+): string | null | undefined {
+  if (manifest === null || typeof manifest !== "object") return null;
+  for (const field of specFields) {
+    const deps = (manifest as Record<string, unknown>)[field];
+    if (deps === null || typeof deps !== "object") continue;
+    const spec = (deps as Record<string, unknown>)[pkg];
+    if (typeof spec === "string") return spec;
+  }
+  return null;
+}
+
+/** The spec the bun.lock workspace for `importer` records for `pkg`. */
+function bunLockedSpec(
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null | undefined {
+  const lock = parseBunLock(text);
+  if (lock === null) return undefined;
+  return manifestSpec(lock.workspaces[importer === "." ? "" : importer], pkg);
+}
+
+/** The spec a v2/v3 npm lockfile's `packages[rel]` records for `pkg`. */
+function npmLockedSpec(
+  json: unknown,
+  rel: string,
+  pkg: string,
+): string | null | undefined {
+  const packages = npmLockPackages(json);
+  if (Object.keys(packages).length === 0) return undefined;
+  return manifestSpec(packages[rel], pkg);
+}
+
+/**
+ * The version the lockfile resolves for the workspace at `importer` (the
+ * declaring dir relative to the lockfile's dir, "." for the lockfile dir).
+ * null when the lockfile format doesn't record per-workspace resolutions.
+ */
+function lockedVersion(
+  lockPath: string,
+  text: string,
+  importer: string,
+  pkg: string,
+  spec: string,
+): string | null {
+  const name = lockPath.split("/").at(-1) ?? "";
+  if (name === "pnpm-lock.yaml") return pnpmLockedVersion(text, importer, pkg);
+  if (name === "yarn.lock") return yarnLockedVersion(text, pkg, spec);
+  if (name === "bun.lock") return bunLockedVersion(text, importer, pkg);
+  return null;
+}
+
+/**
+ * The range the lockfile records for the workspace's dependency on `pkg`.
+ * undefined when the format doesn't record it; null when the workspace has
+ * no entry for `pkg` at all.
+ */
+function lockedSpec(
+  lockPath: string,
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null | undefined {
+  const name = lockPath.split("/").at(-1) ?? "";
+  if (name === "pnpm-lock.yaml") return pnpmLockedSpec(text, importer, pkg);
+  if (name === "bun.lock") return bunLockedSpec(text, importer, pkg);
+  if (npmLockPattern.test(lockPath)) {
+    return npmLockedSpec(
+      parseJson(text),
+      importer === "." ? "" : importer,
+      pkg,
+    );
+  }
+  return undefined;
 }
 
 function changedDependencyNames(
@@ -149,7 +552,8 @@ export default defineTask<Data>({
     if (!hasLockfile) {
       throw new TaskPreconditionError("No lockfile found in the repository.");
     }
-    return { declarations };
+    const pnp = (await ctx.exists(".pnp.cjs")) || (await ctx.exists(".pnp.js"));
+    return { declarations, pnp };
   },
   async verify(ctx) {
     const pkg = ctx.params.package as string;
@@ -168,7 +572,7 @@ export default defineTask<Data>({
         lockfileUpdated = true;
         continue;
       }
-      if (/(?:^|\/)(?:package-lock|npm-shrinkwrap)\.json$/.test(file.path)) {
+      if (npmLockPattern.test(file.path)) {
         const before = npmLockVersions(
           parseJson(await ctx.readBaseline(file.path)),
           pkg,
@@ -243,6 +647,139 @@ export default defineTask<Data>({
     if (scripts.length > 0) {
       partial = true;
       reasons.push(scriptChangeReason(scripts));
+    }
+
+    // The bump only counts when the new version was actually installed;
+    // verify never runs an install itself.
+    if (lockfileUpdated) {
+      const installReasons = new Set<string>();
+      // Recorded at start, so a Plug'n'Play file added later can't skip this.
+      const pnp = data.pnp === true;
+      if (pnp) {
+        installReasons.add(
+          `Yarn Plug'n'Play install; installed ${pkg} version not checked.`,
+        );
+      }
+      const changedLocks = new Set(lockfiles.map((file) => file.path));
+      for (const [file, declaredSpec] of Object.entries(data.declarations)) {
+        if (pnp) break;
+        const dir = dirOf(file);
+        const currentSpec = specFor(
+          dependencies(parseJson(await ctx.read(file))),
+          pkg,
+        );
+        const specChanged = currentSpec !== declaredSpec;
+        const lock = await findLockfile(ctx, dir, changedLocks);
+        if (lock !== null && !changedLocks.has(lock)) {
+          // The declaring package's own lockfile was not updated.
+          if (!specChanged) continue;
+          partial = true;
+          installReasons.add(
+            `${file} bumps ${pkg} but its lockfile ${lock} was not updated; the bump was never installed (a clean install may reject it).`,
+          );
+          continue;
+        }
+        // A bumped range the lockfile doesn't record means it is out of
+        // sync with package.json; a frozen install would reject it.
+        if (specChanged && lock !== null && currentSpec !== undefined) {
+          const importer =
+            path.posix.relative(dirOf(lock) || ".", dir || ".") || ".";
+          const lockText = await ctx.read(lock);
+          const recorded =
+            lock.split("/").at(-1) === "yarn.lock"
+              ? yarnLockedVersion(lockText ?? "", pkg, currentSpec) === null
+                ? null
+                : undefined
+              : lockedSpec(lock, lockText ?? "", importer, pkg);
+          if (
+            recorded === null ||
+            (typeof recorded === "string" && recorded !== currentSpec)
+          ) {
+            partial = true;
+            installReasons.add(
+              `${file} declares ${pkg} ${currentSpec} but ${lock} still records ${recorded ?? "no entry"} for it; the bump was never installed (a clean install may reject it).`,
+            );
+            continue;
+          }
+        }
+        let expected: string[] | null = null;
+        if (lock !== null && npmLockPattern.test(lock)) {
+          const json = parseJson(await ctx.read(lock));
+          const packages = npmLockPackages(json);
+          // Node-style: the first lockfile entry from the declaring dir up to
+          // the lockfile's dir wins, mirroring how the install resolves.
+          let rel = path.posix.relative(dirOf(lock) || ".", dir || ".");
+          let locked: string | undefined;
+          while (true) {
+            const key =
+              rel === "" ? `node_modules/${pkg}` : `${rel}/node_modules/${pkg}`;
+            const version = (packages[key] as { version?: unknown } | undefined)
+              ?.version;
+            if (typeof version === "string" && version !== "") {
+              locked = version;
+              break;
+            }
+            if (rel === "") break;
+            rel = dirOf(rel);
+          }
+          if (locked !== undefined) {
+            expected = [locked];
+          } else if (Object.keys(packages).length === 0) {
+            expected = npmLockVersionList(json, pkg);
+          } else {
+            // A v2/v3 lockfile that doesn't install pkg for this workspace.
+            partial = true;
+            installReasons.add(
+              `${lock} has no ${pkg} entry reachable from ${dir === "" ? "the repo root" : dir}; the bump was never installed (a clean install may reject it).`,
+            );
+            continue;
+          }
+        } else if (lock !== null && !lock.endsWith(".lockb")) {
+          const text = await ctx.read(lock);
+          const importer =
+            path.posix.relative(dirOf(lock) || ".", dir || ".") || ".";
+          const locked = lockedVersion(
+            lock,
+            text ?? "",
+            importer,
+            pkg,
+            currentSpec ?? declaredSpec,
+          );
+          if (locked !== null) {
+            expected = [locked];
+          } else {
+            const before = lockfileVersions(await ctx.readBaseline(lock), pkg);
+            const after = lockfileVersions(text, pkg);
+            const added = after.filter((version) => !before.includes(version));
+            // The newly added version only applies to workspaces whose spec
+            // changed; untouched ones keep the full locked list.
+            expected = specChanged && added.length > 0 ? added : after;
+          }
+        }
+        if (expected === null || expected.length === 0) {
+          installReasons.add(
+            `Could not read the bumped ${pkg} version from the lockfile; installed version not checked.`,
+          );
+          continue;
+        }
+        const installed = await installedPackage(ctx.root, dir, pkg);
+        if (installed === null) {
+          partial = true;
+          installReasons.add(
+            `${pkg} is not installed in node_modules (resolved from ${dir === "" ? "the repo root" : dir}); the bump was never installed (a clean install may reject it).`,
+          );
+        } else if (expected.includes(installed.version)) {
+          installReasons.add(
+            `Installed ${pkg} ${installed.version} matches the lockfile.`,
+          );
+        } else {
+          partial = true;
+          installReasons.add(
+            `node_modules has ${pkg} ${installed.version} but the lockfile says ${expected.join(" or ")}; the bump was never installed (a clean install may reject it).`,
+          );
+        }
+      }
+      reasons.push(...installReasons);
     }
 
     for (const script of ["build", "test"]) {

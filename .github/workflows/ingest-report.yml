@@ -7,7 +7,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: ingest-report
+  group: ingest-report-${{ github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:
@@ -160,6 +160,10 @@ jobs:
               git switch dataset 2>/dev/null || git switch --orphan dataset
               git rm -rf --cached . -q 2>/dev/null || true
               git clean -fdxq
+              # Vercel's root dir is apps/web, and this file stops previews of this branch.
+              mkdir -p apps/web
+              printf '%s\n' '{' '  "git": { "deploymentEnabled": false }' '}' > apps/web/vercel.json
+              git add apps/web/vercel.json
             fi
             printf '%s\n' "$LINE" >> reports.ndjson
             git add reports.ndjson
@@ -169,6 +173,8 @@ jobs:
               exit 0
             fi
             echo "Push failed (attempt $attempt), retrying" >&2
+            # Runs are parallel (one per issue); jitter keeps them from retrying in lockstep.
+            sleep $((RANDOM % 5 + 1 + attempt))
           done
           echo "Failed to push after 5 attempts" >&2
           exit 1
