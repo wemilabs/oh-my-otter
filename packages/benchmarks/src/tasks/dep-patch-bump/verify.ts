@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 import { isLockfile } from "../../lib/files";
 import {
@@ -6,7 +8,11 @@ import {
   scriptChangeReason,
 } from "../../lib/scripts";
 import { defineTask } from "../../task";
-import { TaskPreconditionError, type RepoContext } from "../../types";
+import {
+  TaskPreconditionError,
+  type ChangedFile,
+  type RepoContext,
+} from "../../types";
 import manifest from "./task.json";
 import prompt from "./prompt.md";
 
@@ -18,6 +24,7 @@ const dependencyFields = [
 
 const dataSchema = z.object({
   declarations: z.record(z.string(), z.string()),
+  pnp: z.boolean().optional(),
 });
 type Data = z.infer<typeof dataSchema>;
 
@@ -65,18 +72,97 @@ export function compatibilityLine(spec: string): string | null {
     : `0.${minor}`;
 }
 
-function npmLockVersions(json: unknown, pkg: string): string {
-  if (json === null || typeof json !== "object") return "";
+function npmLockPackages(json: unknown): Record<string, unknown> {
+  if (json === null || typeof json !== "object") return {};
   const packages = (json as { packages?: unknown }).packages;
-  if (packages === null || typeof packages !== "object") return "";
+  return packages !== null && typeof packages === "object"
+    ? (packages as Record<string, unknown>)
+    : {};
+}
+
+function npmLockVersions(json: unknown, pkg: string): string {
   const versions: string[] = [];
-  for (const [key, value] of Object.entries(packages)) {
+  for (const [key, value] of Object.entries(npmLockPackages(json))) {
     if (key !== `node_modules/${pkg}` && !key.endsWith(`/node_modules/${pkg}`))
       continue;
     const version = (value as { version?: unknown } | null)?.version;
     versions.push(`${key}@${typeof version === "string" ? version : ""}`);
   }
   return versions.sort().join(",");
+}
+
+/** Every resolved version of `pkg` in an npm lockfile's `packages` map. */
+function npmLockVersionList(json: unknown, pkg: string): string[] {
+  const versions = new Set<string>();
+  for (const [key, value] of Object.entries(npmLockPackages(json))) {
+    if (key !== `node_modules/${pkg}` && !key.endsWith(`/node_modules/${pkg}`))
+      continue;
+    const version = (value as { version?: unknown } | null)?.version;
+    if (typeof version === "string" && version !== "") versions.add(version);
+  }
+  return [...versions].sort();
+}
+
+/** The directory part of a repo-relative path; "" for files at the root. */
+function dirOf(file: string): string {
+  const index = file.lastIndexOf("/");
+  return index === -1 ? "" : file.slice(0, index);
+}
+
+/** Whether `dir` equals `ancestor` or sits inside it ("" is the repo root). */
+function isWithin(dir: string, ancestor: string): boolean {
+  return ancestor === "" || dir === ancestor || dir.startsWith(`${ancestor}/`);
+}
+
+/** The changed lockfile closest to `dir`, among those at or above it. */
+function nearestLockfile(
+  lockfiles: readonly ChangedFile[],
+  dir: string,
+): ChangedFile | undefined {
+  let best: ChangedFile | undefined;
+  for (const file of lockfiles) {
+    const lockDir = dirOf(file.path);
+    if (!isWithin(dir, lockDir)) continue;
+    if (best === undefined || lockDir.length > dirOf(best.path).length) {
+      best = file;
+    }
+  }
+  return best;
+}
+
+/**
+ * Resolves `pkg` like Node: from `dir` upward to the repo root, the first
+ * `node_modules/<pkg>/package.json` wins. Reads through pnpm symlinks.
+ */
+async function installedPackage(
+  root: string,
+  dir: string,
+  pkg: string,
+): Promise<{ path: string; version: string } | null> {
+  let current = dir;
+  while (true) {
+    const pkgDir =
+      current === "" ? `node_modules/${pkg}` : `${current}/node_modules/${pkg}`;
+    try {
+      const text = await readFile(
+        path.join(root, pkgDir, "package.json"),
+        "utf8",
+      );
+      const version = (JSON.parse(text) as { version?: unknown }).version;
+      return {
+        path: pkgDir,
+        version: typeof version === "string" ? version : "unknown",
+      };
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return { path: pkgDir, version: "unknown" };
+      }
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+    }
+    if (current === "") return null;
+    current = dirOf(current);
+  }
 }
 
 function escapeRegExp(value: string): string {
@@ -149,7 +235,8 @@ export default defineTask<Data>({
     if (!hasLockfile) {
       throw new TaskPreconditionError("No lockfile found in the repository.");
     }
-    return { declarations };
+    const pnp = (await ctx.exists(".pnp.cjs")) || (await ctx.exists(".pnp.js"));
+    return { declarations, ...(pnp ? { pnp: true } : {}) };
   },
   async verify(ctx) {
     const pkg = ctx.params.package as string;
@@ -243,6 +330,76 @@ export default defineTask<Data>({
     if (scripts.length > 0) {
       partial = true;
       reasons.push(scriptChangeReason(scripts));
+    }
+
+    // The bump only counts when the new version was actually installed;
+    // verify never runs an install itself.
+    if (lockfileUpdated) {
+      const installReasons = new Set<string>();
+      const pnp =
+        data.pnp ??
+        ((await ctx.exists(".pnp.cjs")) || (await ctx.exists(".pnp.js")));
+      if (pnp) {
+        installReasons.add(
+          `Yarn Plug'n'Play install; installed ${pkg} version not checked.`,
+        );
+      }
+      for (const file of Object.keys(data.declarations)) {
+        if (pnp) break;
+        const dir = dirOf(file);
+        const lock = nearestLockfile(lockfiles, dir);
+        let expected: string[] | null = null;
+        const installed = await installedPackage(ctx.root, dir, pkg);
+        if (
+          lock !== undefined &&
+          /(?:^|\/)(?:package-lock|npm-shrinkwrap)\.json$/.test(lock.path)
+        ) {
+          const json = parseJson(await ctx.read(lock.path));
+          let version: unknown;
+          if (installed !== null) {
+            const key = path.posix.relative(
+              dirOf(lock.path) || ".",
+              installed.path,
+            );
+            version = (npmLockPackages(json)[key] as { version?: unknown })
+              ?.version;
+          }
+          expected =
+            typeof version === "string" && version !== ""
+              ? [version]
+              : npmLockVersionList(json, pkg);
+        } else if (lock !== undefined && !lock.path.endsWith(".lockb")) {
+          const before = lockfileVersions(
+            await ctx.readBaseline(lock.path),
+            pkg,
+          );
+          const after = lockfileVersions(await ctx.read(lock.path), pkg);
+          const added = after.filter((version) => !before.includes(version));
+          expected = added.length > 0 ? added : after;
+        }
+        if (expected === null || expected.length === 0) {
+          installReasons.add(
+            `Could not read the bumped ${pkg} version from the lockfile; installed version not checked.`,
+          );
+          continue;
+        }
+        if (installed === null) {
+          partial = true;
+          installReasons.add(
+            `${pkg} is not installed in node_modules (resolved from ${dir === "" ? "the repo root" : dir}); the bump was never installed (a clean install may reject it).`,
+          );
+        } else if (expected.includes(installed.version)) {
+          installReasons.add(
+            `Installed ${pkg} ${installed.version} matches the lockfile.`,
+          );
+        } else {
+          partial = true;
+          installReasons.add(
+            `node_modules has ${pkg} ${installed.version} but the lockfile says ${expected.join(" or ")}; the bump was never installed (a clean install may reject it).`,
+          );
+        }
+      }
+      reasons.push(...installReasons);
     }
 
     for (const script of ["build", "test"]) {
