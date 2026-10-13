@@ -5,6 +5,7 @@ import {
   rm,
   writeFile,
   mkdir,
+  symlink,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -126,6 +127,10 @@ const changedNestedRepoFixture = {
         test: `node -e "require('node:fs').writeFileSync('nested/generated.txt', 'generated')"`,
       },
     }) + "\n",
+};
+const cleanBranchFixture = {
+  ...fixture,
+  ".gitignore": "node_modules\n.omot/\n",
 };
 const addTest = `import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -288,6 +293,9 @@ describe("bench start and verify", () => {
     expect(verified.stdout).toContain("(attempt 1)");
     expect(verified.stdout).toContain("Baseline health recorded");
     expect(verified.stderr).toContain("Nothing was sent anywhere.");
+    expect(verified.stderr).toContain(
+      "Next: omot report to share it anonymously, or omot bench clean to remove the run file.",
+    );
     expect(await runFile(root)).toMatchObject({
       verifications: [{ head_commit: head }],
       result: {
@@ -647,13 +655,16 @@ test("add", () => assert.equal(add(1, 2), 3));
         name: "f",
         private: true,
         type: "module",
-        scripts: {},
+        scripts: { "test:unit": "node --test" },
       })}\n`,
     });
     const result = await invoke([...start, "--yes"], { cwd: root });
     expect(result.code).toBe(1);
     expect(result.stderr).toContain(
       "Cannot start add-unit-test: Precondition not met: no test script (scripts.test)",
+    );
+    expect(result.stderr).toContain(
+      'Found test:unit; omot runs scripts.test, so add "test": "npm run test:unit" (pick the suite to measure).',
     );
   });
 
@@ -667,5 +678,246 @@ test("add", () => assert.equal(add(1, 2), 3));
     );
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('start one with "omot bench start <id>"');
+  });
+});
+
+describe("bench branches and clean", () => {
+  it("switches to --branch and records its original branch", async () => {
+    const root = await repo(cleanBranchFixture);
+    const result = await invoke([...start, "--branch", "bench/work", "--yes"], {
+      cwd: root,
+    });
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain(" on branch bench/work ");
+    expect(await git(root, ["branch", "--show-current"])).toBe("bench/work");
+    expect(await runFile(root)).toMatchObject({
+      baseline: { branch: "bench/work", original_branch: "main" },
+    });
+  });
+
+  it("restores the original branch and deletes the new branch after a precondition failure", async () => {
+    const root = await repo({
+      ...cleanBranchFixture,
+      "package.json": `${JSON.stringify({
+        name: "f",
+        private: true,
+        type: "module",
+        scripts: {},
+      })}\n`,
+    });
+    const result = await invoke(
+      [...start, "--branch", "bench/failed", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Cannot start add-unit-test: Precondition not met: no test script",
+    );
+    expect(await git(root, ["branch", "--show-current"])).toBe("main");
+    await expect(
+      git(root, ["rev-parse", "--verify", "bench/failed"]),
+    ).rejects.toThrow();
+  });
+
+  it("rejects --branch for fix-failing-test before parsing other options", async () => {
+    const result = await invoke(
+      ["bench", "start", "fix-failing-test", "--branch", "custom"],
+      { cwd: os.tmpdir() },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "fix-failing-test creates its own omot/fix-failing-test-* branch; drop --branch.",
+    );
+  });
+
+  it("rejects existing and invalid branch names", async () => {
+    const root = await repo(cleanBranchFixture);
+    await git(root, ["branch", "taken"]);
+    const existing = await invoke([...start, "--branch", "taken", "--yes"], {
+      cwd: root,
+    });
+    expect(existing.code).toBe(1);
+    expect(existing.stderr).toContain(
+      "Branch taken already exists; pick another name or drop --branch.",
+    );
+    const invalid = await invoke(
+      [...start, "--branch", "not a branch", "--yes"],
+      { cwd: root },
+    );
+    expect(invalid.code).toBe(1);
+    expect(invalid.stderr).toContain("Invalid branch name: not a branch.");
+  });
+
+  it("reports nothing to clean when there is no run file", async () => {
+    const root = await repo(cleanBranchFixture);
+    const result = await invoke(["bench", "clean"], { cwd: root });
+    expect(result).toMatchObject({
+      code: 0,
+      stdout: "Nothing to clean.\n",
+    });
+  });
+
+  it("removes the run and lock, removes an empty .omot, and prints the kept-branch hint", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--branch", "bench/kept", "--yes"], { cwd: root });
+    const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
+    await writeFile(path.join(root, ".omot/run.json.lock"), "stale");
+
+    const result = await invoke(["bench", "clean", "--yes"], { cwd: root });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Removed .omot/run.json.");
+    expect(result.stderr).toContain(
+      "Branch bench/kept was created by omot and was kept; to delete it, run git switch main && git branch -D bench/kept",
+    );
+    await expect(access(path.join(root, ".omot"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+    expect(await readFile(path.join(root, ".gitignore"), "utf8")).toBe(
+      gitignore,
+    );
+  });
+
+  it("deletes a branch and switches back with --delete-branch --yes", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--branch", "bench/delete", "--yes"], {
+      cwd: root,
+    });
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(
+      "Deleted branch bench/delete; now on main.",
+    );
+    expect(await git(root, ["branch", "--show-current"])).toBe("main");
+    await expect(
+      git(root, ["rev-parse", "--verify", "bench/delete"]),
+    ).rejects.toThrow();
+    await expect(
+      access(path.join(root, ".omot/run.json")),
+    ).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("deletes a fix-failing-test-style branch from baseline data", async () => {
+    const root = await repo(cleanBranchFixture);
+    const original = (await git(root, ["rev-parse", "HEAD"])).trim();
+    await invoke(
+      [...start, "--branch", "omot/fix-failing-test-test", "--yes"],
+      {
+        cwd: root,
+      },
+    );
+    const run = await runFile(root);
+    run.task = { id: "fix-failing-test", version: 1 };
+    delete run.baseline.branch;
+    delete run.baseline.original_branch;
+    run.baseline.data = {
+      branch: "omot/fix-failing-test-test",
+      original_branch: "main",
+      original_commit: original,
+    };
+    await writeFile(
+      path.join(root, ".omot/run.json"),
+      `${JSON.stringify(run, null, 2)}\n`,
+    );
+
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(0);
+    expect(await git(root, ["branch", "--show-current"])).toBe("main");
+    await expect(
+      git(root, ["rev-parse", "--verify", "omot/fix-failing-test-test"]),
+    ).rejects.toThrow();
+  });
+
+  it("refuses branch deletion when there are changes outside .omot", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--branch", "bench/dirty", "--yes"], { cwd: root });
+    await writeFile(path.join(root, "outside.txt"), "uncommitted\n");
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "The working tree has uncommitted changes outside .omot/; commit or stash them before deleting bench/dirty.",
+    );
+    await access(path.join(root, ".omot/run.json"));
+    expect(await git(root, ["branch", "--show-current"])).toBe("bench/dirty");
+  });
+
+  it("requires --yes without a TTY and leaves the run untouched", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--yes"], { cwd: root });
+    const result = await invoke(["bench", "clean"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Remove .omot/run.json; re-run with --yes to confirm.",
+    );
+    await access(path.join(root, ".omot/run.json"));
+  });
+
+  it("asks before cleaning in a TTY and leaves everything untouched when declined", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--branch", "bench/cancel", "--yes"], {
+      cwd: root,
+    });
+    const result = await invoke(["bench", "clean", "--delete-branch"], {
+      cwd: root,
+      isTTY: true,
+    });
+    expect(result.code).toBe(1);
+    expect(result.confirms).toEqual([
+      "Remove .omot/run.json and delete branch bench/cancel?",
+    ]);
+    expect(result.stderr).toContain("Cancelled.");
+    await access(path.join(root, ".omot/run.json"));
+    expect(await git(root, ["branch", "--show-current"])).toBe("bench/cancel");
+  });
+
+  it("removes an invalid run file without using branch metadata", async () => {
+    const root = await repo(cleanBranchFixture);
+    await mkdir(path.join(root, ".omot"));
+    await writeFile(path.join(root, ".omot/run.json"), "{ invalid");
+    const result = await invoke(["bench", "clean", "--yes"], { cwd: root });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Removed .omot/run.json.");
+    await expect(access(path.join(root, ".omot"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("refuses to clean when .omot is a symbolic link", async () => {
+    const root = await repo(cleanBranchFixture);
+    const target = path.join(root, "elsewhere");
+    await mkdir(target);
+    await symlink(target, path.join(root, ".omot"));
+    const result = await invoke(["bench", "clean", "--yes"], { cwd: root });
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      ".omot is a symbolic link; refusing to clean it.",
+    );
+  });
+
+  it("restores a detached original commit before deleting the created branch", async () => {
+    const root = await repo(cleanBranchFixture);
+    const original = (await git(root, ["rev-parse", "HEAD"])).trim();
+    await git(root, ["switch", "--detach", original]);
+    await invoke([...start, "--branch", "bench/detached", "--yes"], {
+      cwd: root,
+    });
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(0);
+    expect(await git(root, ["rev-parse", "HEAD"])).toBe(original);
+    expect(await git(root, ["rev-parse", "--abbrev-ref", "HEAD"])).toBe("HEAD");
+    await expect(
+      git(root, ["rev-parse", "--verify", "bench/detached"]),
+    ).rejects.toThrow();
   });
 });

@@ -49,6 +49,13 @@ describe("agent normalization", () => {
 });
 
 describe("run file schema", () => {
+  it("continues to parse run files without optional branch metadata", () => {
+    expect(runFileSchema.parse(run).baseline).not.toHaveProperty("branch");
+    expect(runFileSchema.parse(run).baseline).not.toHaveProperty(
+      "original_branch",
+    );
+  });
+
   it("accepts a verified run and rejects unknown fields", () => {
     const verified = {
       ...run,

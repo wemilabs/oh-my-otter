@@ -215,6 +215,28 @@ describe("fix flow", () => {
     );
   });
 
+  it("applies scan fixes when a repository only has test-specific scripts", async () => {
+    const root = await tempDir();
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({
+        name: "test-only",
+        private: true,
+        scripts: { "test:unit": "vitest run" },
+      }),
+    );
+    const result = await invoke(["scan", root, "--fix", "--yes", "--json"]);
+    const report = JSON.parse(result.stdout) as {
+      checks: Array<{ id: string; status: string }>;
+      fixes: { applied: boolean };
+    };
+    expect(result.code).toBe(0);
+    expect(
+      report.checks.find((check) => check.id === "test-script")?.status,
+    ).toBe("warn");
+    expect(report.fixes.applied).toBe(true);
+  });
+
   it("reports JSON fix plans as unapplied without --yes", async () => {
     const root = await bareCopy();
     const result = await invoke(["scan", root, "--fix", "--json"]);

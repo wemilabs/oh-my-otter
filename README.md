@@ -45,8 +45,9 @@ Use `--run` to execute the repository's test script. `--fix` previews create-onl
 ```sh
 omot bench list [--json]
 omot bench show <id> [--param key=value ...] [--json]
-omot bench start <id> [path] [--param key=value ...] [--agent <name>] [--agent-version <version>] [--model <name>] [--skip-baseline-scripts] [--yes]
+omot bench start <id> [path] [--param key=value ...] [--agent <name>] [--agent-version <version>] [--model <name>] [--branch <name>] [--skip-baseline-scripts] [--yes]
 omot bench verify [path] [--corrections <n>] [--minutes <n>] [--agent <name>] [--agent-version <version>] [--model <name>] [--json]
+omot bench clean [path] [--delete-branch] [--yes]
 ```
 
 | Task               | What the agent does                                | Params             |

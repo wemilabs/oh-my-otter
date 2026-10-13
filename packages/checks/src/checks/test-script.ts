@@ -15,14 +15,18 @@ export default defineCheck({
       };
     }
     const scripts = packageScripts(ctx);
-    const testScripts = Object.keys(scripts)
-      .filter((name) => name.startsWith("test:"))
-      .sort();
-    if (!scripts.test && testScripts.length > 0) {
+    const testScripts = Object.keys(scripts).filter((name) =>
+      /^test[:_-]/.test(name),
+    );
+    if (testScripts.length > 0) {
+      const first = testScripts[0]!;
+      const prefix = scripts.test
+        ? "No usable scripts.test"
+        : "No scripts.test";
       return {
         status: "warn",
-        detail: `No scripts.test; found ${testScripts.join(", ")}.`,
-        fix: "Add a scripts.test that runs the main test suite.",
+        detail: `${prefix}, but found ${testScripts.join(", ")}; agents and CI usually run the test script.`,
+        fix: `Add a "test" script that runs them, for example "test": "npm run ${first}".`,
       };
     }
     return {
