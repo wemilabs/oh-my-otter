@@ -1,5 +1,27 @@
 # oh-my-otter
 
+## 0.5.0
+
+### Minor Changes
+
+- 6c4110b: Add branch-aware benchmark runs and cleanup, plus clearer test-script guidance and verification follow-up hints.
+- 0f8e5f2: Add Biome support to the lint benchmark and mutation testing to the unit-test benchmark. The expanded plus/minus operator detection also changes mutation selection for `fix-failing-test`.
+
+### Patch Changes
+
+- Updated dependencies [6c4110b]
+  - @oh-my-otter/checks@0.5.0
+  - @oh-my-otter/core@0.5.0
+
+## 0.4.1
+
+### Patch Changes
+
+- 0e39a8b: The dep-patch-bump benchmark now checks that the bumped version is installed in node_modules; a bump that was never installed is partial instead of passing.
+- 16b69df: Harden dependency bump verification for workspace lock entries, legacy pnpm specifiers, and npm shrinkwrap precedence.
+- @oh-my-otter/checks@0.4.1
+  - @oh-my-otter/core@0.4.1
+
 ## 0.4.0
 
 ### Minor Changes

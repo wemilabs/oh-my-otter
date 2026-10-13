@@ -1,6 +1,6 @@
 {
   "name": "@oh-my-otter/checks",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Built-in repository readiness checks for Oh My Otter",
   "license": "MIT",
   "type": "module",
