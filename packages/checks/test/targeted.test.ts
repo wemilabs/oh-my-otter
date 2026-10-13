@@ -152,6 +152,36 @@ describe("targeted checks", () => {
     });
   });
 
+  it("names the documented example in a passing detail", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(path.join(root, "src/index.js"), "process.env.API_KEY;");
+      await writeFile(path.join(root, ".env.example"), "API_KEY=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("pass");
+      expect(result.detail).toBe(
+        "Found .env.example for environment variables.",
+      );
+    });
+  });
+
+  it("names the visible example in a passing detail when another is ignored", async () => {
+    await withTempRepo(async (root) => {
+      await mkdir(path.join(root, "src"));
+      await writeFile(path.join(root, "src/index.js"), "process.env.API_KEY;");
+      await writeFile(path.join(root, ".gitignore"), ".env.example\n");
+      await writeFile(path.join(root, ".env.example"), "OTHER_KEY=\n");
+      await writeFile(path.join(root, ".env.sample"), "API_KEY=\n");
+
+      const result = await envExample.run(createCheckContext(root));
+      expect(result.status).toBe("pass");
+      expect(result.detail).toBe(
+        "Found .env.sample for environment variables.",
+      );
+    });
+  });
+
   it("uses the first ignored example name in its remediation", async () => {
     await withTempRepo(async (root) => {
       await mkdir(path.join(root, "src"));

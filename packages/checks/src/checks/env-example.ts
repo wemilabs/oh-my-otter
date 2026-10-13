@@ -539,7 +539,7 @@ export default defineCheck({
       }
       return {
         status: "pass",
-        detail: `Found ${exampleFiles[0]} for environment variables.`,
+        detail: `Found ${firstDocumentedFile} for environment variables.`,
       };
     }
     return {
