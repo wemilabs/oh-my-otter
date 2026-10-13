@@ -25,16 +25,18 @@ function GitHubButton({ stars }: { stars: number | null }) {
     <a
       href={REPO_URL}
       aria-label={stars === null ? undefined : starsAccessibleLabel(stars)}
-      className="hidden min-h-11 items-center rounded-md border border-border bg-card px-3.5 text-sm font-medium transition-colors hover:bg-accent sm:inline-flex gap-2"
+      className="group mx-1 hidden min-h-11 items-center sm:inline-flex"
     >
-      <GitHubMark />
-      {stars === null ? (
-        <span>GitHub</span>
-      ) : (
-        <span className="tabular-nums">
-          <span aria-hidden="true">★</span> {formatStarCount(stars)}
-        </span>
-      )}
+      <span className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3.5 text-sm font-medium transition-colors group-hover:bg-accent">
+        <GitHubMark />
+        {stars === null ? (
+          <span>GitHub</span>
+        ) : (
+          <span className="tabular-nums">
+            <span aria-hidden="true">★</span> {formatStarCount(stars)}
+          </span>
+        )}
+      </span>
     </a>
   );
 }
