@@ -1,3 +1,5 @@
+import path from "node:path";
+import picomatch from "picomatch";
 import { gradeFor, type Check, type Grade } from "@oh-my-otter/core";
 import { builtinChecks } from "@oh-my-otter/checks";
 
@@ -17,6 +19,9 @@ const BARE_FILES = new Map([
   ["tsconfig.json", "{}"],
   ["src/index.ts", "export const url = process.env.API_URL;"],
 ]);
+const PROBE_IGNORES = ["**/node_modules/**", "**/.git/**"].map((pattern) =>
+  picomatch(pattern, { dot: true }),
+);
 
 function makeProbe(files: Map<string, string>): Parameters<Check["run"]>[0] {
   const packageJson = files.get("package.json");
@@ -24,7 +29,22 @@ function makeProbe(files: Map<string, string>): Parameters<Check["run"]>[0] {
     root: "/probe",
     exists: async (path) => files.has(path),
     read: async (path) => files.get(path) ?? null,
-    glob: async () => [...files.keys()],
+    glob: async (pattern) => {
+      if (
+        path.isAbsolute(pattern) ||
+        /^[A-Za-z]:[\\/]/.test(pattern) ||
+        pattern.startsWith("\\\\") ||
+        pattern.replace(/\\/g, "/").split("/").includes("..")
+      ) {
+        throw new Error(`Path escapes repository root: ${pattern}`);
+      }
+      const matches = picomatch(pattern, { dot: true });
+      return [...files.keys()]
+        .map((file) => file.split(path.sep).join("/"))
+        .filter((file) => matches(file))
+        .filter((file) => !PROBE_IGNORES.some((ignore) => ignore(file)))
+        .sort();
+    },
     packageJson: packageJson ? JSON.parse(packageJson) : null,
     run: async () => ({ code: 1 }),
   };

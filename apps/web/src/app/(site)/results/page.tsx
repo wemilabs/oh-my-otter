@@ -117,30 +117,35 @@ async function ResultsStats() {
         ))}
       </div>
 
-      <section aria-labelledby="charts-heading" className="space-y-5">
-        <h3 id="charts-heading" className="text-h3 font-medium tracking-tight">
-          Charts
-        </h3>
-        <div className="grid gap-5 lg:grid-cols-2">
-          <SuccessRateChart
-            caption="Pass rate by readiness band"
-            groups={aggregate.by_band}
-          />
-          <SuccessRateChart
-            caption="Pass rate by task"
-            groups={aggregate.by_task}
-          />
-        </div>
-        <div className="grid gap-5 lg:grid-cols-2">
-          {BUILTIN_TASK_MANIFESTS.map((task) => (
-            <OutcomeChart
-              key={task.id}
-              caption={<TaskChartCaption id={task.id} title={task.title} />}
-              groups={aggregate.by_task_agent[task.id] ?? []}
+      {!empty ? (
+        <section aria-labelledby="charts-heading" className="space-y-5">
+          <h3
+            id="charts-heading"
+            className="text-h3 font-medium tracking-tight"
+          >
+            Charts
+          </h3>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <SuccessRateChart
+              caption="Pass rate by readiness band"
+              groups={aggregate.by_band}
             />
-          ))}
-        </div>
-      </section>
+            <SuccessRateChart
+              caption="Pass rate by task"
+              groups={aggregate.by_task}
+            />
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            {BUILTIN_TASK_MANIFESTS.map((task) => (
+              <OutcomeChart
+                key={task.id}
+                caption={<TaskChartCaption id={task.id} title={task.title} />}
+                groups={aggregate.by_task_agent[task.id] ?? []}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {aggregate.excluded_other_versions > 0 ? (
         <p className="text-sm text-muted-foreground">

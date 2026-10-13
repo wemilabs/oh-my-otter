@@ -25,6 +25,12 @@ test("empty results explain the empty dataset without chart bars or errors", asy
   page.on("pageerror", (error) => pageErrors.push(error));
   await page.goto(`${baseURL}/results`);
   await expect(page.getByText("No reports yet — be the first")).toBeVisible();
+  await expect(page.locator("#charts-heading")).toHaveCount(0);
+  await expect(
+    page.locator('section[aria-labelledby="charts-heading"]'),
+  ).toHaveCount(0);
+  await expect(page.locator("[data-testid=success-rate-chart]")).toHaveCount(0);
+  await expect(page.locator("[data-testid=outcome-chart]")).toHaveCount(0);
   await expect(page.locator(".recharts-bar-rectangle path")).toHaveCount(0);
   await expect(pageErrors).toEqual([]);
 });

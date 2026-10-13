@@ -62,6 +62,63 @@ describe("buildCheckCatalog", () => {
     await buildCheckCatalog([check]);
     expect(code).toBe(1);
   });
+
+  it("uses matching Markdown files to derive guidance from the empty probe", async () => {
+    const probes: Array<{ source: string; matches: string[] }> = [];
+    const check: Check = {
+      id: "markdown-glob",
+      title: "Find Markdown files",
+      category: "docs",
+      weight: 1,
+      why: "A Markdown file documents the repository.",
+      async run(ctx) {
+        const matches = await ctx.glob("**/*.md");
+        const source = ctx.packageJson ? "bare" : "empty";
+        probes.push({ source, matches });
+        return matches.length === 0
+          ? {
+              status: "fail",
+              fix: `Add a Markdown file for the ${source} probe.`,
+            }
+          : { status: "pass" };
+      },
+    };
+
+    const [entry] = await buildCheckCatalog([check]);
+    expect(entry?.howToPass).toBe("Add a Markdown file for the empty probe.");
+    expect(probes).toEqual([
+      { source: "empty", matches: [] },
+      { source: "bare", matches: [] },
+    ]);
+  });
+
+  it("matches probe paths against the requested glob", async () => {
+    const probes: Array<{ source: string; matches: string[] }> = [];
+    const check: Check = {
+      id: "typescript-glob",
+      title: "Find TypeScript files",
+      category: "verification",
+      weight: 1,
+      why: "The source file should match a TypeScript glob.",
+      async run(ctx) {
+        const matches = await ctx.glob("src/**/*.ts");
+        probes.push({
+          source: ctx.packageJson ? "bare" : "empty",
+          matches,
+        });
+        return matches.includes("src/index.ts")
+          ? { status: "pass" }
+          : { status: "fail", fix: "Restore src/index.ts." };
+      },
+    };
+
+    const [entry] = await buildCheckCatalog([check]);
+    expect(entry?.howToPass).toBe("Restore src/index.ts.");
+    expect(probes).toEqual([
+      { source: "empty", matches: [] },
+      { source: "bare", matches: ["src/index.ts"] },
+    ]);
+  });
 });
 
 describe("gradeBands", () => {
