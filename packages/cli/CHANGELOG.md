@@ -1,5 +1,18 @@
 # oh-my-otter
 
+## 0.4.0
+
+### Minor Changes
+
+- 438eaa0: Add `omot report`: preview and submit an anonymous benchmark result via a prefilled GitHub issue (nothing is sent without confirmation; `--dry-run` prints the payload only). `omot bench start` now records the repo's readiness score and stack at start so reports reflect the baseline.
+
+### Patch Changes
+
+- e74336d: Harden benchmark records, verifier output, installation docs, report ingestion, and website navigation.
+- Updated dependencies [e74336d]
+  - @oh-my-otter/checks@0.4.0
+  - @oh-my-otter/core@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes
