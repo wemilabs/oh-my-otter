@@ -1,18 +1,14 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { isLockfile } from "../../lib/files";
+import { isLockfile, lockfileNames } from "../../lib/files";
 import {
   changedScripts,
   checkScript,
   scriptChangeReason,
 } from "../../lib/scripts";
 import { defineTask } from "../../task";
-import {
-  TaskPreconditionError,
-  type ChangedFile,
-  type RepoContext,
-} from "../../types";
+import { TaskPreconditionError, type RepoContext } from "../../types";
 import manifest from "./task.json";
 import prompt from "./prompt.md";
 
@@ -109,25 +105,30 @@ function dirOf(file: string): string {
   return index === -1 ? "" : file.slice(0, index);
 }
 
-/** Whether `dir` equals `ancestor` or sits inside it ("" is the repo root). */
-function isWithin(dir: string, ancestor: string): boolean {
-  return ancestor === "" || dir === ancestor || dir.startsWith(`${ancestor}/`);
-}
+const npmLockPattern = /(?:^|\/)(?:package-lock|npm-shrinkwrap)\.json$/;
 
-/** The changed lockfile closest to `dir`, among those at or above it. */
-function nearestLockfile(
-  lockfiles: readonly ChangedFile[],
+/**
+ * The lockfile that governs `dir`: the nearest existing one walking up to the
+ * repo root. When one directory has several, a changed one wins.
+ */
+async function findLockfile(
+  ctx: RepoContext,
   dir: string,
-): ChangedFile | undefined {
-  let best: ChangedFile | undefined;
-  for (const file of lockfiles) {
-    const lockDir = dirOf(file.path);
-    if (!isWithin(dir, lockDir)) continue;
-    if (best === undefined || lockDir.length > dirOf(best.path).length) {
-      best = file;
+  changed: ReadonlySet<string>,
+): Promise<string | null> {
+  let current = dir;
+  while (true) {
+    let fallback: string | null = null;
+    for (const name of lockfileNames) {
+      const file = current === "" ? name : `${current}/${name}`;
+      if (!(await ctx.exists(file))) continue;
+      if (changed.has(file)) return file;
+      fallback ??= file;
     }
+    if (fallback !== null) return fallback;
+    if (current === "") return null;
+    current = dirOf(current);
   }
-  return best;
 }
 
 /**
@@ -255,7 +256,7 @@ export default defineTask<Data>({
         lockfileUpdated = true;
         continue;
       }
-      if (/(?:^|\/)(?:package-lock|npm-shrinkwrap)\.json$/.test(file.path)) {
+      if (npmLockPattern.test(file.path)) {
         const before = npmLockVersions(
           parseJson(await ctx.readBaseline(file.path)),
           pkg,
@@ -343,38 +344,52 @@ export default defineTask<Data>({
           `Yarn Plug'n'Play install; installed ${pkg} version not checked.`,
         );
       }
-      for (const file of Object.keys(data.declarations)) {
+      const changedLocks = new Set(lockfiles.map((file) => file.path));
+      for (const [file, declaredSpec] of Object.entries(data.declarations)) {
         if (pnp) break;
         const dir = dirOf(file);
-        const lock = nearestLockfile(lockfiles, dir);
+        const specChanged =
+          specFor(dependencies(parseJson(await ctx.read(file))), pkg) !==
+          declaredSpec;
+        const lock = await findLockfile(ctx, dir, changedLocks);
+        if (lock !== null && !changedLocks.has(lock)) {
+          // The declaring package's own lockfile was not updated.
+          if (!specChanged) continue;
+          partial = true;
+          installReasons.add(
+            `${file} bumps ${pkg} but its lockfile ${lock} was not updated; the bump was never installed (a clean install may reject it).`,
+          );
+          continue;
+        }
         let expected: string[] | null = null;
-        const installed = await installedPackage(ctx.root, dir, pkg);
-        if (
-          lock !== undefined &&
-          /(?:^|\/)(?:package-lock|npm-shrinkwrap)\.json$/.test(lock.path)
-        ) {
-          const json = parseJson(await ctx.read(lock.path));
-          let version: unknown;
-          if (installed !== null) {
-            const key = path.posix.relative(
-              dirOf(lock.path) || ".",
-              installed.path,
-            );
-            version = (npmLockPackages(json)[key] as { version?: unknown })
+        if (lock !== null && npmLockPattern.test(lock)) {
+          const json = parseJson(await ctx.read(lock));
+          const packages = npmLockPackages(json);
+          // Node-style: the first lockfile entry from the declaring dir up to
+          // the lockfile's dir wins, mirroring how the install resolves.
+          let rel = path.posix.relative(dirOf(lock) || ".", dir || ".");
+          let locked: string | undefined;
+          while (true) {
+            const key =
+              rel === "" ? `node_modules/${pkg}` : `${rel}/node_modules/${pkg}`;
+            const version = (packages[key] as { version?: unknown } | undefined)
               ?.version;
+            if (typeof version === "string" && version !== "") {
+              locked = version;
+              break;
+            }
+            if (rel === "") break;
+            rel = dirOf(rel);
           }
           expected =
-            typeof version === "string" && version !== ""
-              ? [version]
-              : npmLockVersionList(json, pkg);
-        } else if (lock !== undefined && !lock.path.endsWith(".lockb")) {
-          const before = lockfileVersions(
-            await ctx.readBaseline(lock.path),
-            pkg,
-          );
-          const after = lockfileVersions(await ctx.read(lock.path), pkg);
+            locked === undefined ? npmLockVersionList(json, pkg) : [locked];
+        } else if (lock !== null && !lock.endsWith(".lockb")) {
+          const before = lockfileVersions(await ctx.readBaseline(lock), pkg);
+          const after = lockfileVersions(await ctx.read(lock), pkg);
           const added = after.filter((version) => !before.includes(version));
-          expected = added.length > 0 ? added : after;
+          // The newly added version only applies to workspaces whose spec
+          // changed; untouched ones keep the full locked list.
+          expected = specChanged && added.length > 0 ? added : after;
         }
         if (expected === null || expected.length === 0) {
           installReasons.add(
@@ -382,6 +397,7 @@ export default defineTask<Data>({
           );
           continue;
         }
+        const installed = await installedPackage(ctx.root, dir, pkg);
         if (installed === null) {
           partial = true;
           installReasons.add(

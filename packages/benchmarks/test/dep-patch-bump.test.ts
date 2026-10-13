@@ -374,6 +374,124 @@ describe("dep-patch-bump workspaces", () => {
   });
 });
 
+describe("dep-patch-bump per-workspace lockfiles", () => {
+  const dep = (leftPad: string): string =>
+    `${JSON.stringify({
+      name: "ws",
+      version: "1.0.0",
+      private: true,
+      dependencies: { "left-pad": leftPad },
+    })}\n`;
+  const localLock = (version: string): string =>
+    `${JSON.stringify({
+      name: "ws",
+      lockfileVersion: 3,
+      packages: { "node_modules/left-pad": { version } },
+    })}\n`;
+  const independentBase: Files = {
+    ".gitignore": "node_modules/\n",
+    "package.json": npmPackage({}),
+    "a/package.json": dep("^1.1.0"),
+    "a/package-lock.json": localLock("1.1.0"),
+    "a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.1.0" })}\n`,
+    "b/package.json": dep("^1.1.0"),
+    "b/package-lock.json": localLock("1.1.0"),
+    "b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.1.0" })}\n`,
+  };
+  const independentBump = (leftPad: string): Files => ({
+    "a/package.json": dep(leftPad),
+    "a/package-lock.json": localLock("1.3.0"),
+    "a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.3.0" })}\n`,
+  });
+
+  it("is partial when a sibling project's lockfile was not updated", async () => {
+    const started = await startTask(task, independentBase, params);
+    const result = await verifyTask(task, started, params, {
+      ...independentBump("^1.3.0"),
+      "b/package.json": dep("^1.3.0"),
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "b/package.json bumps left-pad but its lockfile b/package-lock.json was not updated; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("ignores sibling projects whose spec did not change", async () => {
+    const started = await startTask(task, independentBase, params);
+    const result = await verifyTask(
+      task,
+      started,
+      params,
+      independentBump("^1.3.0"),
+    );
+    expect(result.outcome).toBe("pass");
+    expect(result.reasons.join("\n")).not.toContain("b/package-lock.json");
+  });
+
+  it("keeps untouched pnpm workspaces on their own locked version", async () => {
+    const pnpmWorkspaces: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(
+        {},
+        { packageManager: "pnpm@9.15.0", workspaces: ["packages/*"] },
+      ),
+      "pnpm-lock.yaml":
+        "lockfileVersion: '9.0'\n\npackages:\n  left-pad@1.0.0:\n    resolution: {}\n  left-pad@0.9.0:\n    resolution: {}\n",
+      "packages/a/package.json": dep("^1.0.0"),
+      "packages/b/package.json": dep("^0.9.0"),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+      "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "0.9.0" })}\n`,
+    };
+    const started = await startTask(task, pnpmWorkspaces, params);
+    const result = await verifyTask(task, started, params, {
+      "packages/a/package.json": dep("^1.0.1"),
+      "pnpm-lock.yaml":
+        "lockfileVersion: '9.0'\n\npackages:\n  left-pad@1.0.1:\n    resolution: {}\n  left-pad@0.9.0:\n    resolution: {}\n",
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
+    });
+    expect(result.outcome).toBe("pass");
+    expect(result.reasons).toContain(
+      "Installed left-pad 1.0.1 matches the lockfile.",
+    );
+  });
+
+  it("does not let an extraneous install match another workspace's lock entry", async () => {
+    const wsLock = (hoisted: string): string =>
+      `${JSON.stringify({
+        name: "fixture",
+        lockfileVersion: 3,
+        packages: {
+          "packages/a": {},
+          "packages/b": {},
+          "node_modules/left-pad": { version: hoisted },
+          "packages/a/node_modules/left-pad": { version: "1.0.0" },
+        },
+      })}\n`;
+    const extraneousBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(scripts, { workspaces: ["packages/*"] }),
+      "packages/a/package.json": dep("^1.0.0"),
+      "packages/b/package.json": dep("^1.1.0"),
+      "package-lock.json": wsLock("1.1.0"),
+      "node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.1.0" })}\n`,
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+      "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.1.0" })}\n`,
+      "build.mjs": "console.log('built');\n",
+      "test/ok.test.mjs": passingTest,
+    };
+    const started = await startTask(task, extraneousBase, params);
+    const result = await verifyTask(task, started, params, {
+      "packages/b/package.json": dep("^1.3.0"),
+      "package-lock.json": wsLock("1.3.0"),
+      "node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.3.0" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "node_modules has left-pad 1.1.0 but the lockfile says 1.3.0; the bump was never installed (a clean install may reject it).",
+    );
+  });
+});
+
 describe("lockfileVersions", () => {
   it("reads resolved versions from pnpm, yarn, and bun lockfiles", () => {
     const pnpm = `packages:\n  zod@4.1.0:\n    resolution: {}\n  eslint-config-zod@1.0.0:\n  '@x/zod@9.9.9':\n`;
