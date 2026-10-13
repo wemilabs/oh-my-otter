@@ -19,6 +19,7 @@ import {
   parseParams,
   planGitignore,
   removeRunFile,
+  removeStaleRunFileLock,
   readRunFile,
   renderPrompt,
   resolveRepoRoot,
@@ -380,10 +381,19 @@ async function startTask(
     options.branch === undefined
       ? undefined
       : (await runGit(root, ["rev-parse", "--abbrev-ref", "HEAD"])).trim();
+  const startedAt = new Date().toISOString();
   if (options.branch !== undefined) {
     await runGit(root, ["switch", "--quiet", "-c", options.branch]);
   }
   try {
+    if (options.branch !== undefined) {
+      await runGit(root, [
+        "config",
+        "--local",
+        `branch.${options.branch}.omot-run`,
+        startedAt,
+      ]);
+    }
     const baselineScan = await scanBaseline(root);
     io.stderr(
       pc.dim(
@@ -401,6 +411,20 @@ async function startTask(
       log: (text) => io.stderr(pc.dim(`${text}\n`)),
     });
     const data = task.prepare ? await task.prepare(ctx) : undefined;
+    if (
+      task.manifest.id === "fix-failing-test" &&
+      typeof data === "object" &&
+      data !== null &&
+      "branch" in data &&
+      typeof data.branch === "string"
+    ) {
+      await runGit(root, [
+        "config",
+        "--local",
+        `branch.${data.branch}.omot-run`,
+        startedAt,
+      ]);
+    }
     const baselineScripts = await ctx.recordBaseline();
     if (baselineScripts === null) {
       io.stderr(
@@ -423,7 +447,7 @@ async function startTask(
       ...fields,
       baseline: {
         commit,
-        started_at: new Date().toISOString(),
+        started_at: startedAt,
         ...(data === undefined ? {} : { data }),
         ...(options.branch === undefined
           ? {}
@@ -475,6 +499,7 @@ function omotBranch(run: RunFile): {
   original: string;
   commit?: string;
   source: "baseline" | "fix-failing-test";
+  startedAt: string;
 } | null {
   if (
     typeof run.baseline.branch === "string" &&
@@ -485,6 +510,7 @@ function omotBranch(run: RunFile): {
       original: run.baseline.original_branch,
       commit: run.baseline.commit,
       source: "baseline",
+      startedAt: run.baseline.started_at,
     };
   }
   if (
@@ -508,6 +534,7 @@ function omotBranch(run: RunFile): {
       ? { commit: data.original_commit }
       : {}),
     source: "fix-failing-test",
+    startedAt: run.baseline.started_at,
   };
 }
 
@@ -515,18 +542,21 @@ async function isOmotBranch(
   root: string,
   branch: NonNullable<ReturnType<typeof omotBranch>>,
 ): Promise<boolean> {
-  if (branch.source === "fix-failing-test") {
-    return branch.branch.startsWith("omot/fix-failing-test-");
+  if (
+    branch.branch === branch.original ||
+    (branch.source === "fix-failing-test" &&
+      !branch.branch.startsWith("omot/fix-failing-test-"))
+  ) {
+    return false;
   }
-  if (!branch.commit || branch.branch === branch.original) return false;
   try {
-    await runGit(root, [
-      "merge-base",
-      "--is-ancestor",
-      branch.commit,
-      branch.branch,
+    const marker = await runGit(root, [
+      "config",
+      "--local",
+      "--get",
+      `branch.${branch.branch}.omot-run`,
     ]);
-    return true;
+    return marker.trim() === branch.startedAt;
   } catch {
     return false;
   }
@@ -552,25 +582,30 @@ async function cleanRun(
     await access(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      try {
-        await access(lock);
-      } catch (lockError) {
-        if ((lockError as NodeJS.ErrnoException).code !== "ENOENT") {
-          throw lockError;
+      const removedLock = await removeStaleRunFileLock(root);
+      if (!removedLock) {
+        try {
+          await access(lock);
+          io.stdout(
+            "Nothing to clean; a bench command holds .omot/run.json.lock.\n",
+          );
+          return 0;
+        } catch (lockError) {
+          if ((lockError as NodeJS.ErrnoException).code !== "ENOENT") {
+            throw lockError;
+          }
         }
-        io.stdout("Nothing to clean.\n");
-        return 0;
-      }
-      await removeRunFile(root);
-      try {
-        await rmdir(directory);
-      } catch (rmdirError) {
-        if (
-          !["ENOENT", "ENOTEMPTY"].includes(
-            (rmdirError as NodeJS.ErrnoException).code ?? "",
-          )
-        ) {
-          throw rmdirError;
+      } else {
+        try {
+          await rmdir(directory);
+        } catch (rmdirError) {
+          if (
+            !["ENOENT", "ENOTEMPTY"].includes(
+              (rmdirError as NodeJS.ErrnoException).code ?? "",
+            )
+          ) {
+            throw rmdirError;
+          }
         }
       }
       io.stdout("Nothing to clean.\n");

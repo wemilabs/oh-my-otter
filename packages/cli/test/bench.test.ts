@@ -143,6 +143,15 @@ import assert from "node:assert/strict";
 import { add } from "../src/math.mjs";
 test("add", () => assert.equal(add(1, 2), 3));
 `;
+const fixFailingFixture = {
+  ...cleanBranchFixture,
+  "src/math.mjs": "export function add(a, b) { return a >= b; }\n",
+  "test/add.test.mjs": `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { add } from "../src/math.mjs";
+test("add", () => assert.equal(add(2, 2), true));
+`,
+};
 const start = [
   "bench",
   "start",
@@ -696,9 +705,18 @@ describe("bench branches and clean", () => {
     expect(result.code).toBe(0);
     expect(result.stderr).toContain(" on branch bench/work ");
     expect(await git(root, ["branch", "--show-current"])).toBe("bench/work");
-    expect(await runFile(root)).toMatchObject({
+    const run = await runFile(root);
+    expect(run).toMatchObject({
       baseline: { branch: "bench/work", original_branch: "main" },
     });
+    expect(
+      await git(root, [
+        "config",
+        "--local",
+        "--get",
+        "branch.bench/work.omot-run",
+      ]),
+    ).toBe(run.baseline.started_at);
   });
 
   it("restores the original branch and deletes the new branch after a precondition failure", async () => {
@@ -722,6 +740,9 @@ describe("bench branches and clean", () => {
     expect(await git(root, ["branch", "--show-current"])).toBe("main");
     await expect(
       git(root, ["rev-parse", "--verify", "bench/failed"]),
+    ).rejects.toThrow();
+    await expect(
+      git(root, ["config", "--local", "--get", "branch.bench/failed.omot-run"]),
     ).rejects.toThrow();
   });
 
@@ -782,6 +803,21 @@ describe("bench branches and clean", () => {
     });
   });
 
+  it("leaves a fresh orphaned run lock untouched", async () => {
+    const root = await repo(cleanBranchFixture);
+    await mkdir(path.join(root, ".omot"));
+    const lock = path.join(root, ".omot/run.json.lock");
+    await writeFile(lock, "active");
+
+    const result = await invoke(["bench", "clean"], { cwd: root });
+    expect(result).toMatchObject({
+      code: 0,
+      stdout: "Nothing to clean; a bench command holds .omot/run.json.lock.\n",
+    });
+    expect(await readFile(lock, "utf8")).toBe("active");
+    await access(path.join(root, ".omot"));
+  });
+
   it("removes the run and lock, removes an empty .omot, and prints the kept-branch hint", async () => {
     const root = await repo(cleanBranchFixture);
     await invoke([...start, "--branch", "bench/kept", "--yes"], { cwd: root });
@@ -823,6 +859,9 @@ describe("bench branches and clean", () => {
       git(root, ["rev-parse", "--verify", "bench/delete"]),
     ).rejects.toThrow();
     await expect(
+      git(root, ["config", "--local", "--get", "branch.bench/delete.omot-run"]),
+    ).rejects.toThrow();
+    await expect(
       access(path.join(root, ".omot/run.json")),
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -858,6 +897,54 @@ describe("bench branches and clean", () => {
     expect(await git(root, ["branch", "--show-current"])).toBe("main");
     await expect(
       git(root, ["rev-parse", "--verify", "omot/fix-failing-test-test"]),
+    ).rejects.toThrow();
+    await expect(
+      git(root, [
+        "config",
+        "--local",
+        "--get",
+        "branch.omot/fix-failing-test-test.omot-run",
+      ]),
+    ).rejects.toThrow();
+  });
+
+  it("marks and deletes a branch created by fix-failing-test", async () => {
+    const root = await repo(fixFailingFixture);
+    const result = await invoke(
+      [
+        "bench",
+        "start",
+        "fix-failing-test",
+        "--param",
+        "file=src/math.mjs",
+        "--yes",
+      ],
+      { cwd: root },
+    );
+    expect(result.code, result.stderr).toBe(0);
+    const run = await runFile(root);
+    const branch = (run.baseline.data as { branch: string }).branch;
+    expect(branch).toMatch(/^omot\/fix-failing-test-/);
+    expect(
+      await git(root, [
+        "config",
+        "--local",
+        "--get",
+        `branch.${branch}.omot-run`,
+      ]),
+    ).toBe(run.baseline.started_at);
+
+    const cleaned = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(cleaned.code).toBe(0);
+    expect(await git(root, ["branch", "--show-current"])).toBe("main");
+    await expect(
+      git(root, ["rev-parse", "--verify", branch]),
+    ).rejects.toThrow();
+    await expect(
+      git(root, ["config", "--local", "--get", `branch.${branch}.omot-run`]),
     ).rejects.toThrow();
   });
 
@@ -953,6 +1040,39 @@ describe("bench branches and clean", () => {
     await access(path.join(root, ".omot/run.json"));
     expect(await git(root, ["branch", "--show-current"])).toBe("bench/forged");
     expect(await git(root, ["branch", "--list", "main"])).toContain("main");
+  });
+
+  it("refuses a forged descendant branch without an ownership marker", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--branch", "bench/created", "--yes"], {
+      cwd: root,
+    });
+    const run = await runFile(root);
+    await writeFile(path.join(root, "descendant.txt"), "descendant\n");
+    await git(root, ["add", "descendant.txt"]);
+    await git(root, ["commit", "-m", "descendant commit"]);
+    await git(root, ["switch", "--quiet", "-c", "bench/descendant"]);
+    run.baseline.branch = "bench/descendant";
+    await writeFile(
+      path.join(root, ".omot/run.json"),
+      `${JSON.stringify(run, null, 2)}\n`,
+    );
+
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Refusing to delete bench/descendant: it is not the branch omot created for this run.",
+    );
+    await access(path.join(root, ".omot/run.json"));
+    expect(await git(root, ["branch", "--show-current"])).toBe(
+      "bench/descendant",
+    );
+    expect(
+      await git(root, ["merge-base", run.baseline.commit, "bench/descendant"]),
+    ).toBe(run.baseline.commit);
   });
 
   it("does not print a kept-branch hint for untrusted branch metadata", async () => {
