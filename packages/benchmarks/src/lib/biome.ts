@@ -69,7 +69,7 @@ export function parseBiomeGithub(
   const seen = new Set<string>();
   const fatalFiles = new Set<string>();
   for (const line of workflowLines) {
-    const match = /^::(error|warning|notice)\s+(.+?)::/.exec(line);
+    const match = /^::(error|warning|notice)\s+(.+?)::(.*)$/.exec(line);
     if (!match) continue;
     const properties: Record<string, string> = {};
     for (const item of match[2]!.split(",")) {
@@ -87,6 +87,9 @@ export function parseBiomeGithub(
         fatal += 1;
         if (properties.file) {
           fatalFiles.add(relativeFile(properties.file, root));
+        } else {
+          const message = (match[3] ?? "").trim();
+          fatalFiles.add(`(no file) ${properties.title ?? ""}: ${message}`);
         }
       }
       continue;
