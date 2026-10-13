@@ -805,6 +805,10 @@ describe("SITE_URL", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.comment).toContain(`${SITE_URL}/results`);
+      // The stored line is recorded verbatim, so the comment pins what the
+      // dataset got even if the issue body is edited later.
+      expect(result.comment).toContain(`\`\`\`json\n${result.line}\n\`\`\``);
+      expect(result.comment).not.toContain("SomeoneElse");
     }
   });
 });
