@@ -24,8 +24,11 @@ Each task page lists its parameters and preconditions. `fix-failing-test` needs 
 ## 2. Start the run
 
 ```sh
-npx oh-my-otter bench start fix-failing-test --param file=src/lib/math.ts --agent claude-code --model claude-sonnet-4-5
-npx oh-my-otter bench start dep-patch-bump --param package=zod --agent codex --model gpt-5 --branch bench/zod
+npx oh-my-otter bench start fix-failing-test \
+  --param file=src/lib/math.ts --agent claude-code --model claude-sonnet-4-5
+
+npx oh-my-otter bench start dep-patch-bump \
+  --param package=zod --agent codex --model gpt-5 --branch bench/zod
 ```
 
 `start` records a baseline in `.omot/run.json` and prints the prompt. `--agent` and `--model` are optional free-form names stored as slugs; `--agent-version <version>` is optional too. `--branch <name>` creates and switches to a new branch for the run; `fix-failing-test` creates its own branch and does not accept it. Pass `--yes` to confirm the `.gitignore` and branch changes without prompting.
