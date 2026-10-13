@@ -27,21 +27,17 @@ export default function OpengraphImage() {
           fontWeight: 600,
         }}
       >
-        <div
-          style={{
-            width: 48,
-            height: 48,
-            borderRadius: 14,
-            background: "rgb(25 25 25)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "rgb(252 252 252)",
-            fontSize: 30,
-          }}
-        >
-          ~
-        </div>
+        <svg width="48" height="48" viewBox="0 0 24 24">
+          <ellipse cx="12" cy="13.4" rx="10.4" ry="6.9" fill="rgb(25 25 25)" />
+          <circle cx="3.6" cy="9.4" r="1.9" fill="rgb(25 25 25)" />
+          <circle cx="20.4" cy="9.4" r="1.9" fill="rgb(25 25 25)" />
+          <circle cx="7.9" cy="11.6" r="1.5" fill="rgb(252 252 252)" />
+          <circle cx="16.1" cy="11.6" r="1.5" fill="rgb(252 252 252)" />
+          <path
+            d="M9.6 14.6c0-1 1.1-1.5 2.4-1.5s2.4.5 2.4 1.5c0 1.1-1.3 2.2-2.4 2.2s-2.4-1.1-2.4-2.2z"
+            fill="rgb(252 252 252)"
+          />
+        </svg>
         Oh My Otter
       </div>
       <div
