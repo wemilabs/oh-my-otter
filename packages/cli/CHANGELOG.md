@@ -1,5 +1,13 @@
 # oh-my-otter
 
+## 0.5.1
+
+### Patch Changes
+
+- 452f7ab: Mention Droid in the CLI help text and package keywords.
+- @oh-my-otter/checks@0.5.1
+  - @oh-my-otter/core@0.5.1
+
 ## 0.5.0
 
 ### Minor Changes
