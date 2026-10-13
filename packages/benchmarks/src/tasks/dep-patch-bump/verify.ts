@@ -329,11 +329,14 @@ function pnpmDepEntry(
   }
   let found: DepEntry | undefined;
   let specifier: string | undefined;
+  let childIndent: number | undefined;
   for (let i = start; i < end; i += 1) {
     const line = lines[i] as string;
     if (line.trim() === "") continue;
     const indent = indentOf(line);
+    if (childIndent === undefined) childIndent = indent;
     if (indent <= baseIndent) break;
+    if (indent !== childIndent) continue;
     const entry = yamlKeyValue(line);
     if (entry === null) continue;
     if (entry.key === "specifiers") {
@@ -376,14 +379,12 @@ function pnpmLockedSpec(
   return entry.specifier === undefined ? undefined : unquote(entry.specifier);
 }
 
-/** The version the `${pkg}@${spec}` (or `npm:`) entry resolves in yarn.lock. */
-function yarnLockedVersion(
-  text: string,
+function yarnDescriptorHeader(
+  lines: string[],
   pkg: string,
   spec: string,
-): string | null {
+): number | null {
   const wanted = new Set([`${pkg}@${spec}`, `${pkg}@npm:${spec}`]);
-  const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] as string;
     const trimmed = line.trimEnd();
@@ -395,19 +396,48 @@ function yarnLockedVersion(
       .split(",")
       .map((descriptor) => descriptor.trim());
     if (!descriptors.some((descriptor) => wanted.has(descriptor))) continue;
-    for (let j = i + 1; j < lines.length; j += 1) {
-      const entry = lines[j] as string;
-      if (entry.trim() === "") continue;
-      if (!/^\s/.test(entry)) break;
-      // Handles both `version "1.0.1"` (classic) and `version: 1.0.1`.
-      const version = /^\s+version:?\s+"?([^"\s]+)"?\s*$/.exec(entry);
-      if (version === null) continue;
-      const resolved = lockValue(version[1] as string);
-      return semverStart.test(resolved) ? resolved : null;
-    }
-    return null;
+    return i;
   }
   return null;
+}
+
+function yarnEntryVersion(lines: string[], header: number): string | null {
+  for (let i = header + 1; i < lines.length; i += 1) {
+    const entry = lines[i] as string;
+    if (entry.trim() === "") continue;
+    if (!/^\s/.test(entry)) break;
+    // Handles both `version "1.0.1"` (classic) and `version: 1.0.1`.
+    const version = /^\s+version:?\s+"?([^"\s]+)"?\s*$/.exec(entry);
+    if (version !== null) return version[1] as string;
+  }
+  return null;
+}
+
+/** The version the `${pkg}@${spec}` (or `npm:`) entry resolves in yarn.lock. */
+function yarnLockedVersion(
+  text: string,
+  pkg: string,
+  spec: string,
+): string | null {
+  const lines = text.split(/\r?\n/);
+  const header = yarnDescriptorHeader(lines, pkg, spec);
+  if (header === null) return null;
+  const version = yarnEntryVersion(lines, header);
+  if (version === null) return null;
+  const resolved = lockValue(version);
+  return semverStart.test(resolved) ? resolved : null;
+}
+
+function yarnLockedSpec(
+  text: string,
+  pkg: string,
+  spec: string,
+): string | null {
+  const lines = text.split(/\r?\n/);
+  const header = yarnDescriptorHeader(lines, pkg, spec);
+  return header !== null && yarnEntryVersion(lines, header) !== null
+    ? spec
+    : null;
 }
 
 /** Parses a bun.lock (JSONC with trailing commas) into its two maps. */
@@ -525,10 +555,12 @@ function lockedSpec(
   text: string,
   importer: string,
   pkg: string,
+  spec: string,
 ): string | null | undefined {
   const name = lockPath.split("/").at(-1) ?? "";
   if (name === "pnpm-lock.yaml") return pnpmLockedSpec(text, importer, pkg);
   if (name === "bun.lock") return bunLockedSpec(text, importer, pkg);
+  if (name === "yarn.lock") return yarnLockedSpec(text, pkg, spec);
   if (npmLockPattern.test(lockPath)) {
     return npmLockedSpec(
       parseJson(text),
@@ -714,19 +746,22 @@ export default defineTask<Data>({
           const importer =
             path.posix.relative(dirOf(lock) || ".", dir || ".") || ".";
           const lockText = await ctx.read(lock);
-          const recorded =
-            lock.split("/").at(-1) === "yarn.lock"
-              ? yarnLockedVersion(lockText ?? "", pkg, currentSpec) === null
-                ? null
-                : undefined
-              : lockedSpec(lock, lockText ?? "", importer, pkg);
+          const recorded = lockedSpec(
+            lock,
+            lockText ?? "",
+            importer,
+            pkg,
+            currentSpec ?? declaredSpec,
+          );
           if (
             recorded === null ||
             (typeof recorded === "string" && recorded !== currentSpec)
           ) {
             partial = true;
             installReasons.add(
-              `${file} declares ${pkg} ${currentSpec} but ${lock} still records ${recorded ?? "no entry"} for it; the bump was never installed (a clean install may reject it).`,
+              recorded === null && lock.endsWith("pnpm-lock.yaml")
+                ? `${lock} has no ${pkg} entry reachable from ${dir === "" ? "the repo root" : dir}; the bump was never installed (a clean install may reject it).`
+                : `${file} declares ${pkg} ${currentSpec} but ${lock} still records ${recorded ?? "no entry"} for it; the bump was never installed (a clean install may reject it).`,
             );
             continue;
           }
@@ -767,7 +802,13 @@ export default defineTask<Data>({
           const text = await ctx.read(lock);
           const importer =
             path.posix.relative(dirOf(lock) || ".", dir || ".") || ".";
-          const recordedSpec = lockedSpec(lock, text ?? "", importer, pkg);
+          const recordedSpec = lockedSpec(
+            lock,
+            text ?? "",
+            importer,
+            pkg,
+            currentSpec ?? declaredSpec,
+          );
           if (recordedSpec === null) {
             partial = true;
             installReasons.add(

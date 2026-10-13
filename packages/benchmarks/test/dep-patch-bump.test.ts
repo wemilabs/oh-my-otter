@@ -621,6 +621,57 @@ packages:
     );
   });
 
+  it("does not use a transitive pnpm dependency as the root lock entry", async () => {
+    const zodParams = { package: "zod" };
+    const pnpmBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(scripts, {
+        packageManager: "pnpm@5.18.0",
+        dependencies: { zod: "^4.6.5" },
+      }),
+      "pnpm-lock.yaml": `lockfileVersion: 5.4
+
+specifiers:
+  zod: ^4.6.5
+
+dependencies:
+  zod: 4.6.5
+
+packages:
+  /zod/4.6.5:
+    resolution: {integrity: old}
+`,
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.5" })}\n`,
+      "build.mjs": "console.log('built');\n",
+      "test/ok.test.mjs": passingTest,
+    };
+    const started = await startTask(task, pnpmBase, zodParams);
+    const result = await verifyTask(task, started, zodParams, {
+      "package.json": npmPackage(scripts, {
+        packageManager: "pnpm@5.18.0",
+        dependencies: { zod: "^4.6.7" },
+      }),
+      "pnpm-lock.yaml": `lockfileVersion: 5.4
+
+specifiers:
+  zod: ^4.6.7
+
+packages:
+  /zod/4.6.7:
+    resolution: {integrity: zod}
+  /foo/1.0.0:
+    resolution: {integrity: foo}
+    dependencies:
+      zod: 4.6.7
+`,
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.7" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "pnpm-lock.yaml has no zod entry reachable from the repo root; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
   it("uses the yarn entry for the declared range, not the whole lockfile", async () => {
     const yarnBase: Files = {
       ".gitignore": "node_modules/\n",
@@ -1047,6 +1098,79 @@ packages:
     expect(result.outcome).toBe("partial");
     expect(result.reasons).toContain(
       "packages/b/package.json declares left-pad ^1.0.1 but yarn.lock still records no entry for it; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("reports a Yarn workspace with a missing unchanged dependency descriptor", async () => {
+    const zodParams = { package: "zod" };
+    const yarnBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(scripts, {
+        packageManager: "yarn@1.22.0",
+        workspaces: ["packages/*"],
+      }),
+      "packages/a/package.json": npmPackage(scripts, {
+        dependencies: { zod: "^4.6.5" },
+      }),
+      "packages/b/package.json": npmPackage(scripts, {
+        dependencies: { zod: "^4.6.5" },
+      }),
+      "yarn.lock": 'zod@^4.6.5:\n  version "4.6.5"\n  resolved "x"\n',
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.5" })}\n`,
+      "build.mjs": "console.log('built');\n",
+      "test/ok.test.mjs": passingTest,
+    };
+    const started = await startTask(task, yarnBase, zodParams);
+    const result = await verifyTask(task, started, zodParams, {
+      "packages/a/package.json": npmPackage(scripts, {
+        dependencies: { zod: "^4.6.7" },
+      }),
+      "yarn.lock": 'zod@^4.6.7:\n  version "4.6.7"\n  resolved "y"\n',
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.7" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "yarn.lock has no zod entry reachable from packages/b; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("reports a Yarn descriptor without a resolved version", async () => {
+    const zodParams = { package: "zod" };
+    const yarnBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(scripts, {
+        packageManager: "yarn@1.22.0",
+        workspaces: ["packages/*"],
+      }),
+      "packages/a/package.json": npmPackage(scripts, {
+        dependencies: { zod: "^4.6.5" },
+      }),
+      "packages/b/package.json": npmPackage(scripts, {
+        dependencies: { zod: "^4.6.5" },
+      }),
+      "yarn.lock": 'zod@^4.6.5:\n  version "4.6.5"\n  resolved "x"\n',
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.5" })}\n`,
+      "build.mjs": "console.log('built');\n",
+      "test/ok.test.mjs": passingTest,
+    };
+    const started = await startTask(task, yarnBase, zodParams);
+    const result = await verifyTask(task, started, zodParams, {
+      "packages/a/package.json": npmPackage(scripts, {
+        dependencies: { zod: "^4.6.7" },
+      }),
+      "yarn.lock": `zod@^4.6.7:
+  version "4.6.7"
+  resolved "y"
+
+zod@^4.6.5:
+  resolution: "zod@npm:4.6.7"
+  integrity: sha512-example
+`,
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.7" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "yarn.lock has no zod entry reachable from packages/b; the bump was never installed (a clean install may reject it).",
     );
   });
 });
