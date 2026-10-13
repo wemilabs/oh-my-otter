@@ -11,7 +11,8 @@
     "claude-code",
     "cursor",
     "codex",
-    "copilot"
+    "copilot",
+    "droid"
   ],
   "license": "MIT",
   "type": "module",

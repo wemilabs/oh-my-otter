@@ -13,7 +13,8 @@
     "claude-code",
     "cursor",
     "codex",
-    "copilot"
+    "copilot",
+    "droid"
   ],
   "files": [
     "dist"

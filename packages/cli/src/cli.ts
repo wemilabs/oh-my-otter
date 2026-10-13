@@ -658,7 +658,7 @@ export async function main(
   program
     .name("omot")
     .description(
-      "Check how ready a repository is for AI coding agents (Devin, Claude Code, Cursor, Codex, Copilot, and others), and benchmark them on standard tasks. scan is the default command, so plain omot runs it.",
+      "Check how ready a repository is for AI coding agents (Devin, Claude Code, Cursor, Codex, Droid, Copilot, and others), and benchmark them on standard tasks. scan is the default command, so plain omot runs it.",
     )
     .version(packageMetadata.version)
     .addHelpText(
