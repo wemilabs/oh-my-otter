@@ -108,6 +108,13 @@ async function ResultsStats() {
         ))}
       </div>
 
+      {aggregate.excluded_other_versions > 0 ? (
+        <p className="text-sm text-muted-foreground">
+          {aggregate.excluded_other_versions} reports from other task versions
+          aren&apos;t counted.
+        </p>
+      ) : null}
+
       <StatsTable
         title="By task"
         groups={aggregate.by_task}

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateReports,
   BUILTIN_TASK_IDS,
+  BUILTIN_TASK_VERSIONS,
   median,
   MIN_SAMPLE,
   summarize,
@@ -17,12 +18,12 @@ const agents: AgentsFile = {
 };
 
 function report(overrides: Partial<ReportPayload> = {}): ReportPayload {
-  return {
+  const base: ReportPayload = {
     schema_version: 1,
     cli_version: "0.3.0",
     scoring_version: 1,
     task_id: "add-unit-test",
-    task_version: 1,
+    task_version: 0,
     agent: "claude-code",
     outcome: "pass",
     human_corrections: 1,
@@ -36,8 +37,13 @@ function report(overrides: Partial<ReportPayload> = {}): ReportPayload {
       framework: "node",
     },
     submitted_on: "2026-10-10",
-    ...overrides,
   };
+  const merged: ReportPayload = { ...base, ...overrides };
+  // Default to the current bundled version for whichever task the report
+  // uses; callers can override task_version explicitly to test exclusion.
+  merged.task_version =
+    overrides.task_version ?? BUILTIN_TASK_VERSIONS[merged.task_id]!;
+  return merged;
 }
 
 describe("median", () => {
@@ -169,6 +175,31 @@ describe("aggregateReports", () => {
     expect(literal.stats.n).toBe(1);
     expect(missing.stats.n).toBe(1);
     expect(missing.label).toBe("not specified");
+  });
+
+  it("excludes reports from other task versions everywhere", () => {
+    const currentVersion = BUILTIN_TASK_VERSIONS["add-unit-test"]!;
+    const reports = [
+      report({ readiness_score: 95 }),
+      report({ readiness_score: 50, task_version: currentVersion - 1 }),
+      report({ readiness_score: 50, task_version: currentVersion + 1 }),
+    ];
+    const aggregate = aggregateReports(reports, agents);
+    expect(aggregate.total).toBe(1);
+    expect(aggregate.excluded_other_versions).toBe(2);
+    expect(aggregate.overall.n).toBe(1);
+    expect(
+      aggregate.by_task.find((g) => g.key === "add-unit-test")!.stats.n,
+    ).toBe(1);
+    expect(aggregate.by_band.find((g) => g.key === "A")!.stats.n).toBe(1);
+    expect(aggregate.by_band.find((g) => g.key === "D")!.stats.n).toBe(0);
+    expect(aggregate.by_agent[0]!.stats.n).toBe(1);
+    expect(aggregate.latest_submitted_on).toBe("2026-10-10");
+    const unaffected = aggregateReports(
+      [report({ readiness_score: 95 })],
+      agents,
+    );
+    expect(unaffected.excluded_other_versions).toBe(0);
   });
 
   it("computes per-task band and agent aggregates", () => {

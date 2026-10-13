@@ -1,5 +1,5 @@
 import { gradeFor, type Grade } from "@oh-my-otter/core";
-import { BUILTIN_TASK_IDS } from "./payload";
+import { BUILTIN_TASK_IDS, BUILTIN_TASK_VERSIONS } from "./payload";
 import type { ReportPayload } from "./payload";
 import { canonicalAgent, OTHER_AGENT, type AgentsFile } from "./agents";
 
@@ -31,6 +31,7 @@ export interface AgentGroup extends Group {
 
 export interface Aggregate {
   total: number;
+  excluded_other_versions: number;
   overall: CellStats;
   by_task: Group[];
   by_band: Group<Grade>[];
@@ -169,24 +170,30 @@ export function aggregateReports(
   reports: readonly ReportPayload[],
   agents: AgentsFile,
 ): Aggregate {
+  // Reports from other task versions measure different material and must not
+  // share cells; only reports matching the current bundled version count.
+  const current = reports.filter(
+    (r) => r.task_version === BUILTIN_TASK_VERSIONS[r.task_id],
+  );
   const byTaskBand: Record<string, Group<Grade>[]> = {};
   const byTaskAgent: Record<string, AgentGroup[]> = {};
   const byTask: Group[] = BUILTIN_TASK_IDS.map((id) => {
-    const taskReports = reports.filter((r) => r.task_id === id);
+    const taskReports = current.filter((r) => r.task_id === id);
     byTaskBand[id] = bandGroups(taskReports);
     byTaskAgent[id] = agentGroups(taskReports, agents);
     return { key: id, label: id, stats: summarize(taskReports) };
   });
   return {
-    total: reports.length,
-    overall: summarize(reports),
+    total: current.length,
+    excluded_other_versions: reports.length - current.length,
+    overall: summarize(current),
     by_task: byTask,
-    by_band: bandGroups(reports),
-    by_agent: agentGroups(reports, agents),
+    by_band: bandGroups(current),
+    by_agent: agentGroups(current, agents),
     by_task_band: byTaskBand,
     by_task_agent: byTaskAgent,
     latest_submitted_on:
-      reports
+      current
         .map((r) => r.submitted_on)
         .sort()
         .at(-1) ?? null,

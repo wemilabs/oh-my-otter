@@ -14,8 +14,9 @@ pnpm --filter @oh-my-otter/web start  # serve the production build
 Data pages (`/`, `/results`, `/tasks`) aggregate reports from
 `reports.ndjson` on the orphan `dataset` branch
 (`https://raw.githubusercontent.com/wemilabs/oh-my-otter/dataset/reports.ndjson`)
-at request time with ISR (revalidated hourly) via `src/lib/dataset-source.ts`
-and `@oh-my-otter/benchmarks/report`. `dataset/agents.json` is read from the
+via `src/lib/dataset.ts`: `loadReports` (in `@oh-my-otter/benchmarks/report`)
+is wrapped by `getDataset`, a Cache Components `'use cache'` function with
+`cacheLife('hours')`. `dataset/agents.json` is read from the
 repo at build time; `/privacy` renders the repo-root `PRIVACY.md`.
 
 To develop against a local copy of the dataset:

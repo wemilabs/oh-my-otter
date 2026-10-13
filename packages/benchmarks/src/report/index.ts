@@ -8,6 +8,7 @@ export type { CheckStatusValue, ScanSummary, Stack } from "./scan";
 export {
   BUILTIN_TASK_IDS,
   BUILTIN_TASK_MANIFESTS,
+  BUILTIN_TASK_VERSIONS,
   buildReportPayload,
   EXAMPLE_REPORT_PAYLOAD,
   REPORT_SCHEMA_VERSION,
