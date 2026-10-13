@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Route } from "next";
 import { ArrowRight, ChevronRight } from "lucide-react";
 import type { Grade } from "@oh-my-otter/core";
 import type { Group } from "@oh-my-otter/benchmarks/report";
@@ -204,7 +205,13 @@ export function Features() {
   );
 }
 
-const STEPS = [
+const STEPS: Array<{
+  n: string;
+  title: string;
+  body: string;
+  code: string[];
+  href: { label: string; url: Route };
+}> = [
   {
     n: "01",
     title: "Scan",
