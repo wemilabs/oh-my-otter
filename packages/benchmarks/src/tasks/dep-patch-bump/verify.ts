@@ -304,7 +304,7 @@ function pnpmDepEntry(
     let keyIndent = -1;
     for (let i = importers + 1; i < lines.length; i += 1) {
       const line = lines[i] as string;
-      if (line.trim() === "") continue;
+      if (line.trim() === "" || line.trim().startsWith("#")) continue;
       const indent = indentOf(line);
       if (indent === 0) break;
       if (keyIndent === -1) keyIndent = indent;
@@ -316,7 +316,11 @@ function pnpmDepEntry(
       baseIndent = indent;
       for (let j = i + 1; j < lines.length; j += 1) {
         const next = lines[j] as string;
-        if (next.trim() !== "" && indentOf(next) <= indent) {
+        if (
+          next.trim() !== "" &&
+          !next.trim().startsWith("#") &&
+          indentOf(next) <= indent
+        ) {
           end = j;
           break;
         }
@@ -332,7 +336,7 @@ function pnpmDepEntry(
   let childIndent: number | undefined;
   for (let i = start; i < end; i += 1) {
     const line = lines[i] as string;
-    if (line.trim() === "") continue;
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
     const indent = indentOf(line);
     if (childIndent === undefined) childIndent = indent;
     if (indent <= baseIndent) break;
@@ -433,11 +437,7 @@ function yarnLockedSpec(
   pkg: string,
   spec: string,
 ): string | null {
-  const lines = text.split(/\r?\n/);
-  const header = yarnDescriptorHeader(lines, pkg, spec);
-  return header !== null && yarnEntryVersion(lines, header) !== null
-    ? spec
-    : null;
+  return yarnLockedVersion(text, pkg, spec) === null ? null : spec;
 }
 
 /** Parses a bun.lock (JSONC with trailing commas) into its two maps. */
