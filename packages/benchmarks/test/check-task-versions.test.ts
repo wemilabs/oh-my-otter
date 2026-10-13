@@ -11,7 +11,7 @@ async function repo() {
     [`${dir}/task.json`]: manifest(1),
     [`${dir}/prompt.md`]: "Do the thing.\n",
     [`${dir}/verify.ts`]: "export default {};\n",
-    "docs/benchmarks/demo.md": "# demo\n",
+    "docs/benchmarks/demo.md": "---\ntitle: demo\n---\n",
   });
   await git(root, ["branch", "base"]);
   return root;

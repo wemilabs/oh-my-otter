@@ -1,13 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
-import { SITE_URL } from "@oh-my-otter/benchmarks/report";
+import { Suspense, type CSSProperties } from "react";
+import {
+  BUILTIN_TASK_MANIFESTS,
+  SITE_URL,
+} from "@oh-my-otter/benchmarks/report";
 import { SectionHeading } from "@/components/landing/sections";
 import {
   AgentTable,
   DataUnavailable,
   StatsTable,
 } from "@/components/results/stats";
+import {
+  OutcomeChart,
+  SuccessRateChart,
+  TaskChartCaption,
+} from "@/components/results/charts";
+import { chartHeightForRows } from "@/lib/charts";
 import { getDataset } from "@/lib/dataset";
 
 export const instant = true;
@@ -108,6 +117,36 @@ async function ResultsStats() {
         ))}
       </div>
 
+      {!empty ? (
+        <section aria-labelledby="charts-heading" className="space-y-5">
+          <h3
+            id="charts-heading"
+            className="text-h3 font-medium tracking-tight"
+          >
+            Charts
+          </h3>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <SuccessRateChart
+              caption="Pass rate by readiness band"
+              groups={aggregate.by_band}
+            />
+            <SuccessRateChart
+              caption="Pass rate by task"
+              groups={aggregate.by_task}
+            />
+          </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            {BUILTIN_TASK_MANIFESTS.map((task) => (
+              <OutcomeChart
+                key={task.id}
+                caption={<TaskChartCaption id={task.id} title={task.title} />}
+                groups={aggregate.by_task_agent[task.id] ?? []}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       {aggregate.excluded_other_versions > 0 ? (
         <p className="text-sm text-muted-foreground">
           {aggregate.excluded_other_versions === 1
@@ -133,12 +172,31 @@ async function ResultsStats() {
   );
 }
 
-function SkeletonBar({ className = "" }: { className?: string }) {
+function SkeletonBar({
+  className = "",
+  style,
+}: {
+  className?: string;
+  style?: CSSProperties;
+}) {
   return (
     <div
       aria-hidden="true"
       className={`animate-pulse rounded-lg bg-foreground/10 motion-reduce:animate-none ${className}`}
+      style={style}
     />
+  );
+}
+
+function ChartSkeleton({ rows }: { rows: number }) {
+  return (
+    <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-card p-5 shadow-sm">
+      <SkeletonBar className="h-4 w-40" />
+      <SkeletonBar
+        className="mt-4 w-full"
+        style={{ height: chartHeightForRows(rows) }}
+      />
+    </div>
   );
 }
 
@@ -178,6 +236,18 @@ function ResultsStatsSkeleton() {
           ),
         )}
       </div>
+      <section aria-hidden="true" className="space-y-5">
+        <SkeletonBar className="h-8 w-24" />
+        <div className="grid gap-5 lg:grid-cols-2">
+          <ChartSkeleton rows={4} />
+          <ChartSkeleton rows={BUILTIN_TASK_MANIFESTS.length} />
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          {Array.from({ length: BUILTIN_TASK_MANIFESTS.length }, (_, i) => (
+            <ChartSkeleton key={i} rows={2} />
+          ))}
+        </div>
+      </section>
       <StatsTableSkeleton title="By task" rows={6} />
       <StatsTableSkeleton title="By readiness band" rows={4} />
       <div>

@@ -5,7 +5,8 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/dataset/agents.json",
-        "$TURBO_ROOT$/PRIVACY.md"
+        "$TURBO_ROOT$/PRIVACY.md",
+        "$TURBO_ROOT$/docs/**"
       ]
     }
   }

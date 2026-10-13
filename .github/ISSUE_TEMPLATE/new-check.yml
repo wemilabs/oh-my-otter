@@ -1,0 +1,54 @@
+name: New check proposal
+description: Propose a built-in readiness check for coding agents.
+labels: ["check-proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [writing a check](https://github.com/wemilabs/oh-my-otter/blob/main/docs/writing-a-check.md) first. Checks are read-only, deterministic, and make no network calls.
+  - type: input
+    id: check-id
+    attributes:
+      label: Check id
+      description: Stable kebab-case id.
+      placeholder: "format-script"
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - setup
+        - verification
+        - docs
+        - hygiene
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it matters for coding agents
+      description: What goes wrong for an agent in a repo that fails this check?
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Pass/fail criteria
+      description: When is it pass, warn, fail, and na? Name the files or fields it reads.
+    validations:
+      required: true
+  - type: input
+    id: weight
+    attributes:
+      label: Suggested weight (1–5) and rationale
+      description: Compare with existing checks in the README table.
+      placeholder: "2: helpful, but agents can work around it"
+    validations:
+      required: true
+  - type: textarea
+    id: fixture
+    attributes:
+      label: Fixture idea
+      description: Small example repos (or package.json snippets) that pass and fail.

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
-import { NAV_LINKS } from "./links";
+import { MOBILE_NAV_LINKS } from "./links";
 
 export function MobileNav() {
   const pathname = usePathname();
@@ -29,13 +29,15 @@ export function MobileNav() {
       <button
         ref={buttonRef}
         type="button"
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded-md border border-border bg-card transition-colors hover:bg-accent"
+        className="group -ml-1 inline-flex size-11 shrink-0 items-center justify-center"
         aria-expanded={open}
         aria-controls="mobile-nav"
         aria-label={open ? "Close menu" : "Open menu"}
         onClick={() => setOpen(!open)}
       >
-        {open ? <X className="size-4" /> : <Menu className="size-4" />}
+        <span className="inline-flex size-9 items-center justify-center rounded-md transition-colors group-hover:bg-accent">
+          {open ? <X className="size-4" /> : <Menu className="size-4" />}
+        </span>
       </button>
       {open ? (
         <nav
@@ -43,7 +45,7 @@ export function MobileNav() {
           className="absolute inset-x-0 top-full border-b border-border bg-background px-gutter-safe pb-4 shadow-sm"
         >
           <ul className="divide-y divide-border">
-            {NAV_LINKS.map((link) => (
+            {MOBILE_NAV_LINKS.map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}

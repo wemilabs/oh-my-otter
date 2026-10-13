@@ -1,4 +1,7 @@
-# ts-strict-file
+---
+title: ts-strict-file
+description: Remove explicit any from one file.
+---
 
 Remove explicit any from one file. Category: types. Scope: small.
 
@@ -30,4 +33,4 @@ omot bench start ts-strict-file --param file=src/api/client.ts --agent <your-age
 - Typechecks with the `typecheck` script, or with the local `tsc --noEmit -p tsconfig.json` when there is no script.
 - When a `typecheck` script exists, its exit code is recorded at start and an unchanged failure is not counted against the agent. If baseline scripts were skipped or typechecking uses the local `tsc` fallback, baseline health is unknown.
 
-The prompt and verifier live in [`packages/benchmarks/src/tasks/ts-strict-file`](../../packages/benchmarks/src/tasks/ts-strict-file). Changing either requires a `version` bump in `task.json`.
+The prompt and verifier live in [`packages/benchmarks/src/tasks/ts-strict-file`](https://github.com/wemilabs/oh-my-otter/tree/v1-dev/packages/benchmarks/src/tasks/ts-strict-file). Changing either requires a `version` bump in `task.json`.

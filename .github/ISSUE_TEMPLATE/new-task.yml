@@ -1,0 +1,49 @@
+name: New benchmark task proposal
+description: Propose a standardized, locally verifiable task for omot bench.
+labels: ["task-proposal"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [writing a task](https://github.com/wemilabs/oh-my-otter/blob/main/docs/writing-a-task.md) first. Prompts are agent-neutral, and verifiers make no network calls.
+  - type: input
+    id: task-id
+    attributes:
+      label: Task id
+      description: Stable kebab-case id.
+      placeholder: "remove-unused-export"
+    validations:
+      required: true
+  - type: textarea
+    id: prompt
+    attributes:
+      label: Prompt draft
+      description: The text users paste into their coding agent. Use `{{param}}` for params.
+      render: markdown
+    validations:
+      required: true
+  - type: textarea
+    id: preconditions
+    attributes:
+      label: Preconditions
+      description: What must be true of the repo at `omot bench start` (scripts, files, params)?
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: Verifier criteria
+      description: What makes the result pass, partial, and fail?
+      value: |
+        - pass:
+        - partial:
+        - fail:
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Why it's objective to verify
+      description: How can a verifier decide the outcome locally without judgment calls, and how could an agent game it?
+    validations:
+      required: true

@@ -47,6 +47,9 @@ jobs:
       - run: pnpm --filter @oh-my-otter/web exec playwright test e2e/unavailable.spec.ts
         env:
           OMOT_DATASET_URL: http://127.0.0.1:9/x
+      - run: pnpm --filter @oh-my-otter/web exec playwright test e2e/empty.spec.ts
+        env:
+          OMOT_DATASET_URL: file:///tmp/omot-missing/reports.ndjson
 
   benchmark-tasks:
     if: github.event_name == 'pull_request'
