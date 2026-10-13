@@ -30,6 +30,21 @@ jobs:
       - run: pnpm build
       - run: pnpm test
 
+  web-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @oh-my-otter/web exec playwright install --with-deps chromium
+      - run: pnpm turbo run build --filter=@oh-my-otter/web^...
+      - run: pnpm --filter @oh-my-otter/web test:e2e
+
   benchmark-tasks:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

@@ -127,3 +127,10 @@ aggregate results, and every report arrives through a public commit on the
 - A unit test snapshots the payload shape, so adding a field requires a
   deliberate, reviewed change, a `schema_version` bump, and an update to this
   file.
+
+## Website analytics
+
+The website at <https://ohmyotter.vercel.app> (not the CLI) uses Vercel Web
+Analytics and Speed Insights. Both are cookieless and collect only aggregated
+page-view and performance metrics; no report or dataset contents are sent.
+The CLI itself still makes no network calls.
