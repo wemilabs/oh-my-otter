@@ -121,6 +121,10 @@ Security: `omot.config.*` files and plugins execute as code when scanning a repo
 
 Run `omot scan --badge` to print a static Shields.io badge snippet.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) to get started. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
 ## Development
 
 ```sh
