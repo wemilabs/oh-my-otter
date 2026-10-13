@@ -98,13 +98,14 @@ export async function withRestoreOnSignal<T>(
   file: string,
   bytes: Buffer,
   action: () => Promise<T>,
-  restoreOtherFiles: () => void = () => {},
+  restoreOtherFilesSync: () => void = () => {},
+  restoreOtherFiles: () => Promise<void> = async () => {},
 ): Promise<T> {
   const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
   const handlers = new Map<(typeof signals)[number], () => void>();
   const restore = () => {
     writeFileSync(file, bytes);
-    restoreOtherFiles();
+    restoreOtherFilesSync();
   };
   for (const signal of signals) {
     const handler = () => {
@@ -135,8 +136,16 @@ export async function withRestoreOnSignal<T>(
   try {
     return await action();
   } finally {
-    for (const [signal, handler] of handlers) {
-      process.removeListener(signal, handler);
+    try {
+      try {
+        await restoreOtherFiles();
+      } finally {
+        await writeFile(file, bytes);
+      }
+    } finally {
+      for (const [signal, handler] of handlers) {
+        process.removeListener(signal, handler);
+      }
     }
   }
 }
@@ -373,6 +382,7 @@ export default defineTask({
                 }
               },
               restoreTestsSync,
+              restoreTests,
             );
           } finally {
             await writeFile(absolute, original);

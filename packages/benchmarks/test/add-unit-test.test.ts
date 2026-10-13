@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import {
   mkdtempSync,
@@ -57,6 +57,55 @@ describe("add-unit-test", () => {
     } finally {
       kill.mockRestore();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps signal handlers armed while asynchronously restoring tests", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "omot-signal-"));
+    const file = path.join(root, "source.js");
+    const testFile = path.join(root, "test.js");
+    const original = Buffer.from("const value = 1;\n");
+    const mutant = Buffer.from("const value = 2;\n");
+    const originalTest = Buffer.from("assert.equal(value, 1);\n");
+    const changedTest = Buffer.from("assert.equal(value, 2);\n");
+    writeFileSync(file, mutant);
+    writeFileSync(testFile, changedTest);
+    let beginRestore!: () => void;
+    let finishRestore!: () => void;
+    const restoring = new Promise<void>((resolve) => {
+      beginRestore = resolve;
+    });
+    const restoreGate = new Promise<void>((resolve) => {
+      finishRestore = resolve;
+    });
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true);
+    const operation = withRestoreOnSignal(
+      file,
+      original,
+      async () => {},
+      () => writeFileSync(testFile, originalTest),
+      async () => {
+        beginRestore();
+        await restoreGate;
+        await writeFile(testFile, originalTest);
+      },
+    );
+    try {
+      await restoring;
+      expect(readFileSync(file)).toEqual(mutant);
+      expect(readFileSync(testFile)).toEqual(changedTest);
+      process.emit("SIGTERM");
+      expect(readFileSync(file)).toEqual(original);
+      expect(readFileSync(testFile)).toEqual(originalTest);
+      expect(kill).toHaveBeenCalledWith(process.pid, "SIGTERM");
+    } finally {
+      finishRestore();
+      try {
+        await operation;
+      } finally {
+        kill.mockRestore();
+        rmSync(root, { recursive: true, force: true });
+      }
     }
   });
 
