@@ -26,11 +26,11 @@
 - Prompts are agent-neutral: say "coding agent", never a vendor name.
 - Bench verifiers may run repository scripts locally but make no network calls of their own.
 - `omot scan` is canonical; `init` is a hidden legacy alias.
-- Add a changeset for user-facing changes.
+- Add a changeset for user-facing changes to published packages. `apps/web` is private and never versioned, so site-only changes need none.
 
 ## Releasing
 
-- Add a changeset with each user-facing change.
+- Add a changeset with each user-facing change to a published package (not `apps/web`, which is private).
 - Pushing to `main` runs the release workflow, which opens the “Version Packages” PR (titled `chore: release packages`); merging it publishes the packages to npm.
 - Publishing uses npm Trusted Publishing (OIDC) from `.github/workflows/release.yml`; no npm token is needed.
 - Configure an npmjs.com GitHub Actions trusted publisher for each package (`oh-my-otter`, `@oh-my-otter/core`, `@oh-my-otter/checks`) with org `wemilabs`, repo `oh-my-otter`, and workflow `release.yml`; allow direct `npm publish`.

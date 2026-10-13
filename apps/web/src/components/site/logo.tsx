@@ -3,16 +3,16 @@ import Link from "next/link";
 export function LogoMark({ className = "size-5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
-      <rect width="24" height="24" rx="7" fill="currentColor" />
-      <path
-        d="M5 14.5c1.6-1.6 3.1-1.6 4.7 0s3.1 1.6 4.6 0 3.1-1.6 4.7 0"
-        fill="none"
-        stroke="var(--background)"
-        strokeWidth="2"
-        strokeLinecap="round"
-      />
-      <circle cx="9" cy="9" r="1.3" fill="var(--background)" />
-      <circle cx="15" cy="9" r="1.3" fill="var(--background)" />
+      <g fill="currentColor">
+        <ellipse cx="12" cy="13.4" rx="10.4" ry="6.9" />
+        <circle cx="3.6" cy="9.4" r="1.9" />
+        <circle cx="20.4" cy="9.4" r="1.9" />
+      </g>
+      <g fill="var(--background)">
+        <circle cx="7.9" cy="11.6" r="1.5" />
+        <circle cx="16.1" cy="11.6" r="1.5" />
+        <path d="M9.6 14.6c0-1 1.1-1.5 2.4-1.5s2.4.5 2.4 1.5c0 1.1-1.3 2.2-2.4 2.2s-2.4-1.1-2.4-2.2z" />
+      </g>
     </svg>
   );
 }
