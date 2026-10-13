@@ -32,9 +32,9 @@
     },
     { "id": "gemini-cli", "display_name": "Gemini CLI", "aliases": ["gemini"] },
     {
-      "id": "windsurf",
-      "display_name": "Windsurf",
-      "aliases": ["windsurf-cascade", "cascade", "codeium"]
+      "id": "droid",
+      "display_name": "Droid",
+      "aliases": ["factory", "factory-droid", "factory-ai"]
     },
     { "id": "aider", "display_name": "Aider", "aliases": ["aider-chat"] },
     { "id": "cline", "display_name": "Cline", "aliases": [] },
