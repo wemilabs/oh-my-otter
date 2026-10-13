@@ -19,6 +19,12 @@ is wrapped by `getDataset`, a Cache Components `'use cache'` function with
 `cacheLife('hours')`. `dataset/agents.json` is read from the
 repo at build time; `/privacy` renders the repo-root `PRIVACY.md`.
 
+The header star count comes from `src/lib/github.ts` (`getStarCount`, `'use
+cache'` hourly); failures fall back to the plain "GitHub" button and retry
+after minutes. Optional `GITHUB_TOKEN` raises the rate limit (it is only sent
+to `api.github.com`), and `OMOT_GITHUB_REPO_API_URL` overrides the endpoint
+(for example, `http://127.0.0.1:9/x` to test the fallback).
+
 To develop against a local copy of the dataset:
 
 ```sh
