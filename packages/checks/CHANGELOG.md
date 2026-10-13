@@ -1,5 +1,11 @@
 # @oh-my-otter/checks
 
+## 0.4.1
+
+### Patch Changes
+
+- @oh-my-otter/core@0.4.1
+
 ## 0.4.0
 
 ### Patch Changes

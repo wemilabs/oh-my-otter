@@ -1,5 +1,14 @@
 # oh-my-otter
 
+## 0.4.1
+
+### Patch Changes
+
+- 0e39a8b: The dep-patch-bump benchmark now checks that the bumped version is installed in node_modules; a bump that was never installed is partial instead of passing.
+- 16b69df: Harden dependency bump verification for workspace lock entries, legacy pnpm specifiers, and npm shrinkwrap precedence.
+- @oh-my-otter/checks@0.4.1
+  - @oh-my-otter/core@0.4.1
+
 ## 0.4.0
 
 ### Minor Changes
