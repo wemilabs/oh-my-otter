@@ -1,5 +1,15 @@
 # @oh-my-otter/checks
 
+## 0.5.0
+
+### Minor Changes
+
+- 6c4110b: Add branch-aware benchmark runs and cleanup, plus clearer test-script guidance and verification follow-up hints.
+
+### Patch Changes
+
+- @oh-my-otter/core@0.5.0
+
 ## 0.4.1
 
 ### Patch Changes
