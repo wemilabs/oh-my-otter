@@ -1,4 +1,7 @@
-# dep-patch-bump
+---
+title: dep-patch-bump
+description: Bump a dependency within its major version.
+---
 
 Bump a dependency within its major version. Category: dependencies. Scope: small.
 

@@ -1,4 +1,7 @@
-# a11y-img-alt
+---
+title: a11y-img-alt
+description: Add missing alt attributes to images.
+---
 
 Add missing alt attributes to images. Category: accessibility. Scope: small.
 

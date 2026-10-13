@@ -1,4 +1,7 @@
-# fix-lint-rule
+---
+title: fix-lint-rule
+description: Fix every violation of one ESLint rule.
+---
 
 Fix every violation of one ESLint rule. Category: lint. Scope: medium.
 

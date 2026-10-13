@@ -27,6 +27,8 @@ pnpm dlx oh-my-otter scan
 
 Scans run locally and make no network calls.
 
+Read the [Oh My Otter documentation](https://ohmyotter.vercel.app/docs).
+
 ## Usage
 
 ```sh

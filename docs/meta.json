@@ -1,0 +1,14 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "index",
+    "quickstart",
+    "cli",
+    "ci",
+    "plugins",
+    "scoring",
+    "writing-a-check",
+    "writing-a-task",
+    "benchmarks"
+  ]
+}

@@ -1,4 +1,7 @@
-# ts-strict-file
+---
+title: ts-strict-file
+description: Remove explicit any from one file.
+---
 
 Remove explicit any from one file. Category: types. Scope: small.
 

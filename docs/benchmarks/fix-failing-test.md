@@ -1,4 +1,7 @@
-# fix-failing-test
+---
+title: fix-failing-test
+description: Fix a deliberately introduced failing test.
+---
 
 Fix a deliberately introduced failing test. Category: testing. Scope: small.
 
