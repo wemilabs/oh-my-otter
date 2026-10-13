@@ -39,7 +39,11 @@ describe("boolean mutation positions", () => {
     ["x is true", true],
     ["type A = string | false;", true],
     ["const value = { enabled: true };", false],
+    ["const f = () => true;", false],
+    ["const v = a || true;", false],
+    ["const v = a && false;", false],
     ["const value = c ? a : true;", false],
+    ["const v = c ? true : x;", false],
     ["function value() { return false; }", false],
     ["const value = x === true;", false],
   ])("%s", (source, expected) => {

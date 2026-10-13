@@ -44,7 +44,7 @@ export function findMutations(source: string): Mutation[] {
 export function isTypePosition(source: string, index: number): boolean {
   const prefix = maskNonCode(source).slice(0, index);
   const previous =
-    /(\b(?:extends|satisfies|keyof|is|as)\b|[|&<>:]|\?)\s*$/.exec(prefix);
+    /(\b(?:extends|satisfies|keyof|is|as)\b|(?<![|&])[|&]|:)\s*$/.exec(prefix);
   if (!previous) return false;
   const token = previous[1]!;
   if (token !== ":") return true;
