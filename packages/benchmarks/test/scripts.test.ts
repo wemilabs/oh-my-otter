@@ -60,4 +60,45 @@ describe("script output", () => {
     };
     expect(outputTail(result)).toEqual(["TOKEN=[redacted]"]);
   });
+
+  it("collapses private-key blocks before selecting tail lines", () => {
+    const result: CommandResult = {
+      code: 1,
+      stdout: "",
+      stderr: "",
+      output: [
+        "before key",
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "base64-body-one",
+        "base64-body-two",
+        "-----END RSA PRIVATE KEY-----",
+        "after key",
+      ].join("\n"),
+      timedOut: false,
+    };
+    expect(outputTail(result, 5)).toEqual([
+      "before key",
+      "[redacted private key]",
+      "after key",
+    ]);
+  });
+
+  it("redacts an unterminated private-key block through the end", () => {
+    const result: CommandResult = {
+      code: 1,
+      stdout: "",
+      stderr: "",
+      output: [
+        "before key",
+        "-----BEGIN RSA PRIVATE KEY-----",
+        "base64-body-one",
+        "base64-body-two",
+      ].join("\n"),
+      timedOut: false,
+    };
+    expect(outputTail(result)).toEqual([
+      "before key",
+      "[redacted private key]",
+    ]);
+  });
 });

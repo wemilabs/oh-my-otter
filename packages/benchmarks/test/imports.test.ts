@@ -192,4 +192,46 @@ describe("test case counting", () => {
       }),
     ).toBe(1);
   });
+
+  it("does not count target references in hooks after a test case", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      it("placeholder", () => {});
+      afterEach(() => add(1, 2));
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(0);
+  });
+
+  it("does not count target references in hooks between test cases", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      it("first", () => {});
+      beforeEach(() => add(1, 2));
+      test("second", () => {});
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(0);
+  });
+
+  it("counts a target reference inside a test case", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      it("uses add", () => add(1, 2));
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(1);
+  });
 });

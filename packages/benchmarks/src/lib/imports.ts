@@ -327,6 +327,17 @@ export function referencesIdentifier(
 const testCasePattern =
   /(?<![\w$.])(?:it|test)\s*(?:\.\s*(?:only|concurrent|sequential|each)\s*)?\(/g;
 
+function testCaseEnd(source: string, testCase: RegExpMatchArray): number {
+  const start = testCase.index ?? 0;
+  const opening = start + testCase[0].lastIndexOf("(");
+  let depth = 0;
+  for (let index = opening; index < source.length; index++) {
+    if (source[index] === "(") depth++;
+    else if (source[index] === ")" && --depth === 0) return index + 1;
+  }
+  return source.length;
+}
+
 /** Counts `it(`/`test(` calls in code (comments and strings ignored). */
 export function countTestCases(source: string): number {
   return [...maskNonCode(source).matchAll(testCasePattern)].length;
@@ -340,9 +351,9 @@ export function countTargetTestCases(
 ): number {
   const { masked, matchers } = targetReferenceMatcher(source, name, scope);
   const cases = [...masked.matchAll(testCasePattern)];
-  return cases.reduce((count, testCase, index) => {
-    const start = testCase.index;
-    const end = cases[index + 1]?.index ?? masked.length;
+  return cases.reduce((count, testCase) => {
+    const start = testCase.index ?? 0;
+    const end = testCaseEnd(masked, testCase);
     return (
       count +
       (matchers.some((matcher) => matcher.test(masked.slice(start, end)))

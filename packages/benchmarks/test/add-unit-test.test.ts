@@ -304,6 +304,19 @@ test("add", () => assert.equal(add(2, 3), 5));
     );
   });
 
+  it("does not credit a hook after a new placeholder test", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": `import { test, afterEach } from "node:test";
+import { add } from "../src/math.mjs";
+test("placeholder", () => {});
+afterEach(() => add(1, 2));
+`,
+    });
+    expect(result.outcome).toBe("fail");
+    expect(result.reasons.join("\n")).toContain("No new test cases");
+  });
+
   it("passes when a changed file adds another case that uses the target", async () => {
     const files: Files = {
       ...base,

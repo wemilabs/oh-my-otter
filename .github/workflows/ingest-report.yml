@@ -145,6 +145,8 @@ jobs:
             echo "Invalid report line" >&2
             exit 1
           fi
+          pushed=0
+          trap 'if [ "$pushed" != 1 ]; then gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --remove-label ingested || true; fi' EXIT
           gh label create ingested --repo "$GH_REPO" --color 0E8A16 \
             --description "Report ingested into the anonymous dataset" --force
           gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label ingested
@@ -163,11 +165,11 @@ jobs:
             git add reports.ndjson
             git commit -qm "dataset: add report"
             if git push origin dataset; then
+              pushed=1
               exit 0
             fi
             echo "Push failed (attempt $attempt), retrying" >&2
           done
-          gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --remove-label ingested || true
           echo "Failed to push after 5 attempts" >&2
           exit 1
 

@@ -39,6 +39,8 @@ const lowercaseSecretPattern = new RegExp(
   String.raw`\b(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)(\s*[=:]\s*)${secretValue}`,
   "gi",
 );
+const privateKeyBeginPattern = /-----BEGIN ([A-Z ]*PRIVATE KEY)-----/;
+const privateKeyEndPattern = /-----END ([A-Z ]*PRIVATE KEY)-----/;
 
 export function redactSecrets(line: string): string {
   if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(line)) {
@@ -61,16 +63,35 @@ export function redactSecrets(line: string): string {
     );
 }
 
+function redactPrivateKeyBlocks(lines: string[]): string[] {
+  const redacted: string[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const begin = privateKeyBeginPattern.exec(lines[index] ?? "");
+    if (!begin) {
+      redacted.push(lines[index] ?? "");
+      continue;
+    }
+    redacted.push("[redacted private key]");
+    const keyType = begin[1];
+    while (++index < lines.length) {
+      const end = privateKeyEndPattern.exec(lines[index] ?? "");
+      if (end?.[1] === keyType) break;
+    }
+  }
+  return redacted;
+}
+
 /** The last non-empty lines of a command's combined output, trimmed. */
 export function outputTail(
   result: CommandResult,
   lines = OUTPUT_TAIL_LINES,
 ): string[] {
-  return result.output
+  const outputLines = result.output
     .replace(ansiPattern, "")
     .split(/\r?\n|\r/)
     .map((line) => line.trim())
-    .filter((line) => line.trim().length > 0)
+    .filter((line) => line.trim().length > 0);
+  return redactPrivateKeyBlocks(outputLines)
     .map(redactSecrets)
     .slice(-lines)
     .map((line) =>
