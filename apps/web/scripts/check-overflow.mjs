@@ -7,14 +7,8 @@
 //     inside prose paragraphs
 // Usage: node scripts/check-overflow.mjs [baseUrl]   (default http://localhost:3300)
 
-let chromium;
-try {
-  ({ chromium } = await import("playwright-core"));
-} catch {
-  ({ chromium } = await import(
-    `${process.env.HOME}/devin-ref/node_modules/playwright-core/index.mjs`
-  ));
-}
+import { chromium } from "@playwright/test";
+import { builtinChecks } from "@oh-my-otter/checks";
 
 const BASE = process.argv[2] ?? "http://localhost:3300";
 const CDP_URL = process.env.CDP_URL ?? "http://localhost:29229";
@@ -28,6 +22,10 @@ const TASKS = [
 ];
 const ROUTES = [
   "/",
+  "/checks",
+  ...builtinChecks.map((check) => `/checks/${check.id}`),
+  "/methodology",
+  "/contribute",
   "/results",
   "/tasks",
   "/privacy",

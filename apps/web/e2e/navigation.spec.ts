@@ -48,10 +48,11 @@ test("client navigation /results -> task page is instant", async ({
       .first()
       .click();
     await page.waitForURL(`${baseURL}/tasks/add-unit-test`);
-    await expect(
-      page.getByRole("heading", { name: ADD_UNIT_TEST_TITLE }),
-    ).toBeVisible();
   });
+  await expect(
+    page.getByRole("heading", { name: ADD_UNIT_TEST_TITLE }),
+  ).toBeVisible();
+  await expect(page.getByText("All reports for this task")).toBeVisible();
   await expect(
     page.getByText("Results by readiness band").first(),
   ).toBeVisible();
