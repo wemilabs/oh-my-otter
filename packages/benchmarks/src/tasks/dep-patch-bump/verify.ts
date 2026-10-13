@@ -236,13 +236,21 @@ function lockValue(raw: string): string {
     .trim();
 }
 
-/** The version `pkg` resolves to inside one dependency section's key list. */
-function depSectionVersion(
+/** A dependency entry inside a lockfile section: inline or nested fields. */
+interface DepEntry {
+  /** Inline value (`pkg: 1.0.1`) or the nested `version:` line. */
+  value: string;
+  /** The nested `specifier:` line, when the format records one. */
+  specifier?: string;
+}
+
+/** The `pkg` entry inside one dependency section's key list. */
+function depSectionEntry(
   lines: string[],
   from: number,
   sectionIndent: number,
   pkg: string,
-): string | null | undefined {
+): DepEntry | undefined {
   for (let i = from; i < lines.length; i += 1) {
     const line = lines[i] as string;
     if (line.trim() === "") continue;
@@ -250,31 +258,28 @@ function depSectionVersion(
     if (indent <= sectionIndent) return undefined;
     const entry = yamlKeyValue(line);
     if (entry === null || entry.key !== pkg) continue;
-    let value = entry.value;
-    if (value === "") {
-      for (let j = i + 1; j < lines.length; j += 1) {
-        const sub = lines[j] as string;
-        if (sub.trim() === "") continue;
-        if (indentOf(sub) <= indent) break;
-        const pair = yamlKeyValue(sub);
-        if (pair?.key === "version") {
-          value = pair.value;
-          break;
-        }
-      }
+    if (entry.value !== "") return { value: entry.value };
+    let value = "";
+    let specifier: string | undefined;
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const sub = lines[j] as string;
+      if (sub.trim() === "") continue;
+      if (indentOf(sub) <= indent) break;
+      const pair = yamlKeyValue(sub);
+      if (pair?.key === "version") value = pair.value;
+      if (pair?.key === "specifier") specifier = pair.value;
     }
-    const resolved = lockValue(value);
-    return semverStart.test(resolved) ? resolved : null;
+    return { value, specifier };
   }
   return undefined;
 }
 
-/** The version `pkg` resolves to for `importer` in a pnpm-lock.yaml. */
-function pnpmLockedVersion(
+/** The `pkg` entry the importer's dependency sections record, if any. */
+function pnpmDepEntry(
   text: string,
   importer: string,
   pkg: string,
-): string | null {
+): DepEntry | null {
   const lines = text.split(/\r?\n/);
   let start = 0;
   let end = lines.length;
@@ -315,10 +320,34 @@ function pnpmLockedVersion(
     if (indent <= baseIndent) break;
     const entry = yamlKeyValue(line);
     if (entry === null || !dependencySections.includes(entry.key)) continue;
-    const found = depSectionVersion(lines, i + 1, indent, pkg);
+    const found = depSectionEntry(lines, i + 1, indent, pkg);
     if (found !== undefined) return found;
   }
   return null;
+}
+
+/** The version `pkg` resolves to for `importer` in a pnpm-lock.yaml. */
+function pnpmLockedVersion(
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null {
+  const entry = pnpmDepEntry(text, importer, pkg);
+  if (entry === null) return null;
+  const resolved = lockValue(entry.value);
+  return semverStart.test(resolved) ? resolved : null;
+}
+
+/** The specifier pnpm records for `pkg` under `importer`. */
+function pnpmLockedSpec(
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null | undefined {
+  const entry = pnpmDepEntry(text, importer, pkg);
+  if (entry === null) return null;
+  // An inline value (older format) has no recorded specifier.
+  return entry.specifier === undefined ? undefined : unquote(entry.specifier);
 }
 
 /** The version the `${pkg}@${spec}` (or `npm:`) entry resolves in yarn.lock. */
@@ -355,40 +384,90 @@ function yarnLockedVersion(
   return null;
 }
 
-/** The version `pkg` resolves to for `importer` in a bun.lock (JSONC). */
-function bunLockedVersion(
-  text: string,
-  importer: string,
-  pkg: string,
-): string | null {
+/** Parses a bun.lock (JSONC with trailing commas) into its two maps. */
+function parseBunLock(text: string): {
+  workspaces: Record<string, unknown>;
+  packages: Record<string, unknown>;
+} | null {
   let json: unknown;
   try {
-    // bun.lock is JSONC; trailing commas never appear inside its strings.
+    // Trailing commas never appear inside bun.lock's strings.
     json = JSON.parse(text.replace(/,(\s*[}\]])/g, "$1"));
   } catch {
     return null;
   }
   if (json === null || typeof json !== "object") return null;
   const root = json as { workspaces?: unknown; packages?: unknown };
-  const workspaces =
-    root.workspaces !== null && typeof root.workspaces === "object"
-      ? (root.workspaces as Record<string, unknown>)
-      : {};
-  const packages =
-    root.packages !== null && typeof root.packages === "object"
-      ? (root.packages as Record<string, unknown>)
-      : {};
+  return {
+    workspaces:
+      root.workspaces !== null && typeof root.workspaces === "object"
+        ? (root.workspaces as Record<string, unknown>)
+        : {},
+    packages:
+      root.packages !== null && typeof root.packages === "object"
+        ? (root.packages as Record<string, unknown>)
+        : {},
+  };
+}
+
+/** The version `pkg` resolves to for `importer` in a bun.lock (JSONC). */
+function bunLockedVersion(
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null {
+  const lock = parseBunLock(text);
+  if (lock === null) return null;
   const workspace =
-    (workspaces[importer === "." ? "" : importer] as { name?: unknown })
+    (lock.workspaces[importer === "." ? "" : importer] as { name?: unknown })
       ?.name ?? null;
   const entry =
     (typeof workspace === "string"
-      ? packages[`${workspace}/${pkg}`]
-      : undefined) ?? packages[pkg];
+      ? lock.packages[`${workspace}/${pkg}`]
+      : undefined) ?? lock.packages[pkg];
   const resolved = Array.isArray(entry) ? entry[0] : undefined;
   if (typeof resolved !== "string") return null;
   const version = resolved.slice(resolved.lastIndexOf("@") + 1);
   return semverStart.test(version) ? version : null;
+}
+
+const specFields = [...dependencySections, "peerDependencies"];
+
+/** The spec `manifest` declares for `pkg`, in any dependency field. */
+function manifestSpec(
+  manifest: unknown,
+  pkg: string,
+): string | null | undefined {
+  if (manifest === null || typeof manifest !== "object") return null;
+  for (const field of specFields) {
+    const deps = (manifest as Record<string, unknown>)[field];
+    if (deps === null || typeof deps !== "object") continue;
+    const spec = (deps as Record<string, unknown>)[pkg];
+    if (typeof spec === "string") return spec;
+  }
+  return null;
+}
+
+/** The spec the bun.lock workspace for `importer` records for `pkg`. */
+function bunLockedSpec(
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null | undefined {
+  const lock = parseBunLock(text);
+  if (lock === null) return undefined;
+  return manifestSpec(lock.workspaces[importer === "." ? "" : importer], pkg);
+}
+
+/** The spec a v2/v3 npm lockfile's `packages[rel]` records for `pkg`. */
+function npmLockedSpec(
+  json: unknown,
+  rel: string,
+  pkg: string,
+): string | null | undefined {
+  const packages = npmLockPackages(json);
+  if (Object.keys(packages).length === 0) return undefined;
+  return manifestSpec(packages[rel], pkg);
 }
 
 /**
@@ -408,6 +487,30 @@ function lockedVersion(
   if (name === "yarn.lock") return yarnLockedVersion(text, pkg, spec);
   if (name === "bun.lock") return bunLockedVersion(text, importer, pkg);
   return null;
+}
+
+/**
+ * The range the lockfile records for the workspace's dependency on `pkg`.
+ * undefined when the format doesn't record it; null when the workspace has
+ * no entry for `pkg` at all.
+ */
+function lockedSpec(
+  lockPath: string,
+  text: string,
+  importer: string,
+  pkg: string,
+): string | null | undefined {
+  const name = lockPath.split("/").at(-1) ?? "";
+  if (name === "pnpm-lock.yaml") return pnpmLockedSpec(text, importer, pkg);
+  if (name === "bun.lock") return bunLockedSpec(text, importer, pkg);
+  if (npmLockPattern.test(lockPath)) {
+    return npmLockedSpec(
+      parseJson(text),
+      importer === "." ? "" : importer,
+      pkg,
+    );
+  }
+  return undefined;
 }
 
 function changedDependencyNames(
@@ -575,6 +678,29 @@ export default defineTask<Data>({
             `${file} bumps ${pkg} but its lockfile ${lock} was not updated; the bump was never installed (a clean install may reject it).`,
           );
           continue;
+        }
+        // A bumped range the lockfile doesn't record means it is out of
+        // sync with package.json; a frozen install would reject it.
+        if (specChanged && lock !== null && currentSpec !== undefined) {
+          const importer =
+            path.posix.relative(dirOf(lock) || ".", dir || ".") || ".";
+          const lockText = await ctx.read(lock);
+          const recorded =
+            lock.split("/").at(-1) === "yarn.lock"
+              ? yarnLockedVersion(lockText ?? "", pkg, currentSpec) === null
+                ? null
+                : undefined
+              : lockedSpec(lock, lockText ?? "", importer, pkg);
+          if (
+            recorded === null ||
+            (typeof recorded === "string" && recorded !== currentSpec)
+          ) {
+            partial = true;
+            installReasons.add(
+              `${file} declares ${pkg} ${currentSpec} but ${lock} still records ${recorded ?? "no entry"} for it; the bump was never installed (a clean install may reject it).`,
+            );
+            continue;
+          }
         }
         let expected: string[] | null = null;
         if (lock !== null && npmLockPattern.test(lock)) {

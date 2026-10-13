@@ -30,6 +30,7 @@ function lock(leftPad: string, isOdd = "3.0.1"): string {
       name: "fixture",
       lockfileVersion: 3,
       packages: {
+        "": { dependencies: { "left-pad": `^${leftPad}` } },
         "node_modules/left-pad": { version: leftPad },
         "node_modules/is-odd": { version: isOdd },
       },
@@ -56,7 +57,20 @@ const base: Files = {
 const params = { package: "left-pad" };
 
 function pnpmLock(leftPad: string): string {
-  return `lockfileVersion: '9.0'\n\npackages:\n  left-pad@${leftPad}:\n    resolution: {}\n`;
+  return `lockfileVersion: '9.0'
+
+importers:
+
+  .:
+    dependencies:
+      left-pad:
+        specifier: ^${leftPad}
+        version: ${leftPad}
+
+packages:
+  left-pad@${leftPad}:
+    resolution: {}
+`;
 }
 
 const pnpmBase: Files = {
@@ -298,7 +312,10 @@ describe("dep-patch-bump", () => {
       `${JSON.stringify({
         name: "fixture",
         lockfileVersion: 3,
-        packages: { "node_modules/zod": { version } },
+        packages: {
+          "": { dependencies: { zod: `^${version}` } },
+          "node_modules/zod": { version },
+        },
       })}\n`;
     const zodBase: Files = {
       ".gitignore": "node_modules/\n",
@@ -354,7 +371,7 @@ describe("dep-patch-bump workspaces", () => {
       name: "fixture",
       lockfileVersion: 3,
       packages: {
-        "packages/a": {},
+        "packages/a": { dependencies: { "left-pad": `^${leftPad}` } },
         "node_modules/left-pad": { version: leftPad },
       },
     })}\n`;
@@ -407,7 +424,10 @@ describe("dep-patch-bump per-workspace lockfiles", () => {
     `${JSON.stringify({
       name: "ws",
       lockfileVersion: 3,
-      packages: { "node_modules/left-pad": { version } },
+      packages: {
+        "": { dependencies: { "left-pad": `^${version}` } },
+        "node_modules/left-pad": { version },
+      },
     })}\n`;
   const independentBase: Files = {
     ".gitignore": "node_modules/\n",
@@ -588,13 +608,13 @@ left-pad@1.0.0:
   });
 
   it("is partial when the npm lockfile installs nothing reachable for a workspace", async () => {
-    const sparseLock = (aVersion: string): string =>
+    const sparseLock = (aVersion: string, cSpec: string): string =>
       `${JSON.stringify({
         name: "fixture",
         lockfileVersion: 3,
         packages: {
-          "packages/a": {},
-          "packages/c": {},
+          "packages/a": { dependencies: { "left-pad": `^${aVersion}` } },
+          "packages/c": { dependencies: { "left-pad": cSpec } },
           "node_modules/other": { version: "2.0.0" },
           "packages/a/node_modules/left-pad": { version: aVersion },
         },
@@ -604,7 +624,7 @@ left-pad@1.0.0:
       "package.json": npmPackage(scripts, { workspaces: ["packages/*"] }),
       "packages/a/package.json": dep("^1.0.0"),
       "packages/c/package.json": dep("^1.1.0"),
-      "package-lock.json": sparseLock("1.0.0"),
+      "package-lock.json": sparseLock("1.0.0", "^1.1.0"),
       "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
       "packages/c/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.1.0" })}\n`,
       "build.mjs": "console.log('built');\n",
@@ -614,7 +634,7 @@ left-pad@1.0.0:
     const result = await verifyTask(task, started, params, {
       "packages/a/package.json": dep("^1.1.0"),
       "packages/c/package.json": dep("^1.2.0"),
-      "package-lock.json": sparseLock("1.1.0"),
+      "package-lock.json": sparseLock("1.1.0", "^1.2.0"),
       "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.1.0" })}\n`,
     });
     expect(result.outcome).toBe("partial");
@@ -623,13 +643,16 @@ left-pad@1.0.0:
     );
   });
 
-  const bunLock = (entries: Record<string, string>): string =>
+  const bunLock = (
+    specs: Record<string, string>,
+    entries: Record<string, string>,
+  ): string =>
     `{
   "lockfileVersion": 0,
   "workspaces": {
     "": { "name": "fixture" },
-    "packages/a": { "name": "a" },
-    "packages/b": { "name": "b" },
+    "packages/a": { "name": "a", "dependencies": { "left-pad": "${specs["packages/a"]}" } },
+    "packages/b": { "name": "b", "dependencies": { "left-pad": "${specs["packages/b"]}" } },
   },
   "packages": {
 ${Object.entries(entries)
@@ -644,10 +667,13 @@ ${Object.entries(entries)
       {},
       { packageManager: "bun@1.2.0", workspaces: ["packages/*"] },
     ),
-    "bun.lock": bunLock({
-      "left-pad": "1.0.0",
-      "other/left-pad": "1.0.0",
-    }),
+    "bun.lock": bunLock(
+      { "packages/a": "^1.0.0", "packages/b": "^1.0.0" },
+      {
+        "left-pad": "1.0.0",
+        "other/left-pad": "1.0.0",
+      },
+    ),
     "packages/a/package.json": dep("^1.0.0"),
     "packages/b/package.json": dep("^1.0.0"),
     "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
@@ -659,10 +685,13 @@ ${Object.entries(entries)
     const result = await verifyTask(task, started, params, {
       "packages/a/package.json": dep("^1.0.1"),
       // a now resolves 1.0.1; another workspace still pins 1.0.0.
-      "bun.lock": bunLock({
-        "left-pad": "1.0.1",
-        "other/left-pad": "1.0.0",
-      }),
+      "bun.lock": bunLock(
+        { "packages/a": "^1.0.1", "packages/b": "^1.0.0" },
+        {
+          "left-pad": "1.0.1",
+          "other/left-pad": "1.0.0",
+        },
+      ),
       "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
     });
     expect(result.outcome).toBe("partial");
@@ -676,11 +705,14 @@ ${Object.entries(entries)
       task,
       {
         ...bunWorkspaces,
-        "bun.lock": bunLock({
-          "left-pad": "1.0.0",
-          "b/left-pad": "0.9.0",
-          "other/left-pad": "1.0.0",
-        }),
+        "bun.lock": bunLock(
+          { "packages/a": "^1.0.0", "packages/b": "^0.9.0" },
+          {
+            "left-pad": "1.0.0",
+            "b/left-pad": "0.9.0",
+            "other/left-pad": "1.0.0",
+          },
+        ),
         "packages/b/package.json": dep("^0.9.0"),
         "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "0.9.0" })}\n`,
       },
@@ -688,11 +720,14 @@ ${Object.entries(entries)
     );
     const result = await verifyTask(task, started, params, {
       "packages/a/package.json": dep("^1.0.1"),
-      "bun.lock": bunLock({
-        "left-pad": "1.0.1",
-        "b/left-pad": "0.9.0",
-        "other/left-pad": "1.0.0",
-      }),
+      "bun.lock": bunLock(
+        { "packages/a": "^1.0.1", "packages/b": "^0.9.0" },
+        {
+          "left-pad": "1.0.1",
+          "b/left-pad": "0.9.0",
+          "other/left-pad": "1.0.0",
+        },
+      ),
       "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
     });
     expect(result.outcome).toBe("pass");
@@ -707,8 +742,8 @@ ${Object.entries(entries)
         name: "fixture",
         lockfileVersion: 3,
         packages: {
-          "packages/a": {},
-          "packages/b": {},
+          "packages/a": { dependencies: { "left-pad": "^1.0.0" } },
+          "packages/b": { dependencies: { "left-pad": `^${hoisted}` } },
           "node_modules/left-pad": { version: hoisted },
           "packages/a/node_modules/left-pad": { version: "1.0.0" },
         },
@@ -734,6 +769,125 @@ ${Object.entries(entries)
     expect(result.outcome).toBe("partial");
     expect(result.reasons).toContain(
       "node_modules has left-pad 1.1.0 but the lockfile says 1.3.0; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("is partial when bun.lock records the old range for a bumped workspace", async () => {
+    const started = await startTask(task, bunWorkspaces, params);
+    const result = await verifyTask(task, started, params, {
+      "packages/a/package.json": dep("^1.0.1"),
+      "packages/b/package.json": dep("^1.0.1"),
+      // a bumps fully; b's recorded range and resolution stay at the old one.
+      "bun.lock": bunLock(
+        { "packages/a": "^1.0.1", "packages/b": "^1.0.0" },
+        {
+          "left-pad": "1.0.1",
+          "b/left-pad": "1.0.0",
+          "other/left-pad": "1.0.0",
+        },
+      ),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "packages/b/package.json declares left-pad ^1.0.1 but bun.lock still records ^1.0.0 for it; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("is partial when pnpm-lock.yaml records the old specifier for a bumped workspace", async () => {
+    const pnpmWorkspaces: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(
+        {},
+        { packageManager: "pnpm@9.15.0", workspaces: ["packages/*"] },
+      ),
+      "pnpm-lock.yaml": pnpmImporters(
+        { "packages/a": "^1.0.0", "packages/b": "^1.0.0" },
+        { "packages/a": "1.0.0", "packages/b": "1.0.0" },
+        ["1.0.0"],
+      ),
+      "packages/a/package.json": dep("^1.0.0"),
+      "packages/b/package.json": dep("^1.0.0"),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+      "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+    };
+    const started = await startTask(task, pnpmWorkspaces, params);
+    const result = await verifyTask(task, started, params, {
+      "packages/a/package.json": dep("^1.0.1"),
+      "packages/b/package.json": dep("^1.0.1"),
+      // a bumps fully; b's importer keeps the old specifier and resolution.
+      "pnpm-lock.yaml": pnpmImporters(
+        { "packages/a": "^1.0.1", "packages/b": "^1.0.0" },
+        { "packages/a": "1.0.1", "packages/b": "1.0.0" },
+        ["1.0.0", "1.0.1"],
+      ),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "packages/b/package.json declares left-pad ^1.0.1 but pnpm-lock.yaml still records ^1.0.0 for it; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("is partial when package-lock.json records the old range for a bumped workspace", async () => {
+    const recordedLock = (bSpec: string, aVersion: string): string =>
+      `${JSON.stringify({
+        name: "fixture",
+        lockfileVersion: 3,
+        packages: {
+          "packages/a": { dependencies: { "left-pad": `^${aVersion}` } },
+          "packages/b": { dependencies: { "left-pad": bSpec } },
+          "packages/a/node_modules/left-pad": { version: aVersion },
+        },
+      })}\n`;
+    const recordedBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(scripts, { workspaces: ["packages/*"] }),
+      "packages/a/package.json": dep("^1.0.0"),
+      "packages/b/package.json": dep("^1.1.0"),
+      "package-lock.json": recordedLock("^1.1.0", "1.0.0"),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+      "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.1.0" })}\n`,
+      "build.mjs": "console.log('built');\n",
+      "test/ok.test.mjs": passingTest,
+    };
+    const started = await startTask(task, recordedBase, params);
+    const result = await verifyTask(task, started, params, {
+      "packages/a/package.json": dep("^1.1.0"),
+      "packages/b/package.json": dep("^1.2.0"),
+      // a bumps fully; b's recorded range stays at the old one.
+      "package-lock.json": recordedLock("^1.1.0", "1.1.0"),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.1.0" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "packages/b/package.json declares left-pad ^1.2.0 but package-lock.json still records ^1.1.0 for it; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("is partial when yarn.lock has no entry for a bumped range", async () => {
+    const yarnBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(
+        {},
+        { packageManager: "yarn@1.22.0", workspaces: ["packages/*"] },
+      ),
+      "packages/a/package.json": dep("^1.0.0"),
+      "packages/b/package.json": dep("^1.0.0"),
+      "yarn.lock": 'left-pad@^1.0.0:\n  version "1.0.0"\n  resolved "x"\n',
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+      "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+    };
+    const started = await startTask(task, yarnBase, params);
+    const result = await verifyTask(task, started, params, {
+      "packages/b/package.json": dep("^1.0.1"),
+      // a's entry resolved to 1.0.1, but no entry covers b's new range.
+      "yarn.lock": 'left-pad@^1.0.0:\n  version "1.0.1"\n  resolved "x"\n',
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "packages/b/package.json declares left-pad ^1.0.1 but yarn.lock still records no entry for it; the bump was never installed (a clean install may reject it).",
     );
   });
 });
