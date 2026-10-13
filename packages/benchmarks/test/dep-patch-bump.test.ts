@@ -122,6 +122,35 @@ describe("dep-patch-bump", () => {
     expect(result.reasons.join("\n")).toContain("test script passed.");
   });
 
+  it("still checks the install when a Plug'n'Play file appears after start", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "package.json": pkg("^1.3.0"),
+      "package-lock.json": lock("1.3.0"),
+      ".pnp.cjs": "module.exports = {};\n",
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "node_modules has left-pad 1.1.0 but the lockfile says 1.3.0; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("skips the install check for a Plug'n'Play repository", async () => {
+    const started = await startTask(
+      task,
+      { ...base, ".pnp.cjs": "module.exports = {};\n" },
+      params,
+    );
+    const result = await verifyTask(task, started, params, {
+      "package.json": pkg("^1.3.0"),
+      "package-lock.json": lock("1.3.0"),
+    });
+    expect(result.outcome).toBe("pass");
+    expect(result.reasons).toContain(
+      "Yarn Plug'n'Play install; installed left-pad version not checked.",
+    );
+  });
+
   it("is partial when the package is missing from node_modules", async () => {
     const started = await startTask(task, base, params);
     const result = await verifyTask(task, started, params, {

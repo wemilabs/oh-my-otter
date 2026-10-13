@@ -236,7 +236,7 @@ export default defineTask<Data>({
       throw new TaskPreconditionError("No lockfile found in the repository.");
     }
     const pnp = (await ctx.exists(".pnp.cjs")) || (await ctx.exists(".pnp.js"));
-    return { declarations, ...(pnp ? { pnp: true } : {}) };
+    return { declarations, pnp };
   },
   async verify(ctx) {
     const pkg = ctx.params.package as string;
@@ -336,9 +336,8 @@ export default defineTask<Data>({
     // verify never runs an install itself.
     if (lockfileUpdated) {
       const installReasons = new Set<string>();
-      const pnp =
-        data.pnp ??
-        ((await ctx.exists(".pnp.cjs")) || (await ctx.exists(".pnp.js")));
+      // Recorded at start, so a Plug'n'Play file added later can't skip this.
+      const pnp = data.pnp === true;
       if (pnp) {
         installReasons.add(
           `Yarn Plug'n'Play install; installed ${pkg} version not checked.`,
