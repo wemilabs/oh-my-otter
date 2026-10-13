@@ -107,6 +107,19 @@ function dirOf(file: string): string {
 
 const npmLockPattern = /(?:^|\/)(?:package-lock|npm-shrinkwrap)\.json$/;
 
+async function isShadowedPackageLock(
+  ctx: RepoContext,
+  file: string,
+): Promise<boolean> {
+  if (file !== "package-lock.json" && !file.endsWith("/package-lock.json")) {
+    return false;
+  }
+  const dir = dirOf(file);
+  const shrinkwrap =
+    dir === "" ? "npm-shrinkwrap.json" : `${dir}/npm-shrinkwrap.json`;
+  return ctx.exists(shrinkwrap);
+}
+
 /**
  * The lockfile that governs `dir`: the nearest existing one walking up to the
  * repo root. When one directory has several, a changed one wins.
@@ -119,12 +132,9 @@ async function findLockfile(
   let current = dir;
   while (true) {
     let fallback: string | null = null;
-    const shrinkwrapPath =
-      current === "" ? "npm-shrinkwrap.json" : `${current}/npm-shrinkwrap.json`;
-    const hasShrinkwrap = await ctx.exists(shrinkwrapPath);
     for (const name of lockfileNames) {
-      if (name === "package-lock.json" && hasShrinkwrap) continue;
       const file = current === "" ? name : `${current}/${name}`;
+      if (await isShadowedPackageLock(ctx, file)) continue;
       if (!(await ctx.exists(file))) continue;
       if (changed.has(file)) return file;
       fallback ??= file;
@@ -579,9 +589,12 @@ export default defineTask<Data>({
     let partial = false;
 
     const changed = await ctx.changedFiles();
-    const lockfiles = changed.filter(
-      (file) => isLockfile(file.path) && file.status !== "deleted",
-    );
+    const lockfiles: typeof changed = [];
+    for (const file of changed) {
+      if (!isLockfile(file.path) || file.status === "deleted") continue;
+      if (await isShadowedPackageLock(ctx, file.path)) continue;
+      lockfiles.push(file);
+    }
     let lockfileUpdated = false;
     for (const file of lockfiles) {
       if (file.path.endsWith(".lockb")) {
@@ -754,6 +767,14 @@ export default defineTask<Data>({
           const text = await ctx.read(lock);
           const importer =
             path.posix.relative(dirOf(lock) || ".", dir || ".") || ".";
+          const recordedSpec = lockedSpec(lock, text ?? "", importer, pkg);
+          if (recordedSpec === null) {
+            partial = true;
+            installReasons.add(
+              `${lock} has no ${pkg} entry reachable from ${dir === "" ? "the repo root" : dir}; the bump was never installed (a clean install may reject it).`,
+            );
+            continue;
+          }
           const locked = lockedVersion(
             lock,
             text ?? "",
@@ -764,14 +785,6 @@ export default defineTask<Data>({
           if (locked !== null) {
             expected = [locked];
           } else {
-            const recordedSpec = lockedSpec(lock, text ?? "", importer, pkg);
-            if (recordedSpec === null) {
-              partial = true;
-              installReasons.add(
-                `${lock} has no ${pkg} entry reachable from ${dir === "" ? "the repo root" : dir}; the bump was never installed (a clean install may reject it).`,
-              );
-              continue;
-            }
             const before = lockfileVersions(await ctx.readBaseline(lock), pkg);
             const after = lockfileVersions(text, pkg);
             const added = after.filter((version) => !before.includes(version));
