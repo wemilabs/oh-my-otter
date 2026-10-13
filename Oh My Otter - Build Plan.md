@@ -37,7 +37,7 @@ oh-my-otter/
   apps/
     web/          # Next.js site
   dataset/
-    reports/      # one JSON file per accepted report (validated)
+    agents.json   # canonical agent list (reports.ndjson lives on the `dataset` branch)
   docs/           # methodology, privacy, contributing
   .github/
     workflows/    # ci, release, ingest-report
@@ -185,12 +185,12 @@ For the MVP, reports are submitted through a **public GitHub issue**, so there i
 
 - `omot report` reads `.omot/run.json`, builds the payload, **prints the exact JSON**, and asks for explicit confirmation (`y/N`). `--dry-run` prints and exits.
 - On confirmation, it opens the browser to a prefilled new-issue URL using the `report` issue template with the JSON in the body. If the payload is too long for a URL, it copies the JSON to the clipboard with `clipboardy` and instructs the user to paste it. If clipboard access fails (for example, a headless session), it prints the JSON and tells the user to copy it manually.
-- The `ingest-report` GitHub Action triggers on issues labeled `report`: it extracts the JSON, validates it with the shared zod schema (strict, no extra fields allowed), rejects with a comment if invalid, otherwise commits `dataset/reports/<timestamp>-<random>.json` and closes the issue. **The committed file does not include the submitter's username.** The Action builds the file only from the validated payload fields, never from issue metadata (author, issue number, URLs).
-- Basic abuse control: one report per issue, schema-strict, maintainers can delete bad files, and a `dataset/blocklist` of issue authors is optional later.
+- The `ingest-report` GitHub Action triggers on issues labeled `report`: it extracts the JSON, validates it with the shared zod schema (strict, no extra fields allowed) plus plausibility checks, rejects with a comment if invalid, otherwise appends one line to `reports.ndjson` on the orphan `dataset` branch and closes the issue. **The appended line does not include the submitter's username.** The Action builds the line only from the validated payload fields, never from issue metadata (author, issue number, URLs).
+- Basic abuse control: one report per issue, schema-strict, rate-limited per author (at most two other report issues in the last hour or open at once), maintainers can remove bad lines.
 
 ### 6.2 Aggregation
 
-The website computes aggregates **at build time** from `dataset/reports/*.json`: success rate per task, success rate by readiness band (A/B/C/D), median human corrections, and sample sizes. Never display a percentage without its sample size `n`. Hide any cell with fewer than 5 reports and show "not enough data yet".
+The website computes aggregates **at request time** from `reports.ndjson` on the `dataset` branch, fetched with ISR (revalidated hourly): success rate per task, success rate by readiness band (A/B/C/D), median human corrections, and sample sizes. Never display a percentage without its sample size `n`. Hide any cell with fewer than 5 reports and show "not enough data yet".
 
 **Agent-neutral results.** `agent` is self-reported free text (normalized to a slug), so aggregation maps it to a canonical allowlist kept in the repo, `dataset/agents.json`. Each entry has an `id`, a `display_name`, and `aliases`, for example `{ "id": "claude-code", "display_name": "Claude Code", "aliases": ["claude", "claude-cli"] }`. A report whose `agent` matches an `id` or an alias counts toward that agent. Anything else, including `unknown`, is grouped as `other`, which is shown but never ranked. Adding an agent means one PR to `dataset/agents.json`, and no report files are rewritten.
 
@@ -202,8 +202,8 @@ The website computes aggregates **at build time** from `dataset/reports/*.json`:
 ### 6.3 Acceptance criteria
 
 - A malformed payload is rejected by the Action with a helpful comment.
-- A valid payload results in exactly one new dataset file and a rebuilt site.
-- A test runs the ingest logic on a sample issue from a known author and asserts the committed `dataset/reports/*.json` file never contains the submitter's GitHub username/handle (case-insensitive substring search over the whole file), including when the handle also appears in the issue title or body. This is in addition to the strict schema validation.
+- A valid payload results in exactly one new line in `reports.ndjson` and a site that picks it up within an hour.
+- A test runs the ingest logic on a sample issue from a known author and asserts the appended line never contains the submitter's GitHub username/handle (case-insensitive substring search over the whole file), including when the handle also appears in the issue title or body. This is in addition to the strict schema validation.
 - The dataset is downloadable as raw JSON from the repo and from `/results/data.json`.
 
 ## 7. Privacy: exactly what is sent

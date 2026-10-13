@@ -9,7 +9,7 @@ export default defineConfig({
   target: "node20",
   clean: true,
   // Benchmarks is a private workspace package: bundle it so it is never published.
-  noExternal: ["@oh-my-otter/benchmarks"],
+  noExternal: [/^@oh-my-otter\/benchmarks/],
   loader: { ".md": "text" },
   dts: {
     compilerOptions: {

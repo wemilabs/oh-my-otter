@@ -1,0 +1,59 @@
+{
+  "agents": [
+    {
+      "id": "devin",
+      "display_name": "Devin",
+      "aliases": ["devin-ai", "cognition-devin"]
+    },
+    {
+      "id": "claude-code",
+      "display_name": "Claude Code",
+      "aliases": ["claude", "claude-cli", "claudecode"]
+    },
+    {
+      "id": "codex",
+      "display_name": "Codex",
+      "aliases": ["openai-codex", "codex-cli"]
+    },
+    {
+      "id": "cursor",
+      "display_name": "Cursor",
+      "aliases": ["cursor-agent", "cursor-ide"]
+    },
+    {
+      "id": "github-copilot",
+      "display_name": "GitHub Copilot",
+      "aliases": [
+        "copilot",
+        "copilot-agent",
+        "copilot-coding-agent",
+        "gh-copilot"
+      ]
+    },
+    { "id": "gemini-cli", "display_name": "Gemini CLI", "aliases": ["gemini"] },
+    {
+      "id": "windsurf",
+      "display_name": "Windsurf",
+      "aliases": ["windsurf-cascade", "cascade", "codeium"]
+    },
+    { "id": "aider", "display_name": "Aider", "aliases": ["aider-chat"] },
+    { "id": "cline", "display_name": "Cline", "aliases": [] },
+    {
+      "id": "roo-code",
+      "display_name": "Roo Code",
+      "aliases": ["roo", "roocode", "roo-cline"]
+    },
+    {
+      "id": "amp",
+      "display_name": "Amp",
+      "aliases": ["ampcode", "sourcegraph-amp"]
+    },
+    { "id": "jules", "display_name": "Jules", "aliases": ["google-jules"] },
+    {
+      "id": "opencode",
+      "display_name": "opencode",
+      "aliases": ["sst-opencode"]
+    },
+    { "id": "kiro", "display_name": "Kiro", "aliases": ["kiro-ide"] }
+  ]
+}
