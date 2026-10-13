@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countDisables } from "../src/lib/eslint";
+import { countDisables, parseEslintJson } from "../src/lib/eslint";
 import task from "../src/tasks/fix-lint-rule/verify";
 import {
   failingTest,
@@ -32,12 +32,15 @@ const biomeBase: Files = {
     bin: { biome: "biome.cjs" },
   }),
   "node_modules/@biomejs/biome/biome.cjs": `const fs = require("node:fs");
-const source = fs.readFileSync("src/a.js", "utf8");
-if (source.includes("parse-error")) {
-  process.stdout.write("::error title=parse,file=" + process.cwd() + "/src/a.js::Parse error.\\n");
-}
-if (source.includes("let a")) {
-  process.stdout.write("::warning title=lint/style/useConst,file=" + process.cwd() + "/src/a.js,line=1::Use const.\\n");
+for (const file of ["src/a.js", "src/b.js"]) {
+  if (!fs.existsSync(file)) continue;
+  const source = fs.readFileSync(file, "utf8");
+  const absolute = process.cwd() + "/" + file;
+  if (source.includes("parse-error")) {
+    process.stdout.write("::error title=parse,file=" + absolute + "::Parse error.\\n");
+  } else if (source.includes("let ")) {
+    process.stdout.write("::warning title=lint/style/useConst,file=" + absolute + ",line=1::Use const.\\n");
+  }
 }
 `,
 };
@@ -47,18 +50,49 @@ const eslintBase: Files = {
     bin: { eslint: "eslint.cjs" },
   }),
   "node_modules/eslint/eslint.cjs": `const fs = require("node:fs");
-const source = fs.readFileSync("src/a.mjs", "utf8");
-const messages = [];
-if (source.includes("let a")) messages.push({ ruleId: "prefer-const" });
-if (source.includes("parse-error")) messages.push({ fatal: true });
-process.stdout.write(JSON.stringify([{ filePath: process.cwd() + "/src/a.mjs", messages }]));
+const results = ["src/a.mjs", "src/b.mjs"].map((file) => {
+  const source = fs.readFileSync(file, "utf8");
+  const messages = [];
+  if (source.includes("parse-error")) messages.push({ fatal: true });
+  else if (source.includes("let ")) messages.push({ ruleId: "prefer-const" });
+  return { filePath: process.cwd() + "/" + file, messages };
+});
+process.stdout.write(JSON.stringify(results));
 `,
 };
 
 describe("fix-lint-rule", () => {
+  it("returns sorted unique relative files for ESLint fatal messages", () => {
+    const result = parseEslintJson(
+      {
+        code: 1,
+        stdout: JSON.stringify([
+          {
+            filePath: "/repo/src/z.mjs",
+            messages: [{ fatal: true }, { fatal: true }],
+          },
+          { filePath: "/repo/src/a.mjs", messages: [{ fatal: true }] },
+        ]),
+        stderr: "",
+        output: "",
+        timedOut: false,
+      },
+      "prefer-const",
+      "/repo",
+    );
+    expect(result).toMatchObject({
+      fatal: 3,
+      fatalFiles: ["src/a.mjs", "src/z.mjs"],
+    });
+  });
+
   it("passes when every violation is fixed and tests pass", async () => {
     const started = await startTask(task, base, params);
-    expect(started.data).toEqual({ violations: 2, fatal: 0 });
+    expect(started.data).toEqual({
+      violations: 2,
+      fatal: 0,
+      fatalFiles: [],
+    });
     const result = await verifyTask(task, started, params, {
       "src/a.mjs": fixedA,
       "src/b.mjs": fixedB,
@@ -114,7 +148,32 @@ describe("fix-lint-rule", () => {
     });
     expect(result.outcome).toBe("partial");
     expect(result.reasons).toContain(
-      "ESLint reported 1 new parse or internal error(s); violations of prefer-const in those files are not counted.",
+      "ESLint reported new parse or internal errors in src/a.mjs; violations of prefer-const there are not counted.",
+    );
+  });
+
+  it("detects an ESLint parse failure moving to another file", async () => {
+    const started = await startTask(
+      task,
+      {
+        ...eslintBase,
+        "src/a.mjs":
+          "const a = 1; /* parse-error */\nexport const first = a;\n",
+      },
+      params,
+    );
+    expect(started.data).toEqual({
+      violations: 1,
+      fatal: 1,
+      fatalFiles: ["src/a.mjs"],
+    });
+    const result = await verifyTask(task, started, params, {
+      "src/a.mjs": fixedA,
+      "src/b.mjs": "const b = 2; /* parse-error */\nexport const second = b;\n",
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "ESLint reported new parse or internal errors in src/b.mjs; violations of prefer-const there are not counted.",
     );
   });
 
@@ -147,7 +206,11 @@ describe("fix-lint-rule", () => {
     const started = await startTask(task, biomeBase, {
       rule: "style/useConst",
     });
-    expect(started.data).toEqual({ violations: 1, fatal: 0 });
+    expect(started.data).toEqual({
+      violations: 1,
+      fatal: 0,
+      fatalFiles: [],
+    });
     const result = await verifyTask(
       task,
       started,
@@ -197,7 +260,37 @@ describe("fix-lint-rule", () => {
     );
     expect(result.outcome).toBe("partial");
     expect(result.reasons).toContain(
-      "Biome reported 1 new parse or internal error(s); violations of lint/style/useConst in those files are not counted.",
+      "Biome reported new parse or internal errors in src/a.js; violations of lint/style/useConst there are not counted.",
+    );
+  });
+
+  it("detects a Biome parse failure moving to another file", async () => {
+    const started = await startTask(
+      task,
+      {
+        ...biomeBase,
+        "src/a.js": "const a = 1; /* parse-error */\nexport { a };\n",
+        "src/b.js": "let b = 2;\nexport { b };\n",
+      },
+      { rule: "style/useConst" },
+    );
+    expect(started.data).toEqual({
+      violations: 1,
+      fatal: 1,
+      fatalFiles: ["src/a.js"],
+    });
+    const result = await verifyTask(
+      task,
+      started,
+      { rule: "style/useConst" },
+      {
+        "src/a.js": "const a = 1;\nexport { a };\n",
+        "src/b.js": "const b = 2; /* parse-error */\nexport { b };\n",
+      },
+    );
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "Biome reported new parse or internal errors in src/b.js; violations of lint/style/useConst there are not counted.",
     );
   });
 });

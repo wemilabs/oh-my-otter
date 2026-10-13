@@ -45,6 +45,7 @@ describe("Biome GitHub output", () => {
       count: 2,
       files: ["src/x,y:z.js"],
       fatal: 0,
+      fatalFiles: [],
     });
   });
 
@@ -58,17 +59,24 @@ describe("Biome GitHub output", () => {
       count: 1,
       files: ["src/a%2Cb.js"],
       fatal: 0,
+      fatalFiles: [],
     });
   });
 
   it("counts non-lint error annotations as fatal but not other lint rules", () => {
     const output = [
       "::error title=parse,file=/work/repo/src/a.js::parse error",
+      "::error title=parse,file=/work/repo/src/a.js::another parse error",
       "::error title=lint/style/noVar,file=/work/repo/src/b.js::other lint rule",
+      "::error title=internal,file=/work/repo/src/b.js::internal error",
     ].join("\n");
     expect(
       parseBiomeGithub(result(output, 1), "lint/style/useConst", "/work/repo"),
-    ).toMatchObject({ count: 0, fatal: 1 });
+    ).toMatchObject({
+      count: 0,
+      fatal: 3,
+      fatalFiles: ["src/a.js", "src/b.js"],
+    });
   });
 
   it("reports the first CLI error when Biome exits without workflow lines", () => {
