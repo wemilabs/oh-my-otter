@@ -234,4 +234,33 @@ describe("test case counting", () => {
       }),
     ).toBe(1);
   });
+
+  it("counts references inside curried test.each callbacks", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      test.each([[1, 2]])("adds %i", (a, b) => {
+        expect(add(a, b)).toBe(3);
+      });
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(1);
+  });
+
+  it("does not count hooks after a curried it.each callback", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      it.each([1])("x", () => {});
+      afterEach(() => add(1, 2));
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(0);
+  });
 });

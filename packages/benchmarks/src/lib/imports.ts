@@ -327,15 +327,30 @@ export function referencesIdentifier(
 const testCasePattern =
   /(?<![\w$.])(?:it|test)\s*(?:\.\s*(?:only|concurrent|sequential|each)\s*)?\(/g;
 
-function testCaseEnd(source: string, testCase: RegExpMatchArray): number {
-  const start = testCase.index ?? 0;
-  const opening = start + testCase[0].lastIndexOf("(");
+function balancedCallEnd(source: string, opening: number): number | null {
+  if (source[opening] !== "(") return null;
   let depth = 0;
   for (let index = opening; index < source.length; index++) {
     if (source[index] === "(") depth++;
-    else if (source[index] === ")" && --depth === 0) return index + 1;
+    else if (source[index] === ")") {
+      depth--;
+      if (depth === 0) return index + 1;
+    }
   }
-  return source.length;
+  return null;
+}
+
+function testCaseEnd(source: string, testCase: RegExpMatchArray): number {
+  const start = testCase.index ?? 0;
+  let end = balancedCallEnd(source, start + testCase[0].lastIndexOf("("));
+  if (end === null) return source.length;
+  while (true) {
+    let next = end;
+    while (/\s/.test(source[next] ?? "")) next++;
+    if (source[next] !== "(") return end;
+    end = balancedCallEnd(source, next);
+    if (end === null) return source.length;
+  }
 }
 
 /** Counts `it(`/`test(` calls in code (comments and strings ignored). */
