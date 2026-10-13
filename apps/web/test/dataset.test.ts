@@ -88,11 +88,11 @@ describe("loadReports", () => {
     const warn = vi.fn();
     const load = await loadReports({ url: fixtureUrl, warn });
     expect(load.status).toBe("ok");
-    expect(load.reports).toHaveLength(14);
-    expect(load.invalid).toEqual([15, 16]);
+    expect(load.reports).toHaveLength(29);
+    expect(load.invalid).toEqual([30, 31]);
     const messages = warn.mock.calls.map((c) => String(c[0]));
-    expect(messages).toContain("skipping invalid dataset line 15");
-    expect(messages).toContain("skipping invalid dataset line 16");
+    expect(messages).toContain("skipping invalid dataset line 30");
+    expect(messages).toContain("skipping invalid dataset line 31");
   });
 
   it("reads the file:// fixture with the right counts", async () => {

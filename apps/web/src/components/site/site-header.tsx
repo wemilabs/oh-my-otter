@@ -17,7 +17,7 @@ export function SiteHeader() {
               key={link.href}
               href={link.href}
               prefetch={link.href === "/results"}
-              className="inline-flex min-h-11 items-center px-2.5 transition-colors hover:text-foreground"
+              className={`inline-flex min-h-11 min-w-11 items-center px-2.5 transition-colors hover:text-foreground ${link.href === "/methodology" ? "hidden lg:inline-flex" : ""}`}
             >
               {link.label}
             </Link>

@@ -1,0 +1,73 @@
+import { test, expect } from "@playwright/test";
+import { builtinChecks } from "@oh-my-otter/checks";
+
+test("checks are fully rendered and searchable", async ({ page, baseURL }) => {
+  await page.goto(`${baseURL}/checks`);
+  const cards = page.locator('a[href^="/checks/"]');
+  await expect(cards).toHaveCount(builtinChecks.length);
+
+  const search = page.getByRole("searchbox", { name: "Search checks" });
+  await search.fill("gitignore");
+  await expect(page.locator('a[href="/checks/gitignore-sane"]')).toBeVisible();
+  await expect(cards).toHaveCount(1);
+
+  await search.clear();
+  const docsChecks = builtinChecks.filter((check) => check.category === "docs");
+  const docsFilter = page.getByRole("button", { name: /docs/i });
+  await docsFilter.click();
+  await expect(docsFilter).toHaveAttribute("aria-pressed", "true");
+  await expect(docsFilter).toContainText(String(docsChecks.length));
+  await expect(cards).toHaveCount(docsChecks.length);
+
+  await search.fill("install-documented");
+  await expect(cards).toHaveCount(1);
+  await expect(
+    page.locator('a[href="/checks/install-documented"]'),
+  ).toBeVisible();
+
+  await search.fill("zzzzzzzzzzzz");
+  await expect(
+    page.getByText(
+      "No checks match this search. Try another term or category.",
+    ),
+  ).toBeVisible();
+});
+
+test("the complete catalog is present without JavaScript", async ({
+  browser,
+  baseURL,
+}) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto(`${baseURL}/checks`);
+  await expect(page.locator('a[href^="/checks/"]')).toHaveCount(
+    builtinChecks.length,
+  );
+  await context.close();
+});
+
+test("a check card opens its details", async ({ page, baseURL }) => {
+  const check = builtinChecks[0]!;
+  await page.goto(`${baseURL}/checks`);
+  await page.locator(`a[href="/checks/${check.id}"]`).click();
+  await expect(page).toHaveURL(`${baseURL}/checks/${check.id}`);
+  await expect(page.getByRole("heading", { name: check.title })).toBeVisible();
+  await expect(
+    page.getByText(new RegExp(`weight ${check.weight}`)),
+  ).toBeVisible();
+  await expect(
+    page.getByText(check.why, { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "How to pass" }),
+  ).toBeVisible();
+});
+
+test("unknown check details return a single-header 404", async ({
+  page,
+  baseURL,
+}) => {
+  const response = await page.goto(`${baseURL}/checks/nope`);
+  expect(response?.status()).toBe(404);
+  await expect(page.locator("h1")).toHaveCount(1);
+});

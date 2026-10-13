@@ -153,8 +153,13 @@ async function TaskStats({ id }: { id: string }) {
   if (dataset.status === "unavailable") {
     return <DataUnavailable />;
   }
+  const task = aggregate.by_task.find((group) => group.key === id);
   return (
     <>
+      <StatsTable
+        title="All reports for this task"
+        groups={task ? [task] : []}
+      />
       <StatsTable
         title="Results by readiness band"
         groups={aggregate.by_task_band[id] ?? []}
@@ -201,6 +206,7 @@ function StatsBlockSkeleton({ title }: { title: string }) {
 function TaskStatsSkeleton() {
   return (
     <>
+      <StatsBlockSkeleton title="All reports for this task" />
       <StatsBlockSkeleton title="Results by readiness band" />
       <div>
         <h3 className="mb-3 text-lg font-medium tracking-tight">

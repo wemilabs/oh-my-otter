@@ -16,3 +16,13 @@ test("home stats show an em dash when the dataset is unavailable", async ({
     .filter({ hasText: "anonymous reports so far" });
   await expect(reports.locator("dd")).toHaveText("—");
 });
+
+test("results show an unavailable message without charts", async ({
+  page,
+  baseURL,
+}) => {
+  await page.goto(`${baseURL}/results`);
+  await expect(page.getByText("Data temporarily unavailable")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Charts" })).toHaveCount(0);
+  await expect(page.locator(".recharts-wrapper")).toHaveCount(0);
+});

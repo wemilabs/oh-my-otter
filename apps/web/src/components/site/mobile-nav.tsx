@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState } from "react";
 import { Menu, X } from "lucide-react";
-import { NAV_LINKS } from "./links";
+import { MOBILE_NAV_LINKS } from "./links";
 
 export function MobileNav() {
   const pathname = usePathname();
@@ -45,7 +45,7 @@ export function MobileNav() {
           className="absolute inset-x-0 top-full border-b border-border bg-background px-gutter-safe pb-4 shadow-sm"
         >
           <ul className="divide-y divide-border">
-            {NAV_LINKS.map((link) => (
+            {MOBILE_NAV_LINKS.map((link) => (
               <li key={link.href}>
                 <Link
                   href={link.href}

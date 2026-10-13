@@ -1,13 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { SITE_URL } from "@oh-my-otter/benchmarks/report";
+import {
+  BUILTIN_TASK_MANIFESTS,
+  SITE_URL,
+} from "@oh-my-otter/benchmarks/report";
 import { SectionHeading } from "@/components/landing/sections";
 import {
   AgentTable,
   DataUnavailable,
   StatsTable,
 } from "@/components/results/stats";
+import {
+  OutcomeChart,
+  SuccessRateChart,
+  TaskChartCaption,
+} from "@/components/results/charts";
 import { getDataset } from "@/lib/dataset";
 
 export const instant = true;
@@ -108,6 +116,31 @@ async function ResultsStats() {
         ))}
       </div>
 
+      <section aria-labelledby="charts-heading" className="space-y-5">
+        <h3 id="charts-heading" className="text-h3 font-medium tracking-tight">
+          Charts
+        </h3>
+        <div className="grid gap-5 lg:grid-cols-2">
+          <SuccessRateChart
+            caption="Pass rate by readiness band"
+            groups={aggregate.by_band}
+          />
+          <SuccessRateChart
+            caption="Pass rate by task"
+            groups={aggregate.by_task}
+          />
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          {BUILTIN_TASK_MANIFESTS.map((task) => (
+            <OutcomeChart
+              key={task.id}
+              caption={<TaskChartCaption id={task.id} title={task.title} />}
+              groups={aggregate.by_task_agent[task.id] ?? []}
+            />
+          ))}
+        </div>
+      </section>
+
       {aggregate.excluded_other_versions > 0 ? (
         <p className="text-sm text-muted-foreground">
           {aggregate.excluded_other_versions === 1
@@ -178,6 +211,19 @@ function ResultsStatsSkeleton() {
           ),
         )}
       </div>
+      <section aria-hidden="true" className="space-y-5">
+        <SkeletonBar className="h-8 w-24" />
+        <div className="grid gap-5 lg:grid-cols-2">
+          {Array.from({ length: 2 }, (_, i) => (
+            <SkeletonBar key={i} className="h-[340px]" />
+          ))}
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          {Array.from({ length: BUILTIN_TASK_MANIFESTS.length }, (_, i) => (
+            <SkeletonBar key={i} className="h-[340px]" />
+          ))}
+        </div>
+      </section>
       <StatsTableSkeleton title="By task" rows={6} />
       <StatsTableSkeleton title="By readiness band" rows={4} />
       <div>
