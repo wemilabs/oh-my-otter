@@ -44,7 +44,7 @@ export function NotEnoughBar({ n }: { n: number }) {
 
 export function DataUnavailable() {
   return (
-    <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+    <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
       <h3 className="text-lg font-medium tracking-tight">
         Data temporarily unavailable
       </h3>
@@ -127,7 +127,7 @@ export function StatsTable({
   linkPrefix?: string;
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
       <div className="border-b border-border px-5 py-4 text-sm font-medium">
         {title}
       </div>
@@ -263,20 +263,20 @@ function DimensionList({ label, groups }: { label: string; groups: Group[] }) {
 export function AgentTable({ groups }: { groups: AgentGroup[] }) {
   if (groups.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-6 text-sm text-muted-foreground shadow-sm">
+      <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground shadow-sm">
         No reports yet — n = 0 everywhere.
       </div>
     );
   }
   return (
-    <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card shadow-sm">
       {groups.map((group) => (
         <details key={group.key} className="group px-5 py-4" open={false}>
-          <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-1 text-sm [&::-webkit-details-marker]:hidden">
+          <summary className="flex min-h-11 cursor-pointer list-none flex-wrap items-center gap-x-4 gap-y-1 text-sm [&::-webkit-details-marker]:hidden">
             <span className="font-medium">
               {group.label}
               {!group.ranked ? (
-                <span className="ml-2 rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
+                <span className="ml-2 rounded-md bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
                   unranked
                 </span>
               ) : null}

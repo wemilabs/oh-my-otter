@@ -64,13 +64,13 @@ async function TaskContent({ params }: { params: Promise<{ id: string }> }) {
         <div className="mx-auto max-w-6xl space-y-10 px-gutter py-14">
           <div>
             <h3 className="mb-3 text-lg font-medium tracking-tight">Start</h3>
-            <pre className="overflow-x-auto rounded-xl border border-border bg-wash p-5 font-mono text-[13px] leading-relaxed">
+            <pre className="overflow-x-auto rounded-lg border border-border bg-wash p-5 font-mono text-[13px] leading-relaxed">
               {start}
             </pre>
           </div>
 
           {task.params.length > 0 ? (
-            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+            <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
               <div className="border-b border-border px-5 py-4 text-sm font-medium">
                 Parameters
               </div>
@@ -115,7 +115,7 @@ async function TaskContent({ params }: { params: Promise<{ id: string }> }) {
             </ul>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
             <div className="border-b border-border px-5 py-4 text-sm font-medium">
               Outcome criteria
             </div>
@@ -173,14 +173,14 @@ function SkeletonBar({ className = "" }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
-      className={`animate-pulse rounded-md bg-foreground/10 motion-reduce:animate-none ${className}`}
+      className={`animate-pulse rounded-lg bg-foreground/10 motion-reduce:animate-none ${className}`}
     />
   );
 }
 
 function StatsBlockSkeleton({ title }: { title: string }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
       <div className="border-b border-border px-5 py-4 text-sm font-medium">
         {title}
       </div>
@@ -206,7 +206,7 @@ function TaskStatsSkeleton() {
         <h3 className="mb-3 text-lg font-medium tracking-tight">
           Results by coding agent
         </h3>
-        <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card px-5 shadow-sm">
+        <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card px-5 shadow-sm">
           {Array.from({ length: 3 }, (_, i) => (
             <div key={i} className="flex items-center gap-4 py-4">
               <SkeletonBar className="h-4 w-32" />
@@ -234,7 +234,7 @@ function TaskPageSkeleton() {
         <div className="mx-auto max-w-6xl space-y-10 px-gutter py-14">
           <div>
             <h3 className="mb-3 text-lg font-medium tracking-tight">Start</h3>
-            <div className="rounded-xl border border-border bg-wash p-5">
+            <div className="rounded-lg border border-border bg-wash p-5">
               <SkeletonBar className="h-4 w-3/4" />
             </div>
           </div>

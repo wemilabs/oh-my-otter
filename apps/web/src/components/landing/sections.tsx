@@ -72,7 +72,7 @@ function BentoCard({
 }) {
   return (
     <article className={`flex flex-col ${className}`}>
-      <div className="relative flex min-h-56 flex-1 items-center justify-center overflow-hidden rounded-xl border border-border bg-wash p-5 sm:p-7">
+      <div className="relative flex min-h-56 flex-1 items-center justify-center overflow-hidden rounded-lg border border-border bg-wash p-5 sm:p-7">
         {children}
       </div>
       <h3 className="mt-4 text-[17px] font-medium tracking-tight">{title}</h3>
@@ -275,7 +275,7 @@ export function Steps() {
                   {step.href.label} <ChevronRight className="size-3.5" />
                 </Link>
               </div>
-              <pre className="overflow-x-auto rounded-xl border border-border bg-wash p-5 font-mono text-[13px] leading-relaxed">
+              <pre className="overflow-x-auto rounded-lg border border-border bg-wash p-5 font-mono text-[13px] leading-relaxed">
                 {step.code.join("\n")}
               </pre>
             </div>
@@ -306,7 +306,7 @@ export function ResultsTeaser({
           tasks, readiness grades and coding agents. Cells with fewer than five
           reports stay hidden until there is enough data.
         </SectionHeading>
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+        <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
           <div className="flex items-center justify-between text-sm">
             <span className="font-medium">Success rate by readiness grade</span>
             <span className="font-mono text-xs text-muted-foreground">
@@ -379,14 +379,14 @@ export function FinalCta() {
         <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
           <a
             href="https://github.com/wemilabs/oh-my-otter#quickstart"
-            className="inline-flex min-h-11 items-center justify-center rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
+            className="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
           >
             Read the quickstart
           </a>
           <Link
             href="/results"
             prefetch={true}
-            className="inline-flex min-h-11 items-center justify-center rounded-full border border-border bg-card px-5 text-sm font-medium transition-colors hover:bg-accent"
+            className="inline-flex min-h-11 items-center justify-center rounded-md border border-border bg-card px-5 text-sm font-medium transition-colors hover:bg-accent"
           >
             See the results
           </Link>

@@ -12,7 +12,7 @@ export function Window({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-border bg-card shadow-[0_25px_50px_-12px_rgb(0_0_0/0.18)]",
+        "overflow-hidden rounded-lg border border-border bg-card shadow-[0_25px_50px_-12px_rgb(0_0_0/0.18)]",
         className,
       )}
     >
@@ -42,7 +42,7 @@ export function StatusPill({ status }: { status: Status }) {
   return (
     <span
       className={cn(
-        "inline-flex w-11 justify-center rounded-full px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase",
+        "inline-flex w-11 justify-center rounded-md px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase",
         STATUS_STYLES[status],
       )}
     >

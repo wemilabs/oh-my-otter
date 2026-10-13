@@ -83,12 +83,12 @@ export default function PrivacyPage() {
                 className ? (
                   <code className={className}>{children}</code>
                 ) : (
-                  <code className="rounded bg-wash px-1 py-0.5 font-mono text-[0.85em] text-foreground">
+                  <code className="rounded-md bg-wash px-1 py-0.5 font-mono text-[0.85em] text-foreground">
                     {children}
                   </code>
                 ),
               pre: ({ children }) => (
-                <pre className="my-5 overflow-x-auto rounded-xl border border-border bg-wash p-5 font-mono text-[13px] leading-relaxed">
+                <pre className="my-5 overflow-x-auto rounded-lg border border-border bg-wash p-5 font-mono text-[13px] leading-relaxed">
                   {children}
                 </pre>
               ),

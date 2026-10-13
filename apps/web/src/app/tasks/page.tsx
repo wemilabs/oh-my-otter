@@ -48,7 +48,7 @@ export default async function TasksPage() {
                 key={task.id}
                 href={`/tasks/${task.id}`}
                 prefetch={true}
-                className="group flex flex-col rounded-xl border border-border bg-card p-6 shadow-sm transition-colors hover:bg-accent"
+                className="group flex flex-col rounded-lg border border-border bg-card p-6 shadow-sm transition-colors hover:bg-accent"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono text-[13px]">{task.id}</span>

@@ -32,7 +32,7 @@ export default function ResultsPage() {
       </section>
       <section className="border-b border-border">
         <div className="mx-auto max-w-6xl space-y-10 px-gutter py-14">
-          <p className="rounded-xl border border-border bg-wash p-5 text-sm leading-relaxed text-muted-foreground">
+          <p className="rounded-lg border border-border bg-wash p-5 text-sm leading-relaxed text-muted-foreground">
             Results are self-reported by people running omot; outcomes are
             verified locally by the CLI, but corrections and minutes are honest
             estimates. Cells with fewer than 5 reports are hidden.{" "}
@@ -63,7 +63,7 @@ async function ResultsStats() {
   return (
     <>
       {empty ? (
-        <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+        <div className="rounded-lg border border-border bg-card p-6 shadow-sm">
           <h3 className="text-lg font-medium tracking-tight">
             No reports yet — be the first
           </h3>
@@ -98,7 +98,7 @@ async function ResultsStats() {
         ].map(([label, value]) => (
           <div
             key={label}
-            className="rounded-xl border border-border bg-card p-5 shadow-sm"
+            className="rounded-lg border border-border bg-card p-5 shadow-sm"
           >
             <div className="text-sm text-muted-foreground">{label}</div>
             <div className="mt-1 text-2xl font-medium tracking-tight">
@@ -129,14 +129,14 @@ function SkeletonBar({ className = "" }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
-      className={`animate-pulse rounded-md bg-foreground/10 motion-reduce:animate-none ${className}`}
+      className={`animate-pulse rounded-lg bg-foreground/10 motion-reduce:animate-none ${className}`}
     />
   );
 }
 
 function StatsTableSkeleton({ title, rows }: { title: string; rows: number }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
       <div className="border-b border-border px-5 py-4 text-sm font-medium">
         {title}
       </div>
@@ -162,7 +162,7 @@ function ResultsStatsSkeleton() {
           (label) => (
             <div
               key={label}
-              className="rounded-xl border border-border bg-card p-5 shadow-sm"
+              className="rounded-lg border border-border bg-card p-5 shadow-sm"
             >
               <div className="text-sm text-muted-foreground">{label}</div>
               <SkeletonBar className="mt-2 h-7 w-16" />
@@ -176,7 +176,7 @@ function ResultsStatsSkeleton() {
         <h3 className="mb-3 text-lg font-medium tracking-tight">
           By coding agent
         </h3>
-        <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card px-5 shadow-sm">
+        <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card px-5 shadow-sm">
           {Array.from({ length: 5 }, (_, i) => (
             <div key={i} className="flex items-center gap-4 py-4">
               <SkeletonBar className="h-4 w-32" />

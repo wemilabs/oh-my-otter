@@ -17,7 +17,7 @@ export function Hero() {
     <section className="relative overflow-hidden border-b border-border">
       <div className="mx-auto max-w-6xl px-gutter pt-[calc(var(--spacing-section)*0.6)] pb-14 sm:pt-section">
         <div className="max-w-3xl">
-          <p className="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
+          <p className="mb-5 inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
             <span className="size-1.5 rounded-full bg-success" />
             Open source · runs entirely on your machine
           </p>
@@ -33,7 +33,7 @@ export function Hero() {
             <Link
               href="/results"
               prefetch={true}
-              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
             >
               See the results <ArrowRight className="size-4" />
             </Link>
@@ -101,7 +101,7 @@ export function Hero() {
                   </dl>
                 </div>
               </Window>
-              <div className="rounded-xl border border-border bg-card/90 p-4 text-sm shadow-sm backdrop-blur">
+              <div className="rounded-lg border border-border bg-card/90 p-4 text-sm shadow-sm backdrop-blur">
                 <div className="flex items-center gap-2 font-medium">
                   <span className="size-1.5 rounded-full bg-brand" />
                   Nothing leaves your machine

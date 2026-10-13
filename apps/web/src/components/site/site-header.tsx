@@ -26,13 +26,13 @@ export function SiteHeader() {
           <ThemeToggle />
           <a
             href={REPO_URL}
-            className="hidden min-h-11 items-center rounded-full border border-border bg-card px-3.5 text-sm font-medium transition-colors hover:bg-accent sm:inline-flex"
+            className="hidden min-h-11 items-center rounded-md border border-border bg-card px-3.5 text-sm font-medium transition-colors hover:bg-accent sm:inline-flex"
           >
             GitHub
           </a>
           <Link
             href="/#quickstart"
-            className="inline-flex min-h-11 shrink-0 items-center rounded-full bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
+            className="inline-flex min-h-11 shrink-0 items-center rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
           >
             Get started
           </Link>

@@ -27,7 +27,7 @@ export function MobileNav() {
       <button
         ref={buttonRef}
         type="button"
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded-full border border-border bg-card transition-colors hover:bg-accent"
+        className="inline-flex size-11 shrink-0 items-center justify-center rounded-md border border-border bg-card transition-colors hover:bg-accent"
         aria-expanded={open}
         aria-controls="mobile-nav"
         aria-label={open ? "Close menu" : "Open menu"}

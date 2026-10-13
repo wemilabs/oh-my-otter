@@ -13,7 +13,7 @@ export function CopyCommand({ command }: { command: string }) {
         setCopied(true);
         setTimeout(() => setCopied(false), 1500);
       }}
-      className="group inline-flex min-h-11 items-center justify-center gap-3 rounded-full border border-border bg-card px-4 font-mono text-sm transition-colors hover:bg-accent sm:justify-start"
+      className="group inline-flex min-h-11 items-center justify-center gap-3 rounded-md border border-border bg-card px-4 font-mono text-sm transition-colors hover:bg-accent sm:justify-start"
       aria-label={`Copy ${command}`}
     >
       <span className="text-muted-foreground">$</span>
