@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   reactCompiler: true,
+  typedRoutes: true,
   experimental: {
     exposeTestingApiInProductionBuild: process.env.EXPOSE_TESTING_API === "1",
   },
