@@ -166,6 +166,26 @@ async function runFile(root: string) {
   return JSON.parse(await readFile(path.join(root, ".omot/run.json"), "utf8"));
 }
 
+async function startFixFailingTask(root: string) {
+  const result = await invoke(
+    [
+      "bench",
+      "start",
+      "fix-failing-test",
+      "--param",
+      "file=src/math.mjs",
+      "--yes",
+    ],
+    { cwd: root },
+  );
+  expect(result.code, result.stderr).toBe(0);
+  const run = await runFile(root);
+  return {
+    branch: (run.baseline.data as { branch: string }).branch,
+    run,
+  };
+}
+
 async function addDirtyNestedRepo(root: string): Promise<string> {
   const nested = path.join(root, "nested");
   await mkdir(nested);
@@ -908,22 +928,9 @@ describe("bench branches and clean", () => {
     ).rejects.toThrow();
   });
 
-  it("marks and deletes a branch created by fix-failing-test", async () => {
+  it("deletes a legacy fix-failing-test branch without its marker", async () => {
     const root = await repo(fixFailingFixture);
-    const result = await invoke(
-      [
-        "bench",
-        "start",
-        "fix-failing-test",
-        "--param",
-        "file=src/math.mjs",
-        "--yes",
-      ],
-      { cwd: root },
-    );
-    expect(result.code, result.stderr).toBe(0);
-    const run = await runFile(root);
-    const branch = (run.baseline.data as { branch: string }).branch;
+    const { branch, run } = await startFixFailingTask(root);
     expect(branch).toMatch(/^omot\/fix-failing-test-/);
     expect(
       await git(root, [
@@ -933,6 +940,12 @@ describe("bench branches and clean", () => {
         `branch.${branch}.omot-run`,
       ]),
     ).toBe(run.baseline.started_at);
+    await git(root, [
+      "config",
+      "--local",
+      "--unset",
+      `branch.${branch}.omot-run`,
+    ]);
 
     const cleaned = await invoke(
       ["bench", "clean", "--delete-branch", "--yes"],
@@ -946,6 +959,111 @@ describe("bench branches and clean", () => {
     await expect(
       git(root, ["config", "--local", "--get", `branch.${branch}.omot-run`]),
     ).rejects.toThrow();
+  });
+
+  it("refuses a fix-failing-test branch with a mismatched marker", async () => {
+    const root = await repo(fixFailingFixture);
+    const { branch } = await startFixFailingTask(root);
+    await git(root, [
+      "config",
+      "--local",
+      `branch.${branch}.omot-run`,
+      "different-run",
+    ]);
+
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      `Refusing to delete ${branch}: it is not the branch omot created for this run.`,
+    );
+    await access(path.join(root, ".omot/run.json"));
+    expect(await git(root, ["branch", "--show-current"])).toBe(branch);
+    await git(root, ["rev-parse", "--verify", branch]);
+    expect(
+      await git(root, [
+        "config",
+        "--local",
+        "--get",
+        `branch.${branch}.omot-run`,
+      ]),
+    ).toBe("different-run");
+  });
+
+  it("refuses legacy fix-failing-test branches without the task prefix", async () => {
+    const root = await repo(fixFailingFixture);
+    const { branch, run } = await startFixFailingTask(root);
+    await git(root, [
+      "config",
+      "--local",
+      "--unset",
+      `branch.${branch}.omot-run`,
+    ]);
+    const renamed = "renamed/fix-failing-test";
+    await git(root, ["branch", "-m", renamed]);
+    (run.baseline.data as { branch: string }).branch = renamed;
+    await writeFile(
+      path.join(root, ".omot/run.json"),
+      `${JSON.stringify(run, null, 2)}\n`,
+    );
+
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      `Refusing to delete ${renamed}: it is not the branch omot created for this run.`,
+    );
+    await access(path.join(root, ".omot/run.json"));
+    expect(await git(root, ["branch", "--show-current"])).toBe(renamed);
+    await git(root, ["rev-parse", "--verify", renamed]);
+  });
+
+  it("refuses legacy fix-failing-test branches with multiple root commits", async () => {
+    const root = await repo(fixFailingFixture);
+    const { branch } = await startFixFailingTask(root);
+    await git(root, [
+      "config",
+      "--local",
+      "--unset",
+      `branch.${branch}.omot-run`,
+    ]);
+    const { stdout: emptyTree } = await execa("git", ["mktree"], {
+      cwd: root,
+      input: "",
+    });
+    const unrelatedRoot = await git(root, [
+      "commit-tree",
+      emptyTree.trim(),
+      "-m",
+      "unrelated root",
+    ]);
+    await git(root, [
+      "merge",
+      "--allow-unrelated-histories",
+      "--no-edit",
+      unrelatedRoot,
+    ]);
+    expect(
+      (await git(root, ["rev-list", "--max-parents=0", branch]))
+        .trim()
+        .split(/\r?\n/),
+    ).toHaveLength(2);
+
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      `Refusing to delete ${branch}: it is not the branch omot created for this run.`,
+    );
+    await access(path.join(root, ".omot/run.json"));
+    expect(await git(root, ["branch", "--show-current"])).toBe(branch);
+    await git(root, ["rev-parse", "--verify", branch]);
   });
 
   it("refuses branch deletion when there are changes outside .omot", async () => {

@@ -538,6 +538,33 @@ function omotBranch(run: RunFile): {
   };
 }
 
+// Keep in sync with BASELINE_MESSAGE in packages/benchmarks/src/tasks/fix-failing-test/verify.ts.
+const FIX_FAILING_TEST_BASELINE_MESSAGE = "bench baseline";
+
+async function hasLegacyFixFailingTestProvenance(
+  root: string,
+  branch: string,
+): Promise<boolean> {
+  try {
+    const roots = (await runGit(root, ["rev-list", "--max-parents=0", branch]))
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (roots.length !== 1) return false;
+    const [rootCommit] = roots;
+    if (!rootCommit) return false;
+    const subject = await runGit(root, [
+      "log",
+      "-1",
+      "--format=%s",
+      rootCommit,
+    ]);
+    return subject.trim() === FIX_FAILING_TEST_BASELINE_MESSAGE;
+  } catch {
+    return false;
+  }
+}
+
 async function isOmotBranch(
   root: string,
   branch: NonNullable<ReturnType<typeof omotBranch>>,
@@ -558,7 +585,10 @@ async function isOmotBranch(
     ]);
     return marker.trim() === branch.startedAt;
   } catch {
-    return false;
+    return (
+      branch.source === "fix-failing-test" &&
+      hasLegacyFixFailingTestProvenance(root, branch.branch)
+    );
   }
 }
 
