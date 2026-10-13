@@ -49,6 +49,16 @@ describe("findFunctionBody", () => {
       "function target(): { value: number } { return { value: 1 }; }",
       "{ return { value: 1 }; }",
     ],
+    [
+      "a function declaration with nested generics",
+      "function target<T extends Record<string, number>>(x: T) { return x; }",
+      "{ return x; }",
+    ],
+    [
+      "a method with nested generics",
+      "class Example {\n  target<T extends Record<string, number>>(x: T) { return x; }\n}",
+      "{ return x; }",
+    ],
   ])("finds %s", (_description, source, expected) => {
     const body = findFunctionBody(source, "target");
     expect(body).not.toBeNull();

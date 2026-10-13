@@ -108,6 +108,7 @@ export async function runBiome(
       "Biome is not installed locally (node_modules/@biomejs/biome).",
     );
   }
+  if (result.timedOut) throw new Error("Biome timed out.");
   return parseBiomeGithub(result, rule, ctx.root);
 }
 

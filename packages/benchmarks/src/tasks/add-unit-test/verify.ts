@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
-import { open, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, readFile, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { readText, resolveInside } from "../../context";
@@ -21,8 +22,17 @@ import prompt from "./prompt.md";
 
 const MAX_MUTANTS = 3;
 const MUTATION_LOCK_TIMEOUT_MS = 60 * 60_000;
+const EMPTY_LOCK_STALE_MS = 10_000;
+let activeMutationLockPath: string | null = null;
 
 async function removeStaleMutationLock(lockPath: string): Promise<boolean> {
+  let modifiedAt: number;
+  try {
+    modifiedAt = (await stat(lockPath)).mtimeMs;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+    throw error;
+  }
   let owner: number;
   try {
     owner = Number((await readFile(lockPath, "utf8")).trim());
@@ -30,7 +40,11 @@ async function removeStaleMutationLock(lockPath: string): Promise<boolean> {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
     throw error;
   }
-  if (!Number.isSafeInteger(owner) || owner <= 0) return false;
+  if (!Number.isSafeInteger(owner) || owner <= 0) {
+    if (Date.now() - modifiedAt < EMPTY_LOCK_STALE_MS) return false;
+    await rm(lockPath, { force: true });
+    return true;
+  }
   try {
     process.kill(owner, 0);
     return false;
@@ -51,9 +65,11 @@ async function withMutationLock<T>(
   );
   const started = Date.now();
   while (true) {
-    let lock;
+    const temporaryPath = `${lockPath}.${process.pid}.${randomUUID()}.tmp`;
     try {
-      lock = await open(lockPath, "wx");
+      await writeFile(temporaryPath, `${process.pid}\n`, { flag: "wx" });
+      await link(temporaryPath, lockPath);
+      activeMutationLockPath = lockPath;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       if (await removeStaleMutationLock(lockPath)) continue;
@@ -64,16 +80,63 @@ async function withMutationLock<T>(
       }
       await new Promise<void>((resolve) => setTimeout(resolve, 25));
       continue;
+    } finally {
+      await unlink(temporaryPath).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      });
     }
     try {
-      await lock.writeFile(`${process.pid}\n`);
       return await action();
     } finally {
+      activeMutationLockPath = null;
+      await rm(lockPath, { force: true });
+    }
+  }
+}
+
+export async function withRestoreOnSignal<T>(
+  file: string,
+  bytes: Buffer,
+  action: () => Promise<T>,
+  restoreOtherFiles: () => void = () => {},
+): Promise<T> {
+  const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+  const handlers = new Map<(typeof signals)[number], () => void>();
+  const restore = () => {
+    writeFileSync(file, bytes);
+    restoreOtherFiles();
+  };
+  for (const signal of signals) {
+    const handler = () => {
       try {
-        await lock.close();
+        restore();
       } finally {
-        await rm(lockPath, { force: true });
+        if (activeMutationLockPath) {
+          try {
+            unlinkSync(activeMutationLockPath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+              process.emitWarning(
+                error instanceof Error ? error : String(error),
+              );
+            }
+          }
+          activeMutationLockPath = null;
+        }
+        for (const [registered, callback] of handlers) {
+          process.removeListener(registered, callback);
+        }
+        process.kill(process.pid, signal);
       }
+    };
+    handlers.set(signal, handler);
+    process.once(signal, handler);
+  }
+  try {
+    return await action();
+  } finally {
+    for (const [signal, handler] of handlers) {
+      process.removeListener(signal, handler);
     }
   }
 }
@@ -222,6 +285,53 @@ export default defineTask({
       const absolute = await resolveInside(ctx.root, file);
       const original = await readFile(absolute);
       const source = original.toString("utf8");
+      const testSnapshots = await Promise.all(
+        changedTests.map(async (entry) => {
+          const testFile = await resolveInside(ctx.root, entry.path);
+          const current = await readFile(testFile).catch((error: unknown) => {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+            throw error;
+          });
+          return {
+            file: testFile,
+            current,
+            baseline:
+              entry.status === "added"
+                ? null
+                : await ctx.readBaseline(entry.path),
+          };
+        }),
+      );
+      const restoreTestsSync = () => {
+        for (const snapshot of testSnapshots) {
+          if (snapshot.current === null) {
+            try {
+              unlinkSync(snapshot.file);
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+                throw error;
+            }
+          } else {
+            writeFileSync(snapshot.file, snapshot.current);
+          }
+        }
+      };
+      const restoreTests = async () => {
+        for (const snapshot of testSnapshots) {
+          if (snapshot.current === null)
+            await rm(snapshot.file, { force: true });
+          else await writeFile(snapshot.file, snapshot.current);
+        }
+      };
+      const useBaselineTests = async () => {
+        for (const snapshot of testSnapshots) {
+          if (snapshot.baseline === null) {
+            await rm(snapshot.file, { force: true });
+          } else {
+            await writeFile(snapshot.file, snapshot.baseline);
+          }
+        }
+      };
       const body = findFunctionBody(source, name);
       const mutations = body
         ? findMutations(source)
@@ -240,29 +350,62 @@ export default defineTask({
           `Mutation check: running the tests against ${mutations.length} injected bugs in ${name}...`,
         );
         let caught = 0;
+        let alreadyCaught = 0;
+        const counted: ReturnType<typeof findMutations> = [];
         for (const mutation of mutations) {
+          let fullCaught = false;
+          let baselineCaught = false;
           try {
-            await writeFile(absolute, applyMutation(source, mutation));
-            const result = await ctx.runScript("test");
-            if (result !== null && (result.code !== 0 || result.timedOut)) {
-              caught += 1;
-            }
+            await withRestoreOnSignal(
+              absolute,
+              original,
+              async () => {
+                await writeFile(absolute, applyMutation(source, mutation));
+                const result = await ctx.runScript("test");
+                fullCaught =
+                  result !== null && (result.code !== 0 || result.timedOut);
+                if (fullCaught) {
+                  await useBaselineTests();
+                  const baselineResult = await ctx.runScript("test");
+                  baselineCaught =
+                    baselineResult !== null &&
+                    (baselineResult.code !== 0 || baselineResult.timedOut);
+                }
+              },
+              restoreTestsSync,
+            );
           } finally {
             await writeFile(absolute, original);
+            await restoreTests();
+          }
+          if (baselineCaught) {
+            alreadyCaught += 1;
+          } else {
+            counted.push(mutation);
+            if (fullCaught) caught += 1;
           }
         }
-        const descriptions = mutations
+        if (counted.length === 0) {
+          reasons.push(
+            `Mutation check skipped: existing tests already catch every injected bug in ${name}.`,
+          );
+          return {
+            outcome: failed ? "fail" : partial ? "partial" : "pass",
+            reasons,
+          };
+        }
+        const descriptions = counted
           .map(
             (mutation) =>
               `line ${mutation.line}: ${mutation.from} → ${mutation.to}`,
           )
           .join(", ");
         reasons.push(
-          `Mutation check: the tests caught ${caught} of ${mutations.length} injected bugs in ${name} (${descriptions}).`,
+          `Mutation check: the tests caught ${caught} of ${counted.length} injected bugs in ${name} (${descriptions}).${alreadyCaught > 0 ? ` ${alreadyCaught} more were already caught by existing tests.` : ""}`,
         );
         if (caught === 0) {
           reasons.push(
-            `The new tests pass but caught none of ${mutations.length} injected bugs in ${name}.`,
+            `The new tests pass but caught none of ${counted.length} injected bugs in ${name}.`,
           );
           partial = true;
         }

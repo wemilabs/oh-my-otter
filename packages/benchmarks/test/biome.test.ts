@@ -4,8 +4,9 @@ import {
   countBiomeSuppressions,
   isBiomeConfig,
   parseBiomeGithub,
+  runBiome,
 } from "../src/lib/biome";
-import type { CommandResult } from "../src/types";
+import type { CommandResult, RepoContext } from "../src/types";
 
 function result(output: string, code = 0, stderr = ""): CommandResult {
   return {
@@ -68,6 +69,21 @@ describe("Biome GitHub output", () => {
         "/work/repo",
       ),
     ).toThrow("Biome could not run: Configuration is invalid.");
+  });
+
+  it("does not parse partial output after Biome times out", async () => {
+    const ctx = {
+      root: "/repo",
+      runPackageBin: async () => ({
+        ...result(
+          "::warning title=lint/style/useConst,file=/repo/a.js::partial",
+        ),
+        timedOut: true,
+      }),
+    } as unknown as RepoContext;
+    await expect(runBiome(ctx, "lint/style/useConst")).rejects.toThrow(
+      "Biome timed out.",
+    );
   });
 });
 

@@ -32,6 +32,16 @@ function matchingClose(
   return null;
 }
 
+function matchingGenericClose(source: string, start: number): number | null {
+  let depth = 0;
+  for (let index = start; index < source.length; index += 1) {
+    if (source[index] === "<") depth += 1;
+    else if (source.startsWith("=>", index)) index += 1;
+    else if (source[index] === ">" && --depth === 0) return index + 1;
+  }
+  return null;
+}
+
 function typeLiteralStart(source: string, index: number): boolean {
   let cursor = index - 1;
   while (cursor >= 0 && /\s/.test(source[cursor] as string)) cursor -= 1;
@@ -161,11 +171,18 @@ function functionDeclarationBody(
   name: string,
 ): FunctionBody | null {
   const pattern = new RegExp(
-    `(?<![\\w$.])(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?function\\s*\\*?\\s*${escaped(name)}\\s*(?:<[^>]*>)?\\s*\\(`,
+    `(?<![\\w$.])(?:export\\s+(?:default\\s+)?)?(?:async\\s+)?function\\s*\\*?\\s*${escaped(name)}\\s*`,
     "g",
   );
   for (const match of source.matchAll(pattern)) {
-    const open = match.index + match[0].lastIndexOf("(");
+    let cursor = skipSpace(source, match.index + match[0].length);
+    if (source[cursor] === "<") {
+      const end = matchingGenericClose(source, cursor);
+      if (end === null) continue;
+      cursor = skipSpace(source, end);
+    }
+    if (source[cursor] !== "(") continue;
+    const open = cursor;
     const close = matchingClose(source, open, "(", ")");
     if (close === null) continue;
     const body = afterParameters(source, close, false);
@@ -278,11 +295,18 @@ function variableFunctionBody(
 
 function methodBody(source: string, name: string): FunctionBody | null {
   const pattern = new RegExp(
-    `^[ \\t]*(?:(?:public|private|protected|static|async|override|readonly|get|set)\\s+)*\\*?${escaped(name)}\\s*(?:<[^>]*>)?\\s*\\(`,
+    `^[ \\t]*(?:(?:public|private|protected|static|async|override|readonly|get|set)\\s+)*\\*?${escaped(name)}\\s*`,
     "gm",
   );
   for (const match of source.matchAll(pattern)) {
-    const open = match.index + match[0].lastIndexOf("(");
+    let cursor = skipSpace(source, match.index + match[0].length);
+    if (source[cursor] === "<") {
+      const end = matchingGenericClose(source, cursor);
+      if (end === null) continue;
+      cursor = skipSpace(source, end);
+    }
+    if (source[cursor] !== "(") continue;
+    const open = cursor;
     const close = matchingClose(source, open, "(", ")");
     if (close === null) continue;
     const next = skipSpace(source, close + 1);
