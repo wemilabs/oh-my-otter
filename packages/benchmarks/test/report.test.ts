@@ -15,6 +15,7 @@ import {
   ingestIssue,
   parseReportsNdjson,
   rateLimitProblem,
+  REPORT_EDITED_LABEL,
   reportPayloadSchema,
   serializeReportLine,
   serializeReportPayload,
@@ -705,6 +706,44 @@ describe("rateLimitProblem", () => {
       rateLimitProblem({
         recent: [],
         open: [issue(1), issue(2), issue(3)],
+        currentIssueNumber: 9,
+        now,
+      }),
+    ).not.toBeNull();
+  });
+
+  it("ignores report-edited issues in the recent count only", () => {
+    // Two real recent issues plus one edited mid-ingest: passes.
+    expect(
+      rateLimitProblem({
+        recent: [
+          issue(1),
+          issue(2),
+          { ...issue(3), labels: [{ name: REPORT_EDITED_LABEL }] },
+        ],
+        open: [],
+        currentIssueNumber: 9,
+        now,
+      }),
+    ).toBeNull();
+    // Three recent issues without the label still reject.
+    expect(
+      rateLimitProblem({
+        recent: [issue(1), issue(2), issue(3)],
+        open: [],
+        currentIssueNumber: 9,
+        now,
+      }),
+    ).not.toBeNull();
+    // The label does not shield the open-issue count.
+    expect(
+      rateLimitProblem({
+        recent: [],
+        open: [
+          issue(1),
+          issue(2),
+          { ...issue(3), labels: [{ name: REPORT_EDITED_LABEL }] },
+        ],
         currentIssueNumber: 9,
         now,
       }),
