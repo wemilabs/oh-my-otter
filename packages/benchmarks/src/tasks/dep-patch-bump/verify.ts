@@ -107,6 +107,19 @@ function dirOf(file: string): string {
 
 const npmLockPattern = /(?:^|\/)(?:package-lock|npm-shrinkwrap)\.json$/;
 
+async function isShadowedPackageLock(
+  ctx: RepoContext,
+  file: string,
+): Promise<boolean> {
+  if (file !== "package-lock.json" && !file.endsWith("/package-lock.json")) {
+    return false;
+  }
+  const dir = dirOf(file);
+  const shrinkwrap =
+    dir === "" ? "npm-shrinkwrap.json" : `${dir}/npm-shrinkwrap.json`;
+  return ctx.exists(shrinkwrap);
+}
+
 /**
  * The lockfile that governs `dir`: the nearest existing one walking up to the
  * repo root. When one directory has several, a changed one wins.
@@ -121,6 +134,7 @@ async function findLockfile(
     let fallback: string | null = null;
     for (const name of lockfileNames) {
       const file = current === "" ? name : `${current}/${name}`;
+      if (await isShadowedPackageLock(ctx, file)) continue;
       if (!(await ctx.exists(file))) continue;
       if (changed.has(file)) return file;
       fallback ??= file;
@@ -290,7 +304,7 @@ function pnpmDepEntry(
     let keyIndent = -1;
     for (let i = importers + 1; i < lines.length; i += 1) {
       const line = lines[i] as string;
-      if (line.trim() === "") continue;
+      if (line.trim() === "" || line.trim().startsWith("#")) continue;
       const indent = indentOf(line);
       if (indent === 0) break;
       if (keyIndent === -1) keyIndent = indent;
@@ -302,7 +316,11 @@ function pnpmDepEntry(
       baseIndent = indent;
       for (let j = i + 1; j < lines.length; j += 1) {
         const next = lines[j] as string;
-        if (next.trim() !== "" && indentOf(next) <= indent) {
+        if (
+          next.trim() !== "" &&
+          !next.trim().startsWith("#") &&
+          indentOf(next) <= indent
+        ) {
           end = j;
           break;
         }
@@ -313,17 +331,32 @@ function pnpmDepEntry(
   } else if (importer !== ".") {
     return null;
   }
+  let found: DepEntry | undefined;
+  let specifier: string | undefined;
+  let childIndent: number | undefined;
   for (let i = start; i < end; i += 1) {
     const line = lines[i] as string;
-    if (line.trim() === "") continue;
+    if (line.trim() === "" || line.trim().startsWith("#")) continue;
     const indent = indentOf(line);
+    if (childIndent === undefined) childIndent = indent;
     if (indent <= baseIndent) break;
+    if (indent !== childIndent) continue;
     const entry = yamlKeyValue(line);
-    if (entry === null || !dependencySections.includes(entry.key)) continue;
-    const found = depSectionEntry(lines, i + 1, indent, pkg);
-    if (found !== undefined) return found;
+    if (entry === null) continue;
+    if (entry.key === "specifiers") {
+      const recorded = depSectionEntry(lines, i + 1, indent, pkg);
+      if (recorded !== undefined) {
+        specifier = recorded.specifier ?? recorded.value;
+      }
+      continue;
+    }
+    if (!dependencySections.includes(entry.key) || found !== undefined)
+      continue;
+    found = depSectionEntry(lines, i + 1, indent, pkg);
   }
-  return null;
+  return found === undefined
+    ? null
+    : { ...found, specifier: found.specifier ?? specifier };
 }
 
 /** The version `pkg` resolves to for `importer` in a pnpm-lock.yaml. */
@@ -350,14 +383,12 @@ function pnpmLockedSpec(
   return entry.specifier === undefined ? undefined : unquote(entry.specifier);
 }
 
-/** The version the `${pkg}@${spec}` (or `npm:`) entry resolves in yarn.lock. */
-function yarnLockedVersion(
-  text: string,
+function yarnDescriptorHeader(
+  lines: string[],
   pkg: string,
   spec: string,
-): string | null {
+): number | null {
   const wanted = new Set([`${pkg}@${spec}`, `${pkg}@npm:${spec}`]);
-  const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] as string;
     const trimmed = line.trimEnd();
@@ -369,19 +400,44 @@ function yarnLockedVersion(
       .split(",")
       .map((descriptor) => descriptor.trim());
     if (!descriptors.some((descriptor) => wanted.has(descriptor))) continue;
-    for (let j = i + 1; j < lines.length; j += 1) {
-      const entry = lines[j] as string;
-      if (entry.trim() === "") continue;
-      if (!/^\s/.test(entry)) break;
-      // Handles both `version "1.0.1"` (classic) and `version: 1.0.1`.
-      const version = /^\s+version:?\s+"?([^"\s]+)"?\s*$/.exec(entry);
-      if (version === null) continue;
-      const resolved = lockValue(version[1] as string);
-      return semverStart.test(resolved) ? resolved : null;
-    }
-    return null;
+    return i;
   }
   return null;
+}
+
+function yarnEntryVersion(lines: string[], header: number): string | null {
+  for (let i = header + 1; i < lines.length; i += 1) {
+    const entry = lines[i] as string;
+    if (entry.trim() === "") continue;
+    if (!/^\s/.test(entry)) break;
+    // Handles both `version "1.0.1"` (classic) and `version: 1.0.1`.
+    const version = /^\s+version:?\s+"?([^"\s]+)"?\s*$/.exec(entry);
+    if (version !== null) return version[1] as string;
+  }
+  return null;
+}
+
+/** The version the `${pkg}@${spec}` (or `npm:`) entry resolves in yarn.lock. */
+function yarnLockedVersion(
+  text: string,
+  pkg: string,
+  spec: string,
+): string | null {
+  const lines = text.split(/\r?\n/);
+  const header = yarnDescriptorHeader(lines, pkg, spec);
+  if (header === null) return null;
+  const version = yarnEntryVersion(lines, header);
+  if (version === null) return null;
+  const resolved = lockValue(version);
+  return semverStart.test(resolved) ? resolved : null;
+}
+
+function yarnLockedSpec(
+  text: string,
+  pkg: string,
+  spec: string,
+): string | null {
+  return yarnLockedVersion(text, pkg, spec) === null ? null : spec;
 }
 
 /** Parses a bun.lock (JSONC with trailing commas) into its two maps. */
@@ -499,10 +555,12 @@ function lockedSpec(
   text: string,
   importer: string,
   pkg: string,
+  spec: string,
 ): string | null | undefined {
   const name = lockPath.split("/").at(-1) ?? "";
   if (name === "pnpm-lock.yaml") return pnpmLockedSpec(text, importer, pkg);
   if (name === "bun.lock") return bunLockedSpec(text, importer, pkg);
+  if (name === "yarn.lock") return yarnLockedSpec(text, pkg, spec);
   if (npmLockPattern.test(lockPath)) {
     return npmLockedSpec(
       parseJson(text),
@@ -563,9 +621,12 @@ export default defineTask<Data>({
     let partial = false;
 
     const changed = await ctx.changedFiles();
-    const lockfiles = changed.filter(
-      (file) => isLockfile(file.path) && file.status !== "deleted",
-    );
+    const lockfiles: typeof changed = [];
+    for (const file of changed) {
+      if (!isLockfile(file.path) || file.status === "deleted") continue;
+      if (await isShadowedPackageLock(ctx, file.path)) continue;
+      lockfiles.push(file);
+    }
     let lockfileUpdated = false;
     for (const file of lockfiles) {
       if (file.path.endsWith(".lockb")) {
@@ -685,19 +746,22 @@ export default defineTask<Data>({
           const importer =
             path.posix.relative(dirOf(lock) || ".", dir || ".") || ".";
           const lockText = await ctx.read(lock);
-          const recorded =
-            lock.split("/").at(-1) === "yarn.lock"
-              ? yarnLockedVersion(lockText ?? "", pkg, currentSpec) === null
-                ? null
-                : undefined
-              : lockedSpec(lock, lockText ?? "", importer, pkg);
+          const recorded = lockedSpec(
+            lock,
+            lockText ?? "",
+            importer,
+            pkg,
+            currentSpec ?? declaredSpec,
+          );
           if (
             recorded === null ||
             (typeof recorded === "string" && recorded !== currentSpec)
           ) {
             partial = true;
             installReasons.add(
-              `${file} declares ${pkg} ${currentSpec} but ${lock} still records ${recorded ?? "no entry"} for it; the bump was never installed (a clean install may reject it).`,
+              recorded === null && lock.endsWith("pnpm-lock.yaml")
+                ? `${lock} has no ${pkg} entry reachable from ${dir === "" ? "the repo root" : dir}; the bump was never installed (a clean install may reject it).`
+                : `${file} declares ${pkg} ${currentSpec} but ${lock} still records ${recorded ?? "no entry"} for it; the bump was never installed (a clean install may reject it).`,
             );
             continue;
           }
@@ -738,6 +802,20 @@ export default defineTask<Data>({
           const text = await ctx.read(lock);
           const importer =
             path.posix.relative(dirOf(lock) || ".", dir || ".") || ".";
+          const recordedSpec = lockedSpec(
+            lock,
+            text ?? "",
+            importer,
+            pkg,
+            currentSpec ?? declaredSpec,
+          );
+          if (recordedSpec === null) {
+            partial = true;
+            installReasons.add(
+              `${lock} has no ${pkg} entry reachable from ${dir === "" ? "the repo root" : dir}; the bump was never installed (a clean install may reject it).`,
+            );
+            continue;
+          }
           const locked = lockedVersion(
             lock,
             text ?? "",
