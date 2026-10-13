@@ -1,12 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  lstat,
-  mkdir,
-  open,
-  readFile,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import {
@@ -93,10 +86,28 @@ export async function writeRunFile(root: string, run: RunFile): Promise<void> {
   const file = path.join(directory, "run.json");
   await assertNotSymlink(file, RUN_FILE);
   const value = runFileSchema.parse(run);
-  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
+  const temporary = path.join(directory, `run.json.${randomUUID()}.tmp`);
+  try {
+    const handle = await open(temporary, "wx");
+    try {
+      await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`);
+    } finally {
+      await handle.close();
+    }
+    await rename(temporary, file);
+  } catch (error) {
+    await unlink(temporary).catch(() => {});
+    throw error;
+  }
 }
 
 async function acquireRunFileLock(root: string): Promise<() => Promise<void>> {
+  const directory = path.join(root, OMOT_DIR);
+  const directoryExists = await assertNotSymlink(directory, OMOT_DIR);
+  if (!directoryExists) await mkdir(directory);
+  else if (!(await lstat(directory)).isDirectory()) {
+    throw new Error(`${OMOT_DIR} exists and is not a directory.`);
+  }
   const file = path.join(root, RUN_FILE_LOCK);
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
   while (true) {
@@ -156,6 +167,18 @@ async function acquireRunFileLock(root: string): Promise<() => Promise<void>> {
       }
       if (releaseError) throw releaseError;
     };
+  }
+}
+
+export async function replaceRunFile(
+  root: string,
+  run: RunFile,
+): Promise<void> {
+  const release = await acquireRunFileLock(root);
+  try {
+    await writeRunFile(root, run);
+  } finally {
+    await release();
   }
 }
 

@@ -282,17 +282,11 @@ const declarationPatterns = [
   /\b(?:const|let|var)\s+(?:\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:require|import)\s*\(/g,
 ];
 
-/**
- * True when `name` is used in code: comments and string literals are ignored,
- * and so are import/require declarations, so importing a function without
- * using it does not count. Member access (`mod.name`) counts.
- */
-export function referencesIdentifier(
+function targetReferenceMatcher(
   source: string,
   name: string,
   scope?: { fromFile: string; target: string },
-): boolean {
-  const names = localNames(source, name, scope);
+): { masked: string; matchers: RegExp[] } {
   let masked = maskNonCode(source);
   const targetNamespaces = scope
     ? scopedBindings(source, masked, scope).targetNamespaces
@@ -303,26 +297,83 @@ export function referencesIdentifier(
     }
   }
   const escapedName = name.replace(/[$]/g, "\\$");
-  if (
-    [...targetNamespaces].some((namespace) => {
-      const escapedNamespace = namespace.replace(/[$]/g, "\\$");
-      return new RegExp(
-        `(?<![\\w$.])${escapedNamespace}\\s*\\.\\s*${escapedName}(?![\\w$])`,
-      ).test(masked);
-    })
-  ) {
-    return true;
-  }
-  return names.some((localName) => {
-    const escaped = localName.replace(/[$]/g, "\\$");
-    return new RegExp(`(?<![\\w$])${escaped}(?![\\w$])`).test(masked);
+  const namespaceMatchers = [...targetNamespaces].map((namespace) => {
+    const escapedNamespace = namespace.replace(/[$]/g, "\\$");
+    return new RegExp(
+      `(?<![\\w$.])${escapedNamespace}\\s*\\.\\s*${escapedName}(?![\\w$])`,
+    );
   });
+  const localMatchers = localNames(source, name, scope).map((localName) => {
+    const escaped = localName.replace(/[$]/g, "\\$");
+    return new RegExp(`(?<![\\w$]|\\.\\s*)${escaped}(?![\\w$])`);
+  });
+  return { masked, matchers: [...namespaceMatchers, ...localMatchers] };
+}
+
+/**
+ * True when `name` is used in code: comments and string literals are ignored,
+ * and so are import/require declarations, so importing a function without
+ * using it does not count. Member access (`mod.name`) counts.
+ */
+export function referencesIdentifier(
+  source: string,
+  name: string,
+  scope?: { fromFile: string; target: string },
+): boolean {
+  const { masked, matchers } = targetReferenceMatcher(source, name, scope);
+  return matchers.some((matcher) => matcher.test(masked));
 }
 
 const testCasePattern =
   /(?<![\w$.])(?:it|test)\s*(?:\.\s*(?:only|concurrent|sequential|each)\s*)?\(/g;
 
+function balancedCallEnd(source: string, opening: number): number | null {
+  if (source[opening] !== "(") return null;
+  let depth = 0;
+  for (let index = opening; index < source.length; index++) {
+    if (source[index] === "(") depth++;
+    else if (source[index] === ")") {
+      depth--;
+      if (depth === 0) return index + 1;
+    }
+  }
+  return null;
+}
+
+function testCaseEnd(source: string, testCase: RegExpMatchArray): number {
+  const start = testCase.index ?? 0;
+  let end = balancedCallEnd(source, start + testCase[0].lastIndexOf("("));
+  if (end === null) return source.length;
+  while (true) {
+    let next = end;
+    while (/\s/.test(source[next] ?? "")) next++;
+    if (source[next] !== "(") return end;
+    end = balancedCallEnd(source, next);
+    if (end === null) return source.length;
+  }
+}
+
 /** Counts `it(`/`test(` calls in code (comments and strings ignored). */
 export function countTestCases(source: string): number {
   return [...maskNonCode(source).matchAll(testCasePattern)].length;
+}
+
+/** Counts test cases with a code reference to the target function. */
+export function countTargetTestCases(
+  source: string,
+  name: string,
+  scope: { fromFile: string; target: string },
+): number {
+  const { masked, matchers } = targetReferenceMatcher(source, name, scope);
+  const cases = [...masked.matchAll(testCasePattern)];
+  return cases.reduce((count, testCase) => {
+    const start = testCase.index ?? 0;
+    const end = testCaseEnd(masked, testCase);
+    return (
+      count +
+      (matchers.some((matcher) => matcher.test(masked.slice(start, end)))
+        ? 1
+        : 0)
+    );
+  }, 0);
 }

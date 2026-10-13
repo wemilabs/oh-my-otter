@@ -27,6 +27,7 @@ import {
 } from "@oh-my-otter/core/node";
 import { builtinChecks } from "@oh-my-otter/checks";
 import { addBenchCommand } from "./bench";
+import { addReportCommand } from "./report";
 
 export interface CliIO {
   stdout: (text: string) => void;
@@ -35,6 +36,9 @@ export interface CliIO {
   isTTY: boolean;
   confirm: (question: string) => Promise<boolean>;
   ask: (question: string) => Promise<string>;
+  openUrl: (url: string) => Promise<void>;
+  copyToClipboard: (text: string) => Promise<void>;
+  now: () => Date;
 }
 
 interface ScanOptions {
@@ -92,6 +96,28 @@ function defaultAsk(question: string): Promise<string> {
   return readline.question(question).finally(() => readline.close());
 }
 
+async function defaultOpenUrl(url: string): Promise<void> {
+  const { default: open } = await import("open");
+  const child = await open(url);
+  if (child.exitCode !== null || child.pid !== undefined) return;
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, 5_000);
+    child.once("spawn", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+  });
+}
+
+async function defaultCopyToClipboard(text: string): Promise<void> {
+  const { default: clipboardy } = await import("clipboardy");
+  await clipboardy.write(text);
+}
+
 function getIO(io: Partial<CliIO> = {}): CliIO {
   return {
     stdout: io.stdout ?? ((text) => stdout.write(text)),
@@ -100,6 +126,9 @@ function getIO(io: Partial<CliIO> = {}): CliIO {
     isTTY: io.isTTY ?? Boolean(process.stdout.isTTY),
     confirm: io.confirm ?? defaultConfirm,
     ask: io.ask ?? defaultAsk,
+    openUrl: io.openUrl ?? defaultOpenUrl,
+    copyToClipboard: io.copyToClipboard ?? defaultCopyToClipboard,
+    now: io.now ?? (() => new Date()),
   };
 }
 
@@ -606,6 +635,7 @@ function normalizeArgv(argv: string[]): string[] {
       "init",
       "checks",
       "bench",
+      "report",
       "help",
       "--help",
       "-h",
@@ -677,6 +707,15 @@ export async function main(
   addBenchCommand(program, io, (code) => {
     actionExitCode = code;
   });
+
+  addReportCommand(
+    program,
+    io,
+    (code) => {
+      actionExitCode = code;
+    },
+    { cliVersion: packageMetadata.version },
+  );
 
   try {
     await program.parseAsync(normalizeArgv(argv), { from: "user" });

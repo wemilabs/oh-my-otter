@@ -52,7 +52,7 @@ describe("run file", () => {
     const root = await createRepo({ "a.txt": "a\n" });
     await expect(readRunFile(root)).rejects.toThrow(/No benchmark run found/);
     const run = {
-      schema_version: 2 as const,
+      schema_version: 3 as const,
       task: { id: "add-unit-test", version: 1 },
       params: { file: "a.ts", function: "a" },
       agent: "cursor",

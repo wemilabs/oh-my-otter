@@ -9,3 +9,6 @@ coverage
 packages/*/LICENSE
 packages/cli/README.md
 .tmp
+**/.next
+**/next-env.d.ts
+*.tsbuildinfo

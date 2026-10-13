@@ -49,9 +49,11 @@ export {
   RUN_FILE,
   appendVerification,
   readRunFile,
+  replaceRunFile,
   updateRunFile,
   writeRunFile,
 } from "./lib/run-file";
+export { detectStack, summarizeScan } from "./report/stack";
 export { defineTask } from "./task";
 export { TaskPreconditionError } from "./types";
 export type {

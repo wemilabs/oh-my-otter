@@ -22,13 +22,14 @@ import {
   renderPrompt,
   resolveRepoRoot,
   appendVerification,
+  replaceRunFile,
   updateRunFile,
-  writeRunFile,
   TaskPreconditionError,
   type RunFile,
   type Task,
   type VerifyResult,
 } from "@oh-my-otter/benchmarks";
+import { scanBaseline } from "./report";
 
 export interface BenchIO {
   stdout: (text: string) => void;
@@ -295,6 +296,13 @@ async function startTask(
     }
   }
 
+  const baselineScan = await scanBaseline(root);
+  io.stderr(
+    pc.dim(
+      `Readiness at start: ${baselineScan.score} · ${baselineScan.grade}\n`,
+    ),
+  );
+
   const ctx = createPrepareContext(root, {
     params,
     scripts: task.scripts,
@@ -339,10 +347,11 @@ async function startTask(
               ]),
             ),
           }),
+      scan: baselineScan.summary,
     },
     verifications: [],
   };
-  await writeRunFile(root, run);
+  await replaceRunFile(root, run);
   agentNote(options, fields, io);
   io.stderr(
     `Started ${pc.bold(task.manifest.id)} v${task.manifest.version} at ${commit.slice(0, 12)} (${describeAgent(fields)}). Baseline saved to ${RUN_FILE}.\n\n${PASTE_HEADING}\n\n`,

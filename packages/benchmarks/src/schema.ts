@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { scanSummarySchema } from "./report/scan";
 
 export const TASK_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -121,6 +122,7 @@ const baselineSchema = z
     started_at: timestampSchema,
     data: z.unknown().optional(),
     scripts: z.record(z.string(), z.number().int()).optional(),
+    scan: scanSummarySchema.optional(),
   })
   .strict();
 
@@ -156,37 +158,57 @@ const runResultSchema = z
   })
   .strict();
 
-export const RUN_SCHEMA_VERSION = 2 as const;
+export const RUN_SCHEMA_VERSION = 3 as const;
+
+const runFileShape = {
+  task: taskRunSchema,
+  params: z.record(z.string(), z.string()),
+  agent: agentSchema.default(DEFAULT_AGENT),
+  agent_version: z.string().regex(AGENT_VERSION_PATTERN).optional(),
+  model: z.string().regex(MODEL_PATTERN).optional(),
+  baseline: baselineSchema,
+  verifications: z.array(verificationSchema),
+  result: runResultSchema.optional(),
+};
+
+const refineRunFile = (
+  run: {
+    verifications: unknown[];
+    result?: { attempts: number };
+  },
+  ctx: z.RefinementCtx,
+) => {
+  if (run.result && run.result.attempts !== run.verifications.length) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["result", "attempts"],
+      message: "Attempts must equal the number of verifications.",
+    });
+  }
+  if (Boolean(run.result) !== run.verifications.length > 0) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["result"],
+      message: "Result must be present iff verifications are non-empty.",
+    });
+  }
+};
 
 export const runFileSchema = z
   .object({
     schema_version: z.literal(RUN_SCHEMA_VERSION),
-    task: taskRunSchema,
-    params: z.record(z.string(), z.string()),
-    agent: agentSchema.default(DEFAULT_AGENT),
-    agent_version: z.string().regex(AGENT_VERSION_PATTERN).optional(),
-    model: z.string().regex(MODEL_PATTERN).optional(),
-    baseline: baselineSchema,
-    verifications: z.array(verificationSchema),
-    result: runResultSchema.optional(),
+    ...runFileShape,
   })
   .strict()
-  .superRefine((run, ctx) => {
-    if (run.result && run.result.attempts !== run.verifications.length) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["result", "attempts"],
-        message: "Attempts must equal the number of verifications.",
-      });
-    }
-    if (Boolean(run.result) !== run.verifications.length > 0) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["result"],
-        message: "Result must be present iff verifications are non-empty.",
-      });
-    }
-  });
+  .superRefine(refineRunFile);
+
+const v2RunFileSchema = z
+  .object({
+    schema_version: z.literal(2),
+    ...runFileShape,
+  })
+  .strict()
+  .superRefine(refineRunFile);
 
 const legacyRunFileSchema = z
   .object({
@@ -221,28 +243,35 @@ export type RunFile = z.infer<typeof runFileSchema>;
 
 export function migrateRunFile(value: unknown): RunFile | null {
   const legacy = legacyRunFileSchema.safeParse(value);
-  if (!legacy.success) return null;
-  const run = legacy.data;
-  const verifications: Verification[] = run.result
-    ? [
-        {
-          ...run.result,
-          agent: run.agent,
-          ...(run.agent_version === undefined
-            ? {}
-            : { agent_version: run.agent_version }),
-          ...(run.model === undefined ? {} : { model: run.model }),
-        },
-      ]
-    : [];
+  if (legacy.success) {
+    const run = legacy.data;
+    const verifications: Verification[] = run.result
+      ? [
+          {
+            ...run.result,
+            agent: run.agent,
+            ...(run.agent_version === undefined
+              ? {}
+              : { agent_version: run.agent_version }),
+            ...(run.model === undefined ? {} : { model: run.model }),
+          },
+        ]
+      : [];
+    return runFileSchema.parse({
+      ...run,
+      schema_version: RUN_SCHEMA_VERSION,
+      baseline: run.baseline,
+      verifications,
+      ...(run.result
+        ? { result: { ...run.result, attempts: verifications.length } }
+        : {}),
+    });
+  }
+  const v2 = v2RunFileSchema.safeParse(value);
+  if (!v2.success) return null;
   return runFileSchema.parse({
-    ...run,
+    ...v2.data,
     schema_version: RUN_SCHEMA_VERSION,
-    baseline: run.baseline,
-    verifications,
-    ...(run.result
-      ? { result: { ...run.result, attempts: verifications.length } }
-      : {}),
   });
 }
 

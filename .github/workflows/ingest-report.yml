@@ -1,0 +1,224 @@
+name: Ingest report
+
+on:
+  issues:
+    types: [labeled]
+
+permissions: {}
+
+concurrency:
+  group: ingest-report
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: >-
+      github.event.label.name == 'report' &&
+      github.event.issue.state == 'open' &&
+      !contains(github.event.issue.labels.*.name, 'ingested')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      status: ${{ steps.ingest.outputs.status }}
+      line: ${{ steps.ingest.outputs.line }}
+      comment: ${{ steps.ingest.outputs.comment }}
+      body_sha256: ${{ steps.ingest.outputs.body_sha256 }}
+    steps:
+      - name: Re-check the issue's live state
+        id: live
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -e
+          # Queued runs carry a stale event snapshot; an earlier run may have ingested this issue.
+          # Fails the run (no skip) if the API call fails, so the report can be retried.
+          LIVE=$(gh issue view "$ISSUE_NUMBER" --repo "$GH_REPO" --json state,labels \
+            --jq '.state == "OPEN" and ([.labels[].name] | index("ingested") | not)')
+          if [ "$LIVE" = "true" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.live.outputs.skip == 'false'
+      - uses: pnpm/action-setup@v6
+        if: steps.live.outputs.skip == 'false'
+      - uses: actions/setup-node@v7
+        if: steps.live.outputs.skip == 'false'
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+        if: steps.live.outputs.skip == 'false'
+      - run: pnpm turbo run build --filter=@oh-my-otter/benchmarks...
+        if: steps.live.outputs.skip == 'false'
+      - name: Fetch the author's other report issues
+        if: steps.live.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          RECENT_ISSUES_FILE: ${{ runner.temp }}/recent-issues.json
+          OPEN_ISSUES_FILE: ${{ runner.temp }}/open-issues.json
+        run: |
+          set -e
+          SINCE=$(date -u -d '-60 min' +%Y-%m-%dT%H:%M:%SZ)
+          gh api -X GET "repos/$GH_REPO/issues" \
+            -f creator="$ISSUE_AUTHOR" -f labels=report -f state=all \
+            -f since="$SINCE" -f per_page=100 > "$RECENT_ISSUES_FILE"
+          gh api -X GET "repos/$GH_REPO/issues" \
+            -f creator="$ISSUE_AUTHOR" -f labels=report -f state=open \
+            -f per_page=100 > "$OPEN_ISSUES_FILE"
+      - name: Validate the report
+        if: steps.live.outputs.skip == 'false'
+        id: ingest
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          RECENT_ISSUES_FILE: ${{ runner.temp }}/recent-issues.json
+          OPEN_ISSUES_FILE: ${{ runner.temp }}/open-issues.json
+        run: node packages/benchmarks/scripts/ingest-report.mjs
+      - name: Comment and close an invalid report
+        if: steps.ingest.outputs.status == 'invalid'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT: ${{ steps.ingest.outputs.comment }}
+        run: |
+          set -e
+          printf '%s\n' "$COMMENT" > "$RUNNER_TEMP/comment.md"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/comment.md"
+          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason "not planned"
+
+  commit:
+    needs: validate
+    if: needs.validate.outputs.status == 'valid'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    outputs:
+      status: ${{ steps.recheck.outputs.status }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Re-check the issue body and state
+        id: recheck
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.body_sha256 }}
+        run: |
+          set -e
+          # The issue may have been edited or closed since validation.
+          # A failed API call fails the job so the whole run can be retried.
+          gh api "repos/$GH_REPO/issues/$ISSUE_NUMBER" > "$RUNNER_TEMP/issue.json"
+          ACTUAL_SHA=$(jq -j '.body // ""' "$RUNNER_TEMP/issue.json" | sha256sum | cut -d' ' -f1)
+          STATE=$(jq -r '.state' "$RUNNER_TEMP/issue.json")
+          INGESTED=$(jq '[.labels[].name] | index("ingested") != null' "$RUNNER_TEMP/issue.json")
+          if [ "$INGESTED" = "true" ]; then
+            echo "Issue already ingested; not appending" >&2
+            echo "status=already" >> "$GITHUB_OUTPUT"
+          elif [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ] || [ "$STATE" != "open" ]; then
+            echo "Issue changed since validation; not appending" >&2
+            echo "status=changed" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Append the report to reports.ndjson
+        id: append
+        if: steps.recheck.outputs.status == 'ok'
+        env:
+          LINE: ${{ needs.validate.outputs.line }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -e
+          if [ -z "$LINE" ] || [ "$LINE" != "${LINE%%$'\n'*}" ] || [ "${LINE#\{}" = "$LINE" ]; then
+            echo "Invalid report line" >&2
+            exit 1
+          fi
+          pushed=0
+          trap 'if [ "$pushed" != 1 ]; then gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --remove-label ingested || true; fi' EXIT
+          gh label create ingested --repo "$GH_REPO" --color 0E8A16 \
+            --description "Report ingested into the anonymous dataset" --force
+          gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label ingested
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            if git ls-remote --exit-code --heads origin dataset >/dev/null 2>&1; then
+              git fetch origin dataset
+              git checkout -B dataset FETCH_HEAD
+            else
+              git switch dataset 2>/dev/null || git switch --orphan dataset
+              git rm -rf --cached . -q 2>/dev/null || true
+              git clean -fdxq
+            fi
+            printf '%s\n' "$LINE" >> reports.ndjson
+            git add reports.ndjson
+            git commit -qm "dataset: add report"
+            if git push origin dataset; then
+              pushed=1
+              exit 0
+            fi
+            echo "Push failed (attempt $attempt), retrying" >&2
+          done
+          echo "Failed to push after 5 attempts" >&2
+          exit 1
+
+  changed:
+    needs: [validate, commit]
+    if: needs.commit.outputs.status == 'changed'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Comment that the issue changed during ingest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -e
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body "This issue was edited while it was being ingested, so nothing was stored. Please open a new report issue with the current \`omot report\` output."
+          gh label create report-edited --repo "$GH_REPO" --color BFD4F2 --description "Report edited during ingest; nothing stored" --force
+          gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label report-edited
+          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason "not planned"
+
+  close:
+    needs: [validate, commit]
+    if: >-
+      needs.validate.outputs.status == 'valid' &&
+      needs.commit.outputs.status != 'changed'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Comment and close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          COMMENT: ${{ needs.validate.outputs.comment }}
+        run: |
+          set -e
+          printf '%s\n' "$COMMENT" > "$RUNNER_TEMP/comment.md"
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/comment.md"
+          gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label ingested
+          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason completed
+      - name: Lock the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          # Best effort only: a failed lock must not fail the job.
+          gh issue lock "$ISSUE_NUMBER" --repo "$GH_REPO" --reason resolved \
+            || echo "warning: could not lock issue $ISSUE_NUMBER" >&2

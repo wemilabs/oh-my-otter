@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   countTestCases,
+  countTargetTestCases,
   localNames,
   moduleSpecifiers,
   referencesIdentifier,
@@ -152,6 +153,17 @@ describe("module imports", () => {
     expect(localNames(targetNamespace, "add", scope)).toEqual([]);
     expect(referencesIdentifier(targetNamespace, "add", scope)).toBe(true);
   });
+
+  it.each(["other.add(1)", "other?.add(1)", "other . add(1)"])(
+    "does not count unrelated member access %s",
+    (call) => {
+      const source = `import { add } from "../src/math.mjs";\n${call}\n`;
+      expect(referencesIdentifier(source, "add")).toBe(false);
+      expect(referencesIdentifier(source.replace(call, "add(1)"), "add")).toBe(
+        true,
+      );
+    },
+  );
 });
 
 describe("test case counting", () => {
@@ -165,5 +177,90 @@ describe("test case counting", () => {
         describe("suite", () => {});
       `),
     ).toBe(2);
+  });
+
+  it("counts only cases with a target reference, excluding code before the first case", () => {
+    const source = `
+      const before = add(0, 1);
+      test("unrelated", () => {});
+      it("uses add", () => add(1, 2));
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(1);
+  });
+
+  it("does not count target references in hooks after a test case", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      it("placeholder", () => {});
+      afterEach(() => add(1, 2));
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(0);
+  });
+
+  it("does not count target references in hooks between test cases", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      it("first", () => {});
+      beforeEach(() => add(1, 2));
+      test("second", () => {});
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(0);
+  });
+
+  it("counts a target reference inside a test case", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      it("uses add", () => add(1, 2));
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(1);
+  });
+
+  it("counts references inside curried test.each callbacks", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      test.each([[1, 2]])("adds %i", (a, b) => {
+        expect(add(a, b)).toBe(3);
+      });
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(1);
+  });
+
+  it("does not count hooks after a curried it.each callback", () => {
+    const source = `
+      import { add } from "../src/math.mjs";
+      it.each([1])("x", () => {});
+      afterEach(() => add(1, 2));
+    `;
+    expect(
+      countTargetTestCases(source, "add", {
+        fromFile: "test/math.test.mjs",
+        target: "src/math.mjs",
+      }),
+    ).toBe(0);
   });
 });
