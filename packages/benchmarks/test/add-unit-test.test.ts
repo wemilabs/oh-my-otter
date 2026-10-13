@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import {
   mkdtempSync,
@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createVerifyContext } from "../src/index";
+import { findMutations, isTypePosition } from "../src/lib/mutations";
 import task from "../src/tasks/add-unit-test/verify";
 import {
   failingTest,
@@ -30,6 +31,35 @@ const base: Files = {
   "test/smoke.test.mjs": passingTest,
 };
 const params = { file: "src/math.mjs", function: "add" };
+
+describe("boolean mutation positions", () => {
+  it.each([
+    ["const x: true = y;", true],
+    ["const x = y as false;", true],
+    ["x is true", true],
+    ["type A = string | false;", true],
+    ["const value = { enabled: true };", false],
+    ["const value = c ? a : true;", false],
+    ["function value() { return false; }", false],
+    ["const value = x === true;", false],
+  ])("%s", (source, expected) => {
+    const mutation = findMutations(source).find((entry) =>
+      ["true", "false"].includes(entry.from),
+    );
+    expect(mutation).toBeDefined();
+    expect(isTypePosition(source, mutation!.index)).toBe(expected);
+    const selected = findMutations(source).filter(
+      (entry) =>
+        !(
+          (entry.from === "true" || entry.from === "false") &&
+          isTypePosition(source, entry.index)
+        ),
+    );
+    expect(selected.some((entry) => entry.index === mutation!.index)).toBe(
+      !expected,
+    );
+  });
+});
 
 const addTest = `import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -139,6 +169,23 @@ describe("add-unit-test", () => {
         "Mutation check: the tests caught 1 of 1 injected bugs in add (line 2: + → -).",
       ],
     });
+  });
+
+  it("is partial when a deleted test's directory no longer exists", async () => {
+    const files: Files = {
+      ...base,
+      "test/old/a.test.mjs": passingTest,
+    };
+    const started = await startTask(task, files, params);
+    await rm(path.join(started.root, "test/old/a.test.mjs"));
+    await rmdir(path.join(started.root, "test/old"));
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": addTest,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "Test files deleted: test/old/a.test.mjs.",
+    );
   });
 
   it("is partial when the new test does not catch injected bugs", async () => {

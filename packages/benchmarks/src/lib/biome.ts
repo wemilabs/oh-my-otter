@@ -79,7 +79,12 @@ export function parseBiomeGithub(
       );
     }
     if (properties.title !== rule) {
-      if (match[1] === "error") fatal += 1;
+      if (
+        match[1] === "error" &&
+        !(properties.title ?? "").startsWith("lint/")
+      ) {
+        fatal += 1;
+      }
       continue;
     }
     count += 1;
