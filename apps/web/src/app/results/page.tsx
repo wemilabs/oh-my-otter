@@ -110,8 +110,9 @@ async function ResultsStats() {
 
       {aggregate.excluded_other_versions > 0 ? (
         <p className="text-sm text-muted-foreground">
-          {aggregate.excluded_other_versions} reports from other task versions
-          aren&apos;t counted.
+          {aggregate.excluded_other_versions === 1
+            ? "1 report from another task version isn't counted."
+            : `${aggregate.excluded_other_versions} reports from other task versions aren't counted.`}
         </p>
       ) : null}
 
