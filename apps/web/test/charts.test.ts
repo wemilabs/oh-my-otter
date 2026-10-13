@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { AgentGroup, Group } from "@oh-my-otter/benchmarks/report";
-import { toRateRows } from "../src/lib/charts";
+import { chartHeightForRows, toRateRows } from "../src/lib/charts";
+
+describe("chartHeightForRows", () => {
+  it("scales by row count and includes the axis height", () => {
+    expect(chartHeightForRows(0)).toBe(56);
+    expect(chartHeightForRows(1)).toBe(104);
+    expect(chartHeightForRows(4)).toBe(248);
+  });
+});
 
 function group(
   key: string,

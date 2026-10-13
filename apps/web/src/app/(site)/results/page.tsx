@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
+import { Suspense, type CSSProperties } from "react";
 import {
   BUILTIN_TASK_MANIFESTS,
   SITE_URL,
@@ -16,6 +16,7 @@ import {
   SuccessRateChart,
   TaskChartCaption,
 } from "@/components/results/charts";
+import { chartHeightForRows } from "@/lib/charts";
 import { getDataset } from "@/lib/dataset";
 
 export const instant = true;
@@ -166,12 +167,31 @@ async function ResultsStats() {
   );
 }
 
-function SkeletonBar({ className = "" }: { className?: string }) {
+function SkeletonBar({
+  className = "",
+  style,
+}: {
+  className?: string;
+  style?: CSSProperties;
+}) {
   return (
     <div
       aria-hidden="true"
       className={`animate-pulse rounded-lg bg-foreground/10 motion-reduce:animate-none ${className}`}
+      style={style}
     />
+  );
+}
+
+function ChartSkeleton({ rows }: { rows: number }) {
+  return (
+    <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-card p-5 shadow-sm">
+      <SkeletonBar className="h-4 w-40" />
+      <SkeletonBar
+        className="mt-4 w-full"
+        style={{ height: chartHeightForRows(rows) }}
+      />
+    </div>
   );
 }
 
@@ -214,13 +234,12 @@ function ResultsStatsSkeleton() {
       <section aria-hidden="true" className="space-y-5">
         <SkeletonBar className="h-8 w-24" />
         <div className="grid gap-5 lg:grid-cols-2">
-          {Array.from({ length: 2 }, (_, i) => (
-            <SkeletonBar key={i} className="h-[340px]" />
-          ))}
+          <ChartSkeleton rows={4} />
+          <ChartSkeleton rows={BUILTIN_TASK_MANIFESTS.length} />
         </div>
         <div className="grid gap-5 lg:grid-cols-2">
           {Array.from({ length: BUILTIN_TASK_MANIFESTS.length }, (_, i) => (
-            <SkeletonBar key={i} className="h-[340px]" />
+            <ChartSkeleton key={i} rows={2} />
           ))}
         </div>
       </section>

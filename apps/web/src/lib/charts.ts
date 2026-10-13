@@ -1,5 +1,12 @@
 import type { AgentGroup, Group } from "@oh-my-otter/benchmarks/report";
 
+export const CHART_ROW_HEIGHT = 48;
+export const CHART_AXIS_HEIGHT = 56;
+
+export function chartHeightForRows(rows: number): number {
+  return rows * CHART_ROW_HEIGHT + CHART_AXIS_HEIGHT;
+}
+
 export interface RateRow {
   key: string;
   label: string;

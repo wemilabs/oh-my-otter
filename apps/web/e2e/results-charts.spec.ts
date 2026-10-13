@@ -19,9 +19,14 @@ test("results charts show only adequately sampled rates", async ({
   await expect(bands.getByText(/Not enough data yet/).first()).toBeVisible();
 
   const task = page.locator("figure").filter({ hasText: ADD_UNIT_TEST_TITLE });
-  await expect(task.getByText("Claude Code · n=10")).toBeVisible();
-  await expect(task.getByText("Other · n=5")).toBeVisible();
-  await expect(task.getByText("unranked").first()).toBeVisible();
+  await expect(task.getByText("Claude", { exact: true })).toBeVisible();
+  await expect(task.getByText("Code", { exact: true })).toBeVisible();
+  await expect(task.getByText("n=10", { exact: true })).toBeVisible();
+  await expect(task.getByText("Other", { exact: true })).toBeVisible();
+  await expect(task.getByText("n=5", { exact: true })).toBeVisible();
+  await expect(
+    task.getByText("Other is shown but not ranked.", { exact: true }),
+  ).toBeVisible();
   expect(
     await task.locator(".recharts-bar-rectangle path").count(),
   ).toBeGreaterThan(0);

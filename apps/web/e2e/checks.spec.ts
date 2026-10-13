@@ -71,3 +71,9 @@ test("unknown check details return a single-header 404", async ({
   expect(response?.status()).toBe(404);
   await expect(page.locator("h1")).toHaveCount(1);
 });
+
+test("unknown task details return a 404", async ({ page, baseURL }) => {
+  const response = await page.goto(`${baseURL}/tasks/nope`);
+  expect(response?.status()).toBe(404);
+  await expect(page.locator("h1")).toHaveCount(1);
+});
