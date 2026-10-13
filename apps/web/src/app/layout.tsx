@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: "%s · Oh My Otter",
   },
   description:
-    "An open-source benchmark and optimization toolkit for coding agents. Scan your repo, benchmark any coding agent locally, and compare anonymous results.",
+    "Open-source benchmarks and fixes that get your repo ready for AI coding agents. Scan your repo, benchmark any coding agent locally, and compare anonymous results.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
