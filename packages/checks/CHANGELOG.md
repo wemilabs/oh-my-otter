@@ -1,5 +1,12 @@
 # @oh-my-otter/checks
 
+## 0.4.0
+
+### Patch Changes
+
+- e74336d: Harden benchmark records, verifier output, installation docs, report ingestion, and website navigation.
+- @oh-my-otter/core@0.4.0
+
 ## 0.3.0
 
 ### Patch Changes
