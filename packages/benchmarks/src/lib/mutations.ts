@@ -41,6 +41,27 @@ export function findMutations(source: string): Mutation[] {
   return mutations.sort((a, b) => a.index - b.index);
 }
 
+export function isTypePosition(source: string, index: number): boolean {
+  const prefix = maskNonCode(source).slice(0, index);
+  const previous =
+    /(\b(?:extends|satisfies|keyof|is|as)\b|(?<![|&])[|&]|<|=|:)\s*$/.exec(
+      prefix,
+    );
+  if (!previous) return false;
+  const token = previous[1]!;
+  if (token === "=") {
+    const beforeEquals = prefix.slice(0, previous.index).trimEnd();
+    return /\btype\s+[A-Za-z_$][\w$]*(?:<[^>]*>)?\s*$/.test(beforeEquals);
+  }
+  if (token === "<") return /[\w$]<\s*$/.test(prefix);
+  if (token !== ":") return true;
+  const beforeColon = prefix.slice(0, previous.index).trimEnd();
+  return (
+    /\b(?:let|const|var)\s+[A-Za-z_$][\w$]*$/.test(beforeColon) ||
+    /[A-Za-z_$][\w$]*\?$/.test(beforeColon)
+  );
+}
+
 export function applyMutation(source: string, mutation: Mutation): string {
   return (
     source.slice(0, mutation.index) +

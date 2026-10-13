@@ -392,7 +392,8 @@ describe("run file migration", () => {
     });
     const lock = path.join(root, ".omot/run.json.lock");
     await writeFile(lock, "held");
-    const removing = removeRunFile(root);
+    const expected = await readFile(path.join(root, ".omot/run.json"));
+    const removing = removeRunFile(root, expected);
     await new Promise<void>((resolve) => setTimeout(resolve, 75));
     expect((await readRunFile(root)).task.id).toBe("add-unit-test");
     await unlink(lock);

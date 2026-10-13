@@ -18,7 +18,11 @@ import { TaskPreconditionError } from "../../types";
 import manifest from "./task.json";
 import prompt from "./prompt.md";
 
-const dataSchema = z.object({ violations: z.number().int().min(0) });
+const dataSchema = z.object({
+  violations: z.number().int().min(0),
+  fatal: z.number().int().nonnegative().default(0),
+  fatalFiles: z.array(z.string()).default([]),
+});
 type Data = z.infer<typeof dataSchema>;
 
 export default defineTask<Data>({
@@ -48,10 +52,18 @@ export default defineTask<Data>({
       );
     }
     ctx.log(`Baseline: ${run.count} violation(s) of ${rule}.`);
-    return { violations: run.count };
+    return {
+      violations: run.count,
+      fatal: run.fatal,
+      fatalFiles: run.fatalFiles,
+    };
   },
   async verify(ctx) {
-    const { violations: before } = dataSchema.parse(ctx.baseline.data);
+    const {
+      violations: before,
+      fatal: baselineFatal,
+      fatalFiles: baselineFatalFiles,
+    } = dataSchema.parse(ctx.baseline.data);
     const reasons: string[] = [];
     const biome = biomeRule(ctx.params.rule as string);
     const rule = biome ?? (ctx.params.rule as string);
@@ -65,9 +77,27 @@ export default defineTask<Data>({
     if (run.count > 0) {
       reasons.push(`Remaining in: ${summarizeList(run.files)}.`);
     }
+    let partial = false;
+    const baselineFatalFileSet = new Set(baselineFatalFiles);
+    const newFatal = run.fatalFiles.filter(
+      (file) => !baselineFatalFileSet.has(file),
+    );
+    const linter = biome ? "Biome" : "ESLint";
+    if (newFatal.length > 0) {
+      partial = true;
+      reasons.push(
+        `${linter} reported new parse or internal errors in ${summarizeList(newFatal)}; violations of ${rule} there are not counted.`,
+      );
+    } else if (run.fatal > baselineFatal) {
+      const increase = run.fatal - baselineFatal;
+      partial = true;
+      reasons.push(
+        `${linter} reported ${increase} new parse or internal error(s); violations of ${rule} in those files are not counted.`,
+      );
+    }
     if (run.count >= before) return { outcome: "fail", reasons };
 
-    let partial = run.count > 0;
+    partial ||= run.count > 0;
     const changed = await ctx.changedFiles();
     const configs = changed.filter((file) =>
       biome ? isBiomeConfig(file.path) : isEslintConfig(file.path),

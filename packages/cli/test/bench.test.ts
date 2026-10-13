@@ -13,6 +13,7 @@ import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { execa } from "execa";
 import { afterEach, describe, expect, it } from "vitest";
+import { replaceRunFile } from "@oh-my-otter/benchmarks";
 import { main } from "../src/cli";
 
 const tempDirs: string[] = [];
@@ -296,7 +297,7 @@ describe("bench start and verify", () => {
     const run = await runFile(root);
     expect(run).toMatchObject({
       schema_version: 3,
-      task: { id: "add-unit-test", version: 6 },
+      task: { id: "add-unit-test", version: 7 },
       params: { file: "src/math.mjs", function: "add" },
       agent: "claude-code",
       baseline: { commit: head },
@@ -324,7 +325,7 @@ describe("bench start and verify", () => {
       { cwd: root },
     );
     expect(verified.code).toBe(0);
-    expect(verified.stdout).toContain("PASS add-unit-test v6");
+    expect(verified.stdout).toContain("PASS add-unit-test v7");
     expect(verified.stdout).toContain("(attempt 1)");
     expect(verified.stdout).toContain("Baseline health recorded");
     expect(verified.stderr).toContain("Nothing was sent anywhere.");
@@ -465,7 +466,7 @@ test("add", () => assert.equal(add(1, 2), 3));
     const result = await invoke([...start, "--yes"], { cwd: root });
     expect(result.code).toBe(0);
     expect(await runFile(root)).toMatchObject({
-      task: { id: "add-unit-test", version: 6 },
+      task: { id: "add-unit-test", version: 7 },
     });
   });
 
@@ -737,6 +738,46 @@ describe("bench branches and clean", () => {
         "branch.bench/work.omot-run",
       ]),
     ).toBe(run.baseline.started_at);
+  });
+
+  it("preserves a replacement run and branch when clean's snapshot changes", async () => {
+    const root = await repo(cleanBranchFixture);
+    const started = await invoke(
+      [...start, "--branch", "bench/clean-race", "--yes"],
+      { cwd: root },
+    );
+    expect(started.code).toBe(0);
+
+    let replacementBytes!: Buffer;
+    const cleaned = await invoke(["bench", "clean", "--delete-branch"], {
+      cwd: root,
+      isTTY: true,
+      confirm: async () => {
+        const current = await runFile(root);
+        await replaceRunFile(root, {
+          ...current,
+          baseline: {
+            ...current.baseline,
+            started_at: new Date(
+              Date.parse(current.baseline.started_at) + 1_000,
+            ).toISOString(),
+          },
+        });
+        replacementBytes = await readFile(path.join(root, ".omot/run.json"));
+        return true;
+      },
+    });
+
+    expect(cleaned.code).toBe(1);
+    expect(cleaned.stderr).toContain(
+      ".omot/run.json changed since clean started; nothing was removed. Re-run omot bench clean.",
+    );
+    expect(await readFile(path.join(root, ".omot/run.json"))).toEqual(
+      replacementBytes,
+    );
+    expect(await git(root, ["branch", "--show-current"])).toBe(
+      "bench/clean-race",
+    );
   });
 
   it("restores the original branch and deletes the new branch after a precondition failure", async () => {

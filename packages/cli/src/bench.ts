@@ -18,9 +18,11 @@ import {
   normalizeModel,
   parseParams,
   planGitignore,
-  removeRunFile,
+  assertRunFileUnchanged,
+  removeRunFileUnlocked,
   removeStaleRunFileLock,
   readRunFile,
+  readRunFileSnapshot,
   renderPrompt,
   resolveRepoRoot,
   appendVerification,
@@ -28,6 +30,7 @@ import {
   updateRunFile,
   TaskPreconditionError,
   runGit,
+  withRunFileLock,
   withoutOmotLines,
   type RunFile,
   type Task,
@@ -669,7 +672,8 @@ async function cleanRun(
     throw error;
   }
 
-  const run = await readRunFile(root).catch(() => null);
+  const snapshot = await readRunFileSnapshot(root);
+  const run = snapshot.run;
   let branchInfo = run === null ? null : omotBranch(run);
   if (branchInfo && !(await branchExists(root, branchInfo.branch))) {
     branchInfo = null;
@@ -731,34 +735,55 @@ async function cleanRun(
   }
 
   let switchedTo: string | null = null;
-  if (deleteBranch && branchInfo) {
-    const currentRef = await currentBranchRef(root);
-    if (currentRef === `refs/heads/${branchInfo.branch}`) {
-      if (branchInfo.original === "HEAD") {
-        if (!branchInfo.commit) {
-          throw new Error(
-            `Cannot restore the detached original commit before deleting ${branchInfo.branch}.`,
-          );
+  const removed = await withRunFileLock(root, async () => {
+    if (!(await assertRunFileUnchanged(root, snapshot.bytes))) return false;
+    if (deleteBranch && branchInfo) {
+      const currentRef = await currentBranchRef(root);
+      if (currentRef === `refs/heads/${branchInfo.branch}`) {
+        if (branchInfo.original === "HEAD") {
+          if (!branchInfo.commit) {
+            throw new Error(
+              `Cannot restore the detached original commit before deleting ${branchInfo.branch}.`,
+            );
+          }
+          await runGit(root, [
+            "switch",
+            "--quiet",
+            "--detach",
+            branchInfo.commit,
+          ]);
+          switchedTo = "HEAD";
+        } else {
+          await runGit(root, ["switch", "--quiet", branchInfo.original]);
+          switchedTo = branchInfo.original;
         }
-        await runGit(root, [
-          "switch",
-          "--quiet",
-          "--detach",
-          branchInfo.commit,
-        ]);
-        switchedTo = "HEAD";
-      } else {
-        await runGit(root, ["switch", "--quiet", branchInfo.original]);
-        switchedTo = branchInfo.original;
+      }
+      await runGit(root, ["branch", "-D", branchInfo.branch]);
+    }
+    await removeRunFileUnlocked(root);
+    return true;
+  });
+  if (!removed) {
+    try {
+      await rmdir(directory);
+    } catch (error) {
+      if (
+        !["ENOENT", "ENOTEMPTY"].includes(
+          (error as NodeJS.ErrnoException).code ?? "",
+        )
+      ) {
+        throw error;
       }
     }
-    await runGit(root, ["branch", "-D", branchInfo.branch]);
+    io.stdout("Nothing to clean.\n");
+    return 0;
+  }
+  if (deleteBranch && branchInfo) {
     io.stdout(
       `Deleted branch ${branchInfo.branch}${switchedTo ? `; now on ${switchedTo}` : ""}.\n`,
     );
   }
 
-  await removeRunFile(root);
   io.stdout("Removed .omot/run.json.\n");
   try {
     await rmdir(directory);

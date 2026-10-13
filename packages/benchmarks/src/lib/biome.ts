@@ -67,6 +67,7 @@ export function parseBiomeGithub(
   let fatal = 0;
   const files: string[] = [];
   const seen = new Set<string>();
+  const fatalFiles = new Set<string>();
   for (const line of workflowLines) {
     const match = /^::(error|warning|notice)\s+(.+?)::/.exec(line);
     if (!match) continue;
@@ -79,7 +80,15 @@ export function parseBiomeGithub(
       );
     }
     if (properties.title !== rule) {
-      if (match[1] === "error") fatal += 1;
+      if (
+        match[1] === "error" &&
+        !(properties.title ?? "").startsWith("lint/")
+      ) {
+        fatal += 1;
+        if (properties.file) {
+          fatalFiles.add(relativeFile(properties.file, root));
+        }
+      }
       continue;
     }
     count += 1;
@@ -91,7 +100,7 @@ export function parseBiomeGithub(
       }
     }
   }
-  return { count, files, fatal };
+  return { count, files, fatal, fatalFiles: [...fatalFiles].sort() };
 }
 
 export async function runBiome(

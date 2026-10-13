@@ -12,7 +12,11 @@ import {
   referencesIdentifier,
 } from "../../lib/imports";
 import { maskNonCode } from "../../lib/lexer";
-import { applyMutation, findMutations } from "../../lib/mutations";
+import {
+  applyMutation,
+  findMutations,
+  isTypePosition,
+} from "../../lib/mutations";
 import { checkScript, missingScript, withOutput } from "../../lib/scripts";
 import { defineTask } from "../../task";
 import { TaskPreconditionError } from "../../types";
@@ -295,7 +299,7 @@ export default defineTask({
       const original = await readFile(absolute);
       const source = original.toString("utf8");
       const testSnapshots = await Promise.all(
-        changedTests.map(async (entry) => {
+        tests.map(async (entry) => {
           const testFile = await resolveInside(ctx.root, entry.path);
           const current = await readFile(testFile).catch((error: unknown) => {
             if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -347,6 +351,13 @@ export default defineTask({
             .filter(
               (mutation) =>
                 mutation.index >= body.start && mutation.index < body.end,
+            )
+            .filter(
+              (mutation) =>
+                !(
+                  (mutation.from === "true" || mutation.from === "false") &&
+                  isTypePosition(source, mutation.index)
+                ),
             )
             .slice(0, MAX_MUTANTS)
         : [];
