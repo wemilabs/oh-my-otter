@@ -79,14 +79,14 @@ describe("Biome GitHub output", () => {
     });
   });
 
-  it("tracks fileless fatal errors by title and trimmed, capped message", () => {
+  it("tracks fileless fatal errors by title and full trimmed message", () => {
     const message = "m".repeat(121);
     const output = `::error title=internalError/io::  ${message}  `;
     expect(
       parseBiomeGithub(result(output, 1), "lint/style/useConst", "/work/repo"),
     ).toMatchObject({
       fatal: 1,
-      fatalFiles: [`(no file) internalError/io: ${"m".repeat(120)}`],
+      fatalFiles: [`(no file) internalError/io: ${message}`],
     });
   });
 

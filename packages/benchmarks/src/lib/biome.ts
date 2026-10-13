@@ -88,7 +88,7 @@ export function parseBiomeGithub(
         if (properties.file) {
           fatalFiles.add(relativeFile(properties.file, root));
         } else {
-          const message = (match[3] ?? "").trim().slice(0, 120);
+          const message = (match[3] ?? "").trim();
           fatalFiles.add(`(no file) ${properties.title ?? ""}: ${message}`);
         }
       }
