@@ -175,7 +175,8 @@ jobs:
           ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           set -e
-          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body "This issue was edited while it was being ingested, so nothing was stored. Remove and re-add the \`report\` label to submit the current version."
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body "This issue was edited while it was being ingested, so nothing was stored. Please open a new report issue with the current \`omot report\` output."
+          gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason "not planned"
 
   close:
     needs: [validate, commit]

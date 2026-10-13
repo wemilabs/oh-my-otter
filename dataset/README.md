@@ -17,7 +17,8 @@ Reports are added by the `ingest-report` GitHub Action: it validates the
 payload strictly, runs the plausibility checks described in PRIVACY.md, and
 appends one line to `reports.ndjson` on the `dataset` branch. Before
 appending it re-checks the issue body and state — an edited, closed or
-already-ingested issue is skipped with a comment — and the confirmation
+already-ingested issue is skipped, commented on and closed as not planned,
+asking the submitter to open a fresh report issue — and the confirmation
 comment records the stored line verbatim, then locks the issue. Maintainers
 may remove lines that are abusive or malformed. Aggregated results update
 hourly at <https://ohmyotter.vercel.app/results>.
