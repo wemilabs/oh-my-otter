@@ -4,6 +4,8 @@ import { BUILTIN_TASK_IDS } from "@oh-my-otter/benchmarks/report";
 
 const checkIds = new Set(builtinChecks.map((check) => check.id));
 const taskIds = new Set(BUILTIN_TASK_IDS);
+// Avoid `/_not-found`: Vercel serves that prerendered output with status 200.
+const NOT_FOUND_PATH = "/_omot/not-found";
 
 export function proxy(request: NextRequest) {
   const match = request.nextUrl.pathname.match(
@@ -16,7 +18,7 @@ export function proxy(request: NextRequest) {
   if (knownId) return NextResponse.next();
 
   const destination = request.nextUrl.clone();
-  destination.pathname = "/_not-found";
+  destination.pathname = NOT_FOUND_PATH;
   return NextResponse.rewrite(destination);
 }
 
