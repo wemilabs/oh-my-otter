@@ -35,4 +35,4 @@ omot bench start fix-failing-test --param file=src/lib/math.ts --agent <your-age
 - Every verification is appended to `.omot/run.json`, with its own commit and result; the latest result records how many attempts were made.
 - When you are done, switch back with `git switch -` and delete the branch with `git branch -D omot/fix-failing-test-<timestamp>`.
 
-The prompt and verifier live in [`packages/benchmarks/src/tasks/fix-failing-test`](../../packages/benchmarks/src/tasks/fix-failing-test). Changing either requires a `version` bump in `task.json`.
+The prompt and verifier live in [`packages/benchmarks/src/tasks/fix-failing-test`](https://github.com/wemilabs/oh-my-otter/tree/v1-dev/packages/benchmarks/src/tasks/fix-failing-test). Changing either requires a `version` bump in `task.json`.

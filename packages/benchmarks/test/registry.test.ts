@@ -49,6 +49,7 @@ describe("task registry", () => {
       const docs = await readFile(path.join(docsDir, `${id}.md`), "utf8");
       const frontmatter = docs.match(/^---\r?\n([\s\S]*?)\r?\n---/);
       expect(frontmatter?.[1]).toMatch(new RegExp(`^title: ${id}$`, "m"));
+      expect(docs).not.toContain("](../../");
       expect(docs).toContain(`omot bench start ${id}`);
       for (const param of task.manifest.params)
         expect(docs).toContain(param.name);

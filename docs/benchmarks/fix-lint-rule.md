@@ -34,4 +34,4 @@ omot bench start fix-lint-rule --param rule=prefer-const --agent <your-agent>
 - Runs the `test` script.
 - The test exit code is recorded at start. A failure that also occurred at baseline is not counted against the agent; if baseline scripts were skipped, a later failure is reported with unknown baseline health.
 
-The prompt and verifier live in [`packages/benchmarks/src/tasks/fix-lint-rule`](../../packages/benchmarks/src/tasks/fix-lint-rule). Changing either requires a `version` bump in `task.json`.
+The prompt and verifier live in [`packages/benchmarks/src/tasks/fix-lint-rule`](https://github.com/wemilabs/oh-my-otter/tree/v1-dev/packages/benchmarks/src/tasks/fix-lint-rule). Changing either requires a `version` bump in `task.json`.

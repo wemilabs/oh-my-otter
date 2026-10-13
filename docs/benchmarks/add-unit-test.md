@@ -35,4 +35,4 @@ omot bench start add-unit-test --param file=src/utils/format.ts --param function
 - Requires `scripts.test` and verifies it passes at the baseline before starting. If it is missing, `omot scan --fix` can generate the test script and other CI pieces.
 - Runs the `test` script after changes; the start-time test result is retained as baseline health.
 
-The prompt and verifier live in [`packages/benchmarks/src/tasks/add-unit-test`](../../packages/benchmarks/src/tasks/add-unit-test). Changing either requires a `version` bump in `task.json`.
+The prompt and verifier live in [`packages/benchmarks/src/tasks/add-unit-test`](https://github.com/wemilabs/oh-my-otter/tree/v1-dev/packages/benchmarks/src/tasks/add-unit-test). Changing either requires a `version` bump in `task.json`.
