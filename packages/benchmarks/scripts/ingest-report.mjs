@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { appendFile, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -45,6 +45,7 @@ async function main() {
     const lines = [
       `status=${result.ok ? "valid" : "invalid"}`,
       `line=${result.ok ? result.line : ""}`,
+      `body_sha256=${createHash("sha256").update(body, "utf8").digest("hex")}`,
       `comment<<${delimiter}`,
       result.comment,
       delimiter,

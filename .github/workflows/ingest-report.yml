@@ -24,6 +24,7 @@ jobs:
       status: ${{ steps.ingest.outputs.status }}
       line: ${{ steps.ingest.outputs.line }}
       comment: ${{ steps.ingest.outputs.comment }}
+      body_sha256: ${{ steps.ingest.outputs.body_sha256 }}
     steps:
       - name: Re-check the issue's live state
         id: live
@@ -101,17 +102,39 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: read
+    outputs:
+      status: ${{ steps.recheck.outputs.status }}
     steps:
       - uses: actions/checkout@v7
+      - name: Re-check the issue body and state
+        id: recheck
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.body_sha256 }}
+        run: |
+          set -e
+          # The issue may have been edited or closed since validation.
+          # A failed API call fails the job so the whole run can be retried.
+          gh api "repos/$GH_REPO/issues/$ISSUE_NUMBER" > "$RUNNER_TEMP/issue.json"
+          ACTUAL_SHA=$(jq -j '.body // ""' "$RUNNER_TEMP/issue.json" | sha256sum | cut -d' ' -f1)
+          STATE=$(jq -r '.state' "$RUNNER_TEMP/issue.json")
+          INGESTED=$(jq '[.labels[].name] | index("ingested") != null' "$RUNNER_TEMP/issue.json")
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ] || [ "$STATE" != "open" ] || [ "$INGESTED" = "true" ]; then
+            echo "Issue changed since validation; not appending" >&2
+            echo "status=changed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "status=ok" >> "$GITHUB_OUTPUT"
       - name: Append the report to reports.ndjson
+        id: append
+        if: steps.recheck.outputs.status != 'changed'
         env:
           LINE: ${{ needs.validate.outputs.line }}
         run: |
           set -e
-          if [ -z "$LINE" ] || [ "$LINE" != "${LINE%%$'\n'*}" ] || [ "${LINE#\{}" = "$LINE" ]; then
-            echo "Invalid report line" >&2
-            exit 1
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for attempt in 1 2 3 4 5; do
@@ -134,9 +157,27 @@ jobs:
           echo "Failed to push after 5 attempts" >&2
           exit 1
 
+  changed:
+    needs: [validate, commit]
+    if: needs.commit.outputs.status == 'changed'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Comment that the issue changed during ingest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -e
+          gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body "This issue was edited while it was being ingested, so nothing was stored. Remove and re-add the \`report\` label to submit the current version."
+
   close:
     needs: [validate, commit]
-    if: needs.validate.outputs.status == 'valid'
+    if: >-
+      needs.validate.outputs.status == 'valid' &&
+      needs.commit.outputs.status != 'changed'
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -153,3 +194,12 @@ jobs:
           gh issue comment "$ISSUE_NUMBER" --repo "$GH_REPO" --body-file "$RUNNER_TEMP/comment.md"
           gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label ingested
           gh issue close "$ISSUE_NUMBER" --repo "$GH_REPO" --reason completed
+      - name: Lock the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          # Best effort only: a failed lock must not fail the job.
+          gh issue lock "$ISSUE_NUMBER" --repo "$GH_REPO" --reason resolved \
+            || echo "warning: could not lock issue $ISSUE_NUMBER" >&2

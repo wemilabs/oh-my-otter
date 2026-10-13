@@ -93,7 +93,9 @@ delete it.
 3. The `ingest-report` GitHub Action extracts the JSON, validates it against a
    strict schema (unknown fields are rejected) plus the plausibility checks
    below, and appends only the validated fields as one line in
-   `reports.ndjson` on the orphan `dataset` branch, then closes the issue.
+   `reports.ndjson` on the orphan `dataset` branch. It re-checks the issue
+   body right before appending (an edited issue is skipped), records the
+   stored line verbatim in its comment, then closes and locks the issue.
    The action never writes your username, the issue number, or the issue
    text. Aggregated results are published hourly at
    <https://ohmyotter.vercel.app/results>.
