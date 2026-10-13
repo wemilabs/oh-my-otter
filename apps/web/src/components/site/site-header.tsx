@@ -28,7 +28,7 @@ export function SiteHeader() {
           <GitHubStars />
           <Link
             href="/#quickstart"
-            className="inline-flex min-h-11 shrink-0 items-center rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
+            className="inline-flex h-9 shrink-0 items-center rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-85"
           >
             Get started
           </Link>

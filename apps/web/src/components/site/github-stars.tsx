@@ -25,7 +25,7 @@ function GitHubButton({ stars }: { stars: number | null }) {
     <a
       href={REPO_URL}
       aria-label={stars === null ? undefined : starsAccessibleLabel(stars)}
-      className="hidden min-h-11 items-center rounded-md border border-border bg-card px-3.5 text-sm font-medium transition-colors hover:bg-accent sm:inline-flex gap-2"
+      className="hidden h-9 items-center rounded-md border border-border bg-card px-3.5 text-sm font-medium transition-colors hover:bg-accent sm:inline-flex gap-2"
     >
       <GitHubMark />
       {stars === null ? (
