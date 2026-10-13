@@ -1,4 +1,7 @@
-# a11y-img-alt
+---
+title: a11y-img-alt
+description: Add missing alt attributes to images.
+---
 
 Add missing alt attributes to images. Category: accessibility. Scope: small.
 
@@ -31,4 +34,4 @@ omot bench start a11y-img-alt --param dir=src/components --agent <your-agent>
 - The build exit code is recorded at start. A build failure that also occurred at baseline is not counted against the agent; if baseline scripts were skipped or no baseline build script existed, baseline health is reported as unknown.
 - This is a heuristic, not a full parser; see the plan for later stretch tasks.
 
-The prompt and verifier live in [`packages/benchmarks/src/tasks/a11y-img-alt`](../../packages/benchmarks/src/tasks/a11y-img-alt). Changing either requires a `version` bump in `task.json`.
+The prompt and verifier live in [`packages/benchmarks/src/tasks/a11y-img-alt`](https://github.com/wemilabs/oh-my-otter/tree/v1-dev/packages/benchmarks/src/tasks/a11y-img-alt). Changing either requires a `version` bump in `task.json`.

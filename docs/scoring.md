@@ -1,4 +1,7 @@
-# Scoring
+---
+title: Scoring
+description: Scoring version 1 uses each applicable check's weight as its maximum contribution.
+---
 
 Scoring version 1 uses each applicable check's weight as its maximum contribution.
 

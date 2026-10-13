@@ -1,4 +1,7 @@
-# dep-patch-bump
+---
+title: dep-patch-bump
+description: Bump a dependency within its major version.
+---
 
 Bump a dependency within its major version. Category: dependencies. Scope: small.
 
@@ -32,4 +35,4 @@ omot bench start dep-patch-bump --param package=zod --agent <your-agent>
 - Runs the `build` and `test` scripts with the detected package manager and records their baseline exit codes at start (missing scripts are skipped and reported).
 - A script failure that also occurred at baseline is not counted against the agent and includes the output tail. If baseline scripts were skipped or that script did not exist at start, a later failure is counted and reported with unknown baseline health.
 
-The prompt and verifier live in [`packages/benchmarks/src/tasks/dep-patch-bump`](../../packages/benchmarks/src/tasks/dep-patch-bump). Changing either requires a `version` bump in `task.json`.
+The prompt and verifier live in [`packages/benchmarks/src/tasks/dep-patch-bump`](https://github.com/wemilabs/oh-my-otter/tree/v1-dev/packages/benchmarks/src/tasks/dep-patch-bump). Changing either requires a `version` bump in `task.json`.

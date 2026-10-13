@@ -1,0 +1,11 @@
+{
+  "title": "Benchmarks",
+  "pages": [
+    "add-unit-test",
+    "dep-patch-bump",
+    "fix-lint-rule",
+    "a11y-img-alt",
+    "ts-strict-file",
+    "fix-failing-test"
+  ]
+}

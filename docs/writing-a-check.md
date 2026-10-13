@@ -1,4 +1,9 @@
-# Writing a check
+---
+title: Writing a check
+description: A check is a read-only test of one repository-readiness property.
+---
+
+> **Security:** Local `omot.config.*` and plugin modules execute arbitrary code with your privileges. Zod validates their shape only after that code has run; plugins are not sandboxed. The no-network guarantee applies to built-in checks only. Load only trusted plugins and configs, just as you would dependencies.
 
 A check is a read-only test of one repository-readiness property. It has a stable kebab-case `id`, a title, one of the `setup`, `verification`, `docs`, or `hygiene` categories, a weight from 1 to 5, a one-sentence `why`, and an async `run` function.
 
