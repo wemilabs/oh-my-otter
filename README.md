@@ -1,6 +1,6 @@
 # Oh My Otter
 
-An open-source benchmark and optimization toolkit for AI coding agents: Devin, Claude Code, Cursor, Codex, Copilot, and others.
+Open-source benchmarks and fixes that get your repo ready for AI coding agents: Devin, Claude Code, Cursor, Codex, Copilot, and others.
 
 Oh My Otter is unofficial and independent; not affiliated with or endorsed by Cognition or any other agent vendor.
 
