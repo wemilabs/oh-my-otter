@@ -22,6 +22,21 @@ const base: Files = {
 const params = { rule: "prefer-const" };
 const fixedA = "const a = 1;\nexport const first = a;\n";
 const fixedB = "const b = 2;\nexport const second = b;\n";
+const biomeBase: Files = {
+  "package.json": npmPackage({ test: "node --test" }),
+  "package-lock.json": "{}\n",
+  "biome.json": "{}\n",
+  "src/a.js": "let a = 1;\nexport { a };\n",
+  "test/ok.test.mjs": passingTest,
+  "node_modules/@biomejs/biome/package.json": JSON.stringify({
+    bin: { biome: "biome.cjs" },
+  }),
+  "node_modules/@biomejs/biome/biome.cjs": `const fs = require("node:fs");
+if (fs.readFileSync("src/a.js", "utf8").includes("let a")) {
+  process.stdout.write("::warning title=lint/style/useConst,file=" + process.cwd() + "/src/a.js,line=1::Use const.\\n");
+}
+`,
+};
 
 describe("fix-lint-rule", () => {
   it("passes when every violation is fixed and tests pass", async () => {
@@ -97,5 +112,45 @@ describe("fix-lint-rule", () => {
         "prefer-const",
       ),
     ).toBe(1);
+  });
+
+  it("uses Biome, normalizes the rule, and reports config changes as partial", async () => {
+    const started = await startTask(task, biomeBase, {
+      rule: "style/useConst",
+    });
+    expect(started.data).toEqual({ violations: 1 });
+    const result = await verifyTask(
+      task,
+      started,
+      { rule: "style/useConst" },
+      {
+        "biome.json": '{"linter":{"rules":{"style":{"useConst":"off"}}}}\n',
+        "src/a.js": "const a = 1;\nexport { a };\n",
+      },
+    );
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain("lint/style/useConst violations: 1 → 0.");
+    expect(result.reasons).toContain(
+      "Biome configuration changed: biome.json.",
+    );
+  });
+
+  it("reports new Biome ignore directives as partial", async () => {
+    const started = await startTask(task, biomeBase, {
+      rule: "lint/style/useConst",
+    });
+    const result = await verifyTask(
+      task,
+      started,
+      { rule: "lint/style/useConst" },
+      {
+        "src/a.js":
+          "// biome-ignore lint/style/useConst: reason\nconst a = 1;\nexport { a };\n",
+      },
+    );
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "1 new biome-ignore comment(s) cover lint/style/useConst.",
+    );
   });
 });

@@ -54,7 +54,7 @@ omot bench clean [path] [--delete-branch] [--yes]
 | ------------------ | -------------------------------------------------- | ------------------ |
 | `dep-patch-bump`   | Bump one dependency within its major version       | `package`          |
 | `add-unit-test`    | Add tests for one function without touching source | `file`, `function` |
-| `fix-lint-rule`    | Fix every violation of one ESLint rule             | `rule`             |
+| `fix-lint-rule`    | Fix every violation of an ESLint or Biome rule     | `rule`             |
 | `a11y-img-alt`     | Add missing `alt` attributes under a directory     | `dir`              |
 | `ts-strict-file`   | Remove explicit `any` from one file                | `file`             |
 | `fix-failing-test` | Fix a bug omot introduces on a throwaway branch    | `file`             |

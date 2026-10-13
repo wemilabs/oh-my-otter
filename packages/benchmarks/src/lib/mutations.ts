@@ -17,8 +17,8 @@ const operators: ReadonlyArray<[RegExp, string, string]> = [
   [/\|\|(?!=)/g, "||", "&&"],
   [/(?<![\w$.])true(?![\w$])/g, "true", "false"],
   [/(?<![\w$.])false(?![\w$])/g, "false", "true"],
-  [/(?<![+\w$\s])\s\+\s(?![+=])/g, " + ", " - "],
-  [/(?<![-\w$\s])\s-\s(?![-=>])/g, " - ", " + "],
+  [/(?<=[\w$)\]])\s\+\s(?=[\w$([{])/g, " + ", " - "],
+  [/(?<=[\w$)\]])\s-\s(?=[\w$([{])/g, " - ", " + "],
 ];
 
 /** Finds simple operator mutations in code (not comments or strings), in source order. */

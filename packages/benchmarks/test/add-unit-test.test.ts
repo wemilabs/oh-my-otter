@@ -1,4 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { readFile, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
+import { createVerifyContext } from "../src/index";
 import task from "../src/tasks/add-unit-test/verify";
 import {
   failingTest,
@@ -6,8 +18,10 @@ import {
   passingTest,
   startTask,
   verifyTask,
+  writeFiles,
   type Files,
 } from "./helpers";
+import { withRestoreOnSignal } from "../src/tasks/add-unit-test/verify";
 
 const base: Files = {
   "package.json": npmPackage({ test: "node --test" }),
@@ -28,6 +42,88 @@ test("placeholder", () => {});
 `;
 
 describe("add-unit-test", () => {
+  it("restores mutant bytes when interrupted by a signal", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "omot-signal-"));
+    const file = path.join(root, "source.js");
+    const original = Buffer.from("const value = 1;\n");
+    writeFileSync(file, "const value = 2;\n");
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true);
+    try {
+      await withRestoreOnSignal(file, original, async () => {
+        process.emit("SIGINT");
+      });
+      expect(readFileSync(file)).toEqual(original);
+      expect(kill).toHaveBeenCalledWith(process.pid, "SIGINT");
+    } finally {
+      kill.mockRestore();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps signal handlers armed while asynchronously restoring tests", async () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "omot-signal-"));
+    const file = path.join(root, "source.js");
+    const testFile = path.join(root, "test.js");
+    const original = Buffer.from("const value = 1;\n");
+    const mutant = Buffer.from("const value = 2;\n");
+    const originalTest = Buffer.from("assert.equal(value, 1);\n");
+    const changedTest = Buffer.from("assert.equal(value, 2);\n");
+    writeFileSync(file, mutant);
+    writeFileSync(testFile, changedTest);
+    let beginRestore!: () => void;
+    let finishRestore!: () => void;
+    const restoring = new Promise<void>((resolve) => {
+      beginRestore = resolve;
+    });
+    const restoreGate = new Promise<void>((resolve) => {
+      finishRestore = resolve;
+    });
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true);
+    const operation = withRestoreOnSignal(
+      file,
+      original,
+      async () => {},
+      () => writeFileSync(testFile, originalTest),
+      async () => {
+        beginRestore();
+        await restoreGate;
+        await writeFile(testFile, originalTest);
+      },
+    );
+    try {
+      await restoring;
+      expect(readFileSync(file)).toEqual(mutant);
+      expect(readFileSync(testFile)).toEqual(changedTest);
+      process.emit("SIGTERM");
+      expect(readFileSync(file)).toEqual(original);
+      expect(readFileSync(testFile)).toEqual(originalTest);
+      expect(kill).toHaveBeenCalledWith(process.pid, "SIGTERM");
+    } finally {
+      finishRestore();
+      try {
+        await operation;
+      } finally {
+        kill.mockRestore();
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("reclaims an old empty mutation lock", async () => {
+    const started = await startTask(task, base, params);
+    const lock = path.join(
+      os.tmpdir(),
+      `omot-mutation-${createHash("sha256").update(path.resolve(started.root)).digest("hex")}.lock`,
+    );
+    writeFileSync(lock, "");
+    const stale = new Date(Date.now() - 11_000);
+    utimesSync(lock, stale, stale);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": addTest,
+    });
+    expect(result.outcome).toBe("pass");
+  });
+
   it("passes when a passing test for the function is added", async () => {
     const started = await startTask(task, base, params);
     const result = await verifyTask(task, started, params, {
@@ -40,8 +136,122 @@ describe("add-unit-test", () => {
         "add is used in test/add.test.mjs, which imports src/math.mjs.",
         "Test cases that use add in changed test files: 0 → 1.",
         "test script passed.",
+        "Mutation check: the tests caught 1 of 1 injected bugs in add (line 2: + → -).",
       ],
     });
+  });
+
+  it("is partial when the new test does not catch injected bugs", async () => {
+    const started = await startTask(task, base, params);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": `import { test } from "node:test";
+import { add } from "../src/math.mjs";
+test("add", () => { add(2, 3); });
+`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "Mutation check: the tests caught 0 of 1 injected bugs in add (line 2: + → -).",
+    );
+    expect(result.reasons).toContain(
+      "The new tests pass but caught none of 1 injected bugs in add.",
+    );
+  });
+
+  it("excludes mutants already caught by baseline tests and restores test files", async () => {
+    const strongBase: Files = {
+      ...base,
+      "test/smoke.test.mjs": `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { add } from "../src/math.mjs";
+test("baseline add", () => assert.equal(add(2, 3), 5));
+`,
+    };
+    const started = await startTask(task, strongBase, params);
+    const originalTest = await readFile(
+      path.join(started.root, "test/smoke.test.mjs"),
+    );
+    const weakTest = `import { test } from "node:test";
+import { add } from "../src/math.mjs";
+test("weak add", () => { add(2, 3); });
+`;
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": weakTest,
+    });
+    expect(result.reasons).toContain(
+      "Mutation check skipped: existing tests already catch every injected bug in add.",
+    );
+    expect(
+      await readFile(path.join(started.root, "test/smoke.test.mjs")),
+    ).toEqual(originalTest);
+    expect(
+      await readFile(path.join(started.root, "test/add.test.mjs"), "utf8"),
+    ).toBe(weakTest);
+  });
+
+  it("skips the mutation check when the function has no supported operators", async () => {
+    const files: Files = {
+      ...base,
+      "src/math.mjs": "export function add(value) { return value; }\n",
+    };
+    const started = await startTask(task, files, params);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": `import { test } from "node:test";
+import assert from "node:assert/strict";
+import { add } from "../src/math.mjs";
+test("add", () => assert.equal(add(2), 2));
+`,
+    });
+    expect(result.outcome).toBe("pass");
+    expect(result.reasons).toContain(
+      "Mutation check skipped: no operator in add that omot can flip.",
+    );
+  });
+
+  it("restores CRLF source bytes after testing mutations", async () => {
+    const source = Buffer.from(
+      "export function add(a, b) {\r\n  return a + b;\r\n}\r\n",
+    );
+    const files: Files = {
+      ...base,
+      "src/math.mjs": source.toString("utf8"),
+    };
+    const started = await startTask(task, files, params);
+    await verifyTask(task, started, params, { "test/add.test.mjs": addTest });
+    expect(await readFile(path.join(started.root, "src/math.mjs"))).toEqual(
+      source,
+    );
+  });
+
+  it("restores source bytes when the test runner throws during a mutation", async () => {
+    const source = Buffer.from(base["src/math.mjs"]!);
+    const started = await startTask(task, base, params);
+    await writeFiles(started.root, { "test/add.test.mjs": addTest });
+    const ctx = createVerifyContext(
+      started.root,
+      {
+        commit: started.commit,
+        data: started.data,
+        scripts: started.scripts,
+      },
+      { params },
+    );
+    let calls = 0;
+    ctx.runScript = async () => {
+      calls += 1;
+      if (calls > 1) throw new Error("script runner failed");
+      return {
+        code: 0,
+        stdout: "",
+        stderr: "",
+        output: "",
+        timedOut: false,
+      };
+    };
+    await expect(task.verify(ctx)).rejects.toThrow("script runner failed");
+    expect(await readFile(path.join(started.root, "src/math.mjs"))).toEqual(
+      source,
+    );
   });
 
   it("passes when the function is imported under an alias", async () => {
