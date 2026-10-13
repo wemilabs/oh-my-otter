@@ -282,17 +282,11 @@ const declarationPatterns = [
   /\b(?:const|let|var)\s+(?:\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*(?:await\s+)?(?:require|import)\s*\(/g,
 ];
 
-/**
- * True when `name` is used in code: comments and string literals are ignored,
- * and so are import/require declarations, so importing a function without
- * using it does not count. Member access (`mod.name`) counts.
- */
-export function referencesIdentifier(
+function targetReferenceMatcher(
   source: string,
   name: string,
   scope?: { fromFile: string; target: string },
-): boolean {
-  const names = localNames(source, name, scope);
+): { masked: string; matchers: RegExp[] } {
   let masked = maskNonCode(source);
   const targetNamespaces = scope
     ? scopedBindings(source, masked, scope).targetNamespaces
@@ -303,20 +297,31 @@ export function referencesIdentifier(
     }
   }
   const escapedName = name.replace(/[$]/g, "\\$");
-  if (
-    [...targetNamespaces].some((namespace) => {
-      const escapedNamespace = namespace.replace(/[$]/g, "\\$");
-      return new RegExp(
-        `(?<![\\w$.])${escapedNamespace}\\s*\\.\\s*${escapedName}(?![\\w$])`,
-      ).test(masked);
-    })
-  ) {
-    return true;
-  }
-  return names.some((localName) => {
-    const escaped = localName.replace(/[$]/g, "\\$");
-    return new RegExp(`(?<![\\w$])${escaped}(?![\\w$])`).test(masked);
+  const namespaceMatchers = [...targetNamespaces].map((namespace) => {
+    const escapedNamespace = namespace.replace(/[$]/g, "\\$");
+    return new RegExp(
+      `(?<![\\w$.])${escapedNamespace}\\s*\\.\\s*${escapedName}(?![\\w$])`,
+    );
   });
+  const localMatchers = localNames(source, name, scope).map((localName) => {
+    const escaped = localName.replace(/[$]/g, "\\$");
+    return new RegExp(`(?<![\\w$]|\\.\\s*)${escaped}(?![\\w$])`);
+  });
+  return { masked, matchers: [...namespaceMatchers, ...localMatchers] };
+}
+
+/**
+ * True when `name` is used in code: comments and string literals are ignored,
+ * and so are import/require declarations, so importing a function without
+ * using it does not count. Member access (`mod.name`) counts.
+ */
+export function referencesIdentifier(
+  source: string,
+  name: string,
+  scope?: { fromFile: string; target: string },
+): boolean {
+  const { masked, matchers } = targetReferenceMatcher(source, name, scope);
+  return matchers.some((matcher) => matcher.test(masked));
 }
 
 const testCasePattern =
@@ -325,4 +330,24 @@ const testCasePattern =
 /** Counts `it(`/`test(` calls in code (comments and strings ignored). */
 export function countTestCases(source: string): number {
   return [...maskNonCode(source).matchAll(testCasePattern)].length;
+}
+
+/** Counts test cases with a code reference to the target function. */
+export function countTargetTestCases(
+  source: string,
+  name: string,
+  scope: { fromFile: string; target: string },
+): number {
+  const { masked, matchers } = targetReferenceMatcher(source, name, scope);
+  const cases = [...masked.matchAll(testCasePattern)];
+  return cases.reduce((count, testCase, index) => {
+    const start = testCase.index;
+    const end = cases[index + 1]?.index ?? masked.length;
+    return (
+      count +
+      (matchers.some((matcher) => matcher.test(masked.slice(start, end)))
+        ? 1
+        : 0)
+    );
+  }, 0);
 }

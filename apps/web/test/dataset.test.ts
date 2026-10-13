@@ -149,6 +149,9 @@ describe("buildDataset", () => {
     expect(dataset.status).toBe("ok");
     expect(dataset.reports.length).toBe(load.reports.length);
     expect(dataset.agents.agents.length).toBeGreaterThan(0);
-    expect(aggregate.overall.n).toBe(load.reports.length);
+    expect(aggregate.overall.n).toBe(aggregate.total);
+    expect(aggregate.excluded_other_versions).toBe(
+      load.reports.length - aggregate.total,
+    );
   });
 });

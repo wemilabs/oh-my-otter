@@ -56,6 +56,30 @@ function codeLineHasCommand(line: string): boolean {
   );
 }
 
+function stripHtmlComments(line: string, state: { open: boolean }): string {
+  let result = "";
+  let cursor = 0;
+  while (cursor < line.length) {
+    if (state.open) {
+      const close = line.indexOf("-->", cursor);
+      if (close === -1) return result;
+      state.open = false;
+      cursor = close + 3;
+      continue;
+    }
+    const open = line.indexOf("<!--", cursor);
+    if (open === -1) return result + line.slice(cursor);
+    result += line.slice(cursor, open);
+    const close = line.indexOf("-->", open + 4);
+    if (close === -1) {
+      state.open = true;
+      return result;
+    }
+    cursor = close + 3;
+  }
+  return result;
+}
+
 function codeTextHasCommand(text: string): boolean {
   return text.split("\n").some(codeLineHasCommand);
 }
@@ -92,6 +116,8 @@ function markdownHasCommand(contents: string): boolean {
   let inFence = false;
   let fenceChar = "";
   let fenceLength = 0;
+  const fencedComment = { open: false };
+  const indentedComment = { open: false };
   let indentedCodeAllowed = false;
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!.replace(/\r$/, "");
@@ -101,7 +127,8 @@ function markdownHasCommand(contents: string): boolean {
         new RegExp(`^[ \t]*${fenceChar}{${fenceLength},}[ \t]*$`).test(line)
       ) {
         inFence = false;
-      } else if (codeLineHasCommand(line)) {
+        fencedComment.open = false;
+      } else if (codeLineHasCommand(stripHtmlComments(line, fencedComment))) {
         return true;
       }
       continue;
@@ -111,13 +138,18 @@ function markdownHasCommand(contents: string): boolean {
       inFence = true;
       fenceChar = fence[1]![0]!;
       fenceLength = fence[1]!.length;
+      fencedComment.open = false;
       blank(offsets[index]!, offsets[index]! + line.length);
       continue;
     }
     const indented = /^(?: {4}|\t)/.test(line);
     if (indented && indentedCodeAllowed) {
       blank(offsets[index]!, offsets[index]! + line.length);
-      if (codeLineHasCommand(line)) return true;
+      if (codeLineHasCommand(stripHtmlComments(line, indentedComment))) {
+        return true;
+      }
+    } else if (line.trim() !== "") {
+      indentedComment.open = false;
     }
     indentedCodeAllowed = indented || line.trim() === "";
   }

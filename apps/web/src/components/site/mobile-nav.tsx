@@ -7,19 +7,21 @@ import { Menu, X } from "lucide-react";
 import { NAV_LINKS } from "./links";
 
 export function MobileNav() {
-  // The pathname the menu was opened on; navigating away closes it, so the
-  // menu never stays open across routes (or back/forward through Activity).
-  const [openedOn, setOpenedOn] = useState<string | null>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
-  const open = openedOn === pathname;
+  const [open, setOpen] = useState(false);
+  const [prevPath, setPrevPath] = useState(pathname);
+  if (prevPath !== pathname) {
+    setPrevPath(pathname);
+    setOpen(false);
+  }
+  const buttonRef = useRef<HTMLButtonElement>(null);
 
   return (
     <div
       className="md:hidden"
       onKeyDown={(event) => {
         if (event.key === "Escape" && open) {
-          setOpenedOn(null);
+          setOpen(false);
           buttonRef.current?.focus();
         }
       }}
@@ -31,7 +33,7 @@ export function MobileNav() {
         aria-expanded={open}
         aria-controls="mobile-nav"
         aria-label={open ? "Close menu" : "Open menu"}
-        onClick={() => setOpenedOn(open ? null : pathname)}
+        onClick={() => setOpen(!open)}
       >
         {open ? <X className="size-4" /> : <Menu className="size-4" />}
       </button>
@@ -46,7 +48,7 @@ export function MobileNav() {
                 <Link
                   href={link.href}
                   prefetch={link.href === "/results"}
-                  onClick={() => setOpenedOn(null)}
+                  onClick={() => setOpen(false)}
                   className="flex min-h-11 w-full items-center text-base font-medium"
                 >
                   {link.label}

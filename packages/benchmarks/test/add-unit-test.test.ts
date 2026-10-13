@@ -38,7 +38,7 @@ describe("add-unit-test", () => {
       reasons: [
         "Test files added or changed: test/add.test.mjs.",
         "add is used in test/add.test.mjs, which imports src/math.mjs.",
-        "Test cases in changed test files: 0 → 1.",
+        "Test cases that use add in changed test files: 0 → 1.",
         "test script passed.",
       ],
     });
@@ -296,13 +296,24 @@ test("add", () => assert.equal(add(2, 3), 5));
     };
     const started = await startTask(task, files, params);
     const result = await verifyTask(task, started, params, {
-      "test/add.test.mjs": `${addTest}// edited without another case\n`,
-      "test/unrelated.test.mjs": passingTest,
+      "test/add.test.mjs": `${addTest}\ntest("unrelated", () => {});\n`,
     });
     expect(result.outcome).toBe("fail");
     expect(result.reasons).toContain(
-      "No new test cases: it()/test() calls in test files that use add went 1 → 1.",
+      "No new test cases that use add: changed test files went 1 → 1.",
     );
+  });
+
+  it("passes when a changed file adds another case that uses the target", async () => {
+    const files: Files = {
+      ...base,
+      "test/add.test.mjs": addTest,
+    };
+    const started = await startTask(task, files, params);
+    const result = await verifyTask(task, started, params, {
+      "test/add.test.mjs": `${addTest}\ntest("also adds", () => assert.equal(add(3, 4), 7));\n`,
+    });
+    expect(result.outcome).toBe("pass");
   });
 
   it("requires scripts.test and explains how to generate the missing script", async () => {

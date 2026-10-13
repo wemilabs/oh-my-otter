@@ -30,6 +30,36 @@ export function scriptChangeReason(names: readonly string[]): string {
 const OUTPUT_TAIL_LINES = 15;
 const MAX_LINE_LENGTH = 240;
 const ansiPattern = new RegExp(String.raw`\u001b\[[0-9;?]*[A-Za-z]`, "g");
+const secretValue = String.raw`("[^"]*"|'[^']*'|[^\s"',;]+)`;
+const uppercaseSecretPattern = new RegExp(
+  String.raw`\b([A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|ACCESS_?KEY|CREDENTIALS?)[A-Z0-9_]*)(\s*[=:]\s*)${secretValue}`,
+  "g",
+);
+const lowercaseSecretPattern = new RegExp(
+  String.raw`\b(password|passwd|secret|api[_-]?key|access[_-]?token|auth[_-]?token)(\s*[=:]\s*)${secretValue}`,
+  "gi",
+);
+
+export function redactSecrets(line: string): string {
+  if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(line)) {
+    return "[redacted private key]";
+  }
+  return line
+    .replace(uppercaseSecretPattern, "$1$2[redacted]")
+    .replace(lowercaseSecretPattern, "$1$2[redacted]")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/g, "$1 [redacted]")
+    .replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/g, "$1[redacted]@")
+    .replace(/\bgh[pousr]_[A-Za-z0-9]{20,}/g, "[redacted]")
+    .replace(/github_pat_[A-Za-z0-9_]{20,}/g, "[redacted]")
+    .replace(/sk-[A-Za-z0-9_-]{20,}/g, "[redacted]")
+    .replace(/xox[abprs]-[A-Za-z0-9-]{10,}/g, "[redacted]")
+    .replace(/AKIA[0-9A-Z]{16}/g, "[redacted]")
+    .replace(/npm_[A-Za-z0-9]{30,}/g, "[redacted]")
+    .replace(
+      /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+      "[redacted]",
+    );
+}
 
 /** The last non-empty lines of a command's combined output, trimmed. */
 export function outputTail(
@@ -41,6 +71,7 @@ export function outputTail(
     .split(/\r?\n|\r/)
     .map((line) => line.trim())
     .filter((line) => line.trim().length > 0)
+    .map(redactSecrets)
     .slice(-lines)
     .map((line) =>
       line.length > MAX_LINE_LENGTH

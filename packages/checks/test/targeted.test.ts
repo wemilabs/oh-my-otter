@@ -815,6 +815,8 @@ describe("targeted checks", () => {
     "## Installation\n\n<pre># npm install</pre>\n",
     "## Installation\n\n<!-- npm install -->\n",
     "## Installation\n\n<!-- <pre>npm install</pre> -->\n",
+    "## Installation\n\n```sh\n<!-- npm install -->\n```\n",
+    "## Installation\n\n```sh\n<!--\nnpm install\n-->\n```\n",
     "## Installation\n\n```sh\nyarn --version\n```\n",
     "## Installation\n\n```sh\nyarn -v\n```\n",
     "## Installation\n\n```sh\n# npm install\n```\n",
