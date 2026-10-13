@@ -3,6 +3,7 @@ import { cacheLife, cacheTag } from "next/cache";
 
 export const DEFAULT_REPO_API_URL =
   "https://api.github.com/repos/wemilabs/oh-my-otter";
+const GITHUB_API_ORIGIN = "https://api.github.com";
 
 export async function fetchStarCount(opts?: {
   url?: string;
@@ -38,22 +39,73 @@ export async function fetchStarCount(opts?: {
     "User-Agent": "oh-my-otter-website",
     "X-GitHub-Api-Version": "2022-11-28",
   };
-  if (token && apiOrigin === "https://api.github.com") {
+  const hasAuthorization = Boolean(token && apiOrigin === GITHUB_API_ORIGIN);
+  if (hasAuthorization) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  let response: Response;
+  let signal: AbortSignal;
   try {
-    const fetchImpl = opts?.fetchImpl ?? fetch;
-    response = await fetchImpl(url, {
-      headers,
-      signal: AbortSignal.timeout(opts?.timeoutMs ?? 5000),
-    });
+    signal = AbortSignal.timeout(opts?.timeoutMs ?? 5000);
   } catch (error) {
     report(
-      `could not fetch ${url}: ${error instanceof Error ? error.message : String(error)}`,
+      `could not create request timeout: ${error instanceof Error ? error.message : String(error)}`,
     );
     return null;
+  }
+
+  const requestInit: RequestInit = { headers, signal };
+  if (hasAuthorization) {
+    requestInit.redirect = "manual";
+  }
+
+  const fetchImpl = opts?.fetchImpl ?? fetch;
+  let currentUrl = url;
+  let redirects = 0;
+  let response: Response;
+  while (true) {
+    try {
+      response = await fetchImpl(currentUrl, requestInit);
+    } catch (error) {
+      report(
+        `could not fetch ${currentUrl}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+
+    if (!hasAuthorization || response.status < 300 || response.status > 399) {
+      break;
+    }
+
+    const location = response.headers.get("Location");
+    if (!location) {
+      report(`redirect from ${currentUrl} had no Location`);
+      return null;
+    }
+    if (redirects >= 3) {
+      report(`too many redirects from ${url}`);
+      return null;
+    }
+
+    let redirectedUrl: URL;
+    try {
+      redirectedUrl = new URL(location, currentUrl);
+    } catch (error) {
+      report(
+        `invalid redirect from ${currentUrl}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+
+    if (redirectedUrl.origin !== GITHUB_API_ORIGIN) {
+      report(
+        `refusing cross-origin redirect from ${currentUrl} to ${redirectedUrl.origin}`,
+      );
+      return null;
+    }
+
+    currentUrl = redirectedUrl.href;
+    redirects += 1;
   }
 
   if (!response.ok) {

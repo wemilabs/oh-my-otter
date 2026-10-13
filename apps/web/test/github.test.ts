@@ -13,6 +13,17 @@ function mockFetch(response: Response) {
   }) as unknown as typeof fetch;
 }
 
+function mockFetchSequence(responses: Response[]) {
+  return vi.fn(async (...args: Parameters<typeof fetch>) => {
+    void args;
+    const response = responses.shift();
+    if (!response) {
+      throw new Error("no mocked response available");
+    }
+    return response;
+  }) as unknown as typeof fetch;
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -37,6 +48,7 @@ describe("fetchStarCount", () => {
     expect(headers.get("User-Agent")).toBe("oh-my-otter-website");
     expect(headers.get("X-GitHub-Api-Version")).toBe("2022-11-28");
     expect(headers.has("Authorization")).toBe(false);
+    expect(init.redirect).toBeUndefined();
   });
 
   it("sends a trimmed token to the default GitHub endpoint", async () => {
@@ -49,6 +61,84 @@ describe("fetchStarCount", () => {
     expect(new Headers(init.headers).get("Authorization")).toBe(
       "Bearer test-token",
     );
+  });
+
+  it("follows a same-origin redirect while preserving authorization", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "test-token");
+    const redirectUrl = "https://api.github.com/repositories/1";
+    const fetchImpl = mockFetchSequence([
+      new Response(null, {
+        status: 301,
+        headers: { Location: redirectUrl },
+      }),
+      Response.json({ stargazers_count: 128 }),
+    ]);
+
+    await expect(fetchStarCount({ fetchImpl, warn: vi.fn() })).resolves.toBe(
+      128,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(DEFAULT_REPO_API_URL);
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe(redirectUrl);
+    const firstInit = fetchImpl.mock.calls[0]?.[1] as RequestInit;
+    const secondInit = fetchImpl.mock.calls[1]?.[1] as RequestInit;
+    expect(firstInit.redirect).toBe("manual");
+    expect(secondInit.redirect).toBe("manual");
+    expect(new Headers(firstInit.headers).get("Authorization")).toBe(
+      "Bearer test-token",
+    );
+    expect(new Headers(secondInit.headers).get("Authorization")).toBe(
+      "Bearer test-token",
+    );
+    expect(firstInit.signal).toBe(secondInit.signal);
+  });
+
+  it("refuses a cross-origin redirect without following it", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "test-token");
+    const warn = vi.fn();
+    const fetchImpl = mockFetch(
+      new Response(null, {
+        status: 302,
+        headers: { Location: "https://evil.example/x" },
+      }),
+    );
+
+    await expect(fetchStarCount({ fetchImpl, warn })).resolves.toBeNull();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      "refusing cross-origin redirect from https://api.github.com/repos/wemilabs/oh-my-otter to https://evil.example",
+    );
+  });
+
+  it("stops after three same-origin redirect hops", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "test-token");
+    const warn = vi.fn();
+    const fetchImpl = mockFetchSequence(
+      Array.from(
+        { length: 4 },
+        (_, index) =>
+          new Response(null, {
+            status: 301,
+            headers: {
+              Location: `https://api.github.com/repositories/${index + 1}`,
+            },
+          }),
+      ),
+    );
+
+    await expect(fetchStarCount({ fetchImpl, warn })).resolves.toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("returns null and warns when a redirect has no Location", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "test-token");
+    const warn = vi.fn();
+    const fetchImpl = mockFetch(new Response(null, { status: 301 }));
+
+    await expect(fetchStarCount({ fetchImpl, warn })).resolves.toBeNull();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalled();
   });
 
   it("does not send a token to an overridden host", async () => {
