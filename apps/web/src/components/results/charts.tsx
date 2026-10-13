@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -30,33 +30,43 @@ function RankBadge() {
   );
 }
 
+function useChartAxisWidth() {
+  const [width, setWidth] = useState(128);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 640px)");
+    const updateWidth = () => setWidth(media.matches ? 96 : 128);
+    updateWidth();
+    media.addEventListener("change", updateWidth);
+    return () => media.removeEventListener("change", updateWidth);
+  }, []);
+
+  return width;
+}
+
 function ChartCategoryTick({
   x = 0,
   y = 0,
   payload,
+  maxChars,
 }: {
   x?: number;
   y?: number;
   payload?: { value?: unknown };
+  maxChars: number;
 }) {
   const value = String(payload?.value ?? "");
   const separator = value.lastIndexOf(" · n=");
   const label = separator === -1 ? value : value.slice(0, separator);
   const sample = separator === -1 ? null : value.slice(separator + 5);
   const tickX = x - 8;
-  const hyphenated = label.includes("-");
-  const parts = hyphenated
-    ? label
-        .split("-")
-        .map((part, index, all) => part + (index < all.length - 1 ? "-" : ""))
-    : label.split(" ");
   const labelLines: string[] = [];
   let line = "";
-  for (const part of parts) {
-    const next = line ? `${line}${hyphenated ? "" : " "}${part}` : part;
-    if (line && next.length > 8) {
+  for (const word of label.split(" ")) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && next.length > maxChars) {
       labelLines.push(line);
-      line = part;
+      line = word;
     } else {
       line = next;
     }
@@ -86,6 +96,42 @@ function ChartCategoryTick({
           {text}
         </tspan>
       ))}
+    </text>
+  );
+}
+
+function PassValueLabel({
+  x = 0,
+  y = 0,
+  width = 0,
+  height = 0,
+  value,
+}: {
+  x?: number | string;
+  y?: number | string;
+  width?: number | string;
+  height?: number | string;
+  value?: unknown;
+}) {
+  const text = String(value ?? "");
+  const labelX = Number(x);
+  const labelY = Number(y);
+  const labelWidth = Number(width);
+  const labelHeight = Number(height);
+  const inside = labelWidth >= text.length * 7 + 12;
+
+  return (
+    <text
+      className="recharts-label"
+      x={inside ? labelX + labelWidth - 6 : labelX + labelWidth + 6}
+      y={labelY + labelHeight / 2}
+      fill={inside ? "var(--background)" : "var(--foreground)"}
+      textAnchor={inside ? "end" : "start"}
+      dominantBaseline="middle"
+      fontSize={12}
+      fontWeight={500}
+    >
+      {text}
     </text>
   );
 }
@@ -177,6 +223,7 @@ export function SuccessRateChart({
   groups: Array<Group | AgentGroup>;
   caption: ReactNode;
 }) {
+  const axisWidth = useChartAxisWidth();
   const rows = toRateRows(groups);
   const enoughRows = rows.filter((row) => row.enough && row.pass !== null);
   const data = enoughRows.map((row) => ({
@@ -225,8 +272,10 @@ export function SuccessRateChart({
               <YAxis
                 type="category"
                 dataKey="labelN"
-                width={60}
-                tick={<ChartCategoryTick />}
+                width={axisWidth}
+                tick={
+                  <ChartCategoryTick maxChars={axisWidth > 100 ? 18 : 13} />
+                }
                 axisLine={false}
                 tickLine={false}
               />
@@ -248,14 +297,9 @@ export function SuccessRateChart({
                 fill={chartColors.pass}
                 radius={[0, 4, 4, 0]}
                 maxBarSize={28}
+                isAnimationActive={false}
               >
-                <LabelList
-                  dataKey="valueLabel"
-                  position="insideRight"
-                  fill="var(--background)"
-                  fontSize={12}
-                  fontWeight={500}
-                />
+                <LabelList dataKey="valueLabel" content={PassValueLabel} />
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -279,6 +323,7 @@ export function OutcomeChart({
   groups: AgentGroup[];
   caption: ReactNode;
 }) {
+  const axisWidth = useChartAxisWidth();
   const rows = toRateRows(groups);
   const enoughRows = rows.filter(
     (row) =>
@@ -332,8 +377,10 @@ export function OutcomeChart({
               <YAxis
                 type="category"
                 dataKey="labelN"
-                width={60}
-                tick={<ChartCategoryTick />}
+                width={axisWidth}
+                tick={
+                  <ChartCategoryTick maxChars={axisWidth > 100 ? 18 : 13} />
+                }
                 axisLine={false}
                 tickLine={false}
               />
@@ -353,6 +400,7 @@ export function OutcomeChart({
                 stackId="outcomes"
                 fill={chartColors.pass}
                 maxBarSize={28}
+                isAnimationActive={false}
               />
               <Bar
                 dataKey="partial"
@@ -360,6 +408,7 @@ export function OutcomeChart({
                 stackId="outcomes"
                 fill={chartColors.partial}
                 maxBarSize={28}
+                isAnimationActive={false}
               />
               <Bar
                 dataKey="fail"
@@ -368,6 +417,7 @@ export function OutcomeChart({
                 fill={chartColors.fail}
                 radius={[0, 4, 4, 0]}
                 maxBarSize={28}
+                isAnimationActive={false}
               />
             </BarChart>
           </ResponsiveContainer>
