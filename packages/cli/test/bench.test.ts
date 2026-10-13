@@ -1160,6 +1160,40 @@ describe("bench branches and clean", () => {
     expect(await git(root, ["branch", "--list", "main"])).toContain("main");
   });
 
+  it("refuses to delete a --branch branch reset to an unrelated root", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--branch", "bench/unrelated", "--yes"], {
+      cwd: root,
+    });
+    const { stdout: emptyTree } = await execa("git", ["mktree"], {
+      cwd: root,
+      input: "",
+    });
+    const unrelatedRoot = await git(root, [
+      "commit-tree",
+      emptyTree.trim(),
+      "-m",
+      "unrelated root",
+    ]);
+    await git(root, ["reset", "--hard", unrelatedRoot]);
+
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Refusing to delete bench/unrelated: it is not the branch omot created for this run.",
+    );
+    await access(path.join(root, ".omot/run.json"));
+    expect(await git(root, ["branch", "--show-current"])).toBe(
+      "bench/unrelated",
+    );
+    expect(await git(root, ["rev-parse", "bench/unrelated"])).toBe(
+      unrelatedRoot,
+    );
+  });
+
   it("refuses a forged descendant branch without an ownership marker", async () => {
     const root = await repo(cleanBranchFixture);
     await invoke([...start, "--branch", "bench/created", "--yes"], {

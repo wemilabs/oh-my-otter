@@ -583,7 +583,17 @@ async function isOmotBranch(
       "--get",
       `branch.${branch.branch}.omot-run`,
     ]);
-    return marker.trim() === branch.startedAt;
+    if (marker.trim() !== branch.startedAt) return false;
+    if (branch.source === "baseline") {
+      if (!branch.commit) return false;
+      await runGit(root, [
+        "merge-base",
+        "--is-ancestor",
+        branch.commit,
+        branch.branch,
+      ]);
+    }
+    return true;
   } catch {
     return (
       branch.source === "fix-failing-test" &&
