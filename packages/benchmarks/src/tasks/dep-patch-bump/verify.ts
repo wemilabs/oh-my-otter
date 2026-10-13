@@ -107,6 +107,19 @@ function dirOf(file: string): string {
 
 const npmLockPattern = /(?:^|\/)(?:package-lock|npm-shrinkwrap)\.json$/;
 
+async function isShadowedPackageLock(
+  ctx: RepoContext,
+  file: string,
+): Promise<boolean> {
+  if (file !== "package-lock.json" && !file.endsWith("/package-lock.json")) {
+    return false;
+  }
+  const dir = dirOf(file);
+  const shrinkwrap =
+    dir === "" ? "npm-shrinkwrap.json" : `${dir}/npm-shrinkwrap.json`;
+  return ctx.exists(shrinkwrap);
+}
+
 /**
  * The lockfile that governs `dir`: the nearest existing one walking up to the
  * repo root. When one directory has several, a changed one wins.
@@ -121,6 +134,7 @@ async function findLockfile(
     let fallback: string | null = null;
     for (const name of lockfileNames) {
       const file = current === "" ? name : `${current}/${name}`;
+      if (await isShadowedPackageLock(ctx, file)) continue;
       if (!(await ctx.exists(file))) continue;
       if (changed.has(file)) return file;
       fallback ??= file;
@@ -313,17 +327,29 @@ function pnpmDepEntry(
   } else if (importer !== ".") {
     return null;
   }
+  let found: DepEntry | undefined;
+  let specifier: string | undefined;
   for (let i = start; i < end; i += 1) {
     const line = lines[i] as string;
     if (line.trim() === "") continue;
     const indent = indentOf(line);
     if (indent <= baseIndent) break;
     const entry = yamlKeyValue(line);
-    if (entry === null || !dependencySections.includes(entry.key)) continue;
-    const found = depSectionEntry(lines, i + 1, indent, pkg);
-    if (found !== undefined) return found;
+    if (entry === null) continue;
+    if (entry.key === "specifiers") {
+      const recorded = depSectionEntry(lines, i + 1, indent, pkg);
+      if (recorded !== undefined) {
+        specifier = recorded.specifier ?? recorded.value;
+      }
+      continue;
+    }
+    if (!dependencySections.includes(entry.key) || found !== undefined)
+      continue;
+    found = depSectionEntry(lines, i + 1, indent, pkg);
   }
-  return null;
+  return found === undefined
+    ? null
+    : { ...found, specifier: found.specifier ?? specifier };
 }
 
 /** The version `pkg` resolves to for `importer` in a pnpm-lock.yaml. */
@@ -563,9 +589,12 @@ export default defineTask<Data>({
     let partial = false;
 
     const changed = await ctx.changedFiles();
-    const lockfiles = changed.filter(
-      (file) => isLockfile(file.path) && file.status !== "deleted",
-    );
+    const lockfiles: typeof changed = [];
+    for (const file of changed) {
+      if (!isLockfile(file.path) || file.status === "deleted") continue;
+      if (await isShadowedPackageLock(ctx, file.path)) continue;
+      lockfiles.push(file);
+    }
     let lockfileUpdated = false;
     for (const file of lockfiles) {
       if (file.path.endsWith(".lockb")) {
@@ -738,6 +767,14 @@ export default defineTask<Data>({
           const text = await ctx.read(lock);
           const importer =
             path.posix.relative(dirOf(lock) || ".", dir || ".") || ".";
+          const recordedSpec = lockedSpec(lock, text ?? "", importer, pkg);
+          if (recordedSpec === null) {
+            partial = true;
+            installReasons.add(
+              `${lock} has no ${pkg} entry reachable from ${dir === "" ? "the repo root" : dir}; the bump was never installed (a clean install may reject it).`,
+            );
+            continue;
+          }
           const locked = lockedVersion(
             lock,
             text ?? "",
