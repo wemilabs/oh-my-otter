@@ -333,10 +333,12 @@ function yarnLockedVersion(
     const line = lines[i] as string;
     const trimmed = line.trimEnd();
     if (trimmed === "" || /^\s/.test(line) || !trimmed.endsWith(":")) continue;
+    // Classic quotes each descriptor; berry quotes the whole list.
     const descriptors = trimmed
       .slice(0, -1)
+      .replace(/"/g, "")
       .split(",")
-      .map((descriptor) => unquote(descriptor));
+      .map((descriptor) => descriptor.trim());
     if (!descriptors.some((descriptor) => wanted.has(descriptor))) continue;
     for (let j = i + 1; j < lines.length; j += 1) {
       const entry = lines[j] as string;

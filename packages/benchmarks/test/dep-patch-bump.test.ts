@@ -553,6 +553,40 @@ left-pad@1.0.0:
     );
   });
 
+  it("uses the yarn berry entry when the whole descriptor list is quoted", async () => {
+    const berryLock = (version: string): string => `__metadata:
+  version: 8
+
+"left-pad@npm:1.0.0, left-pad@npm:^1.0.0":
+  version: ${version}
+  resolution: "left-pad@npm:${version}"
+
+"left-pad@npm:0.9.0":
+  version: 1.0.0
+  resolution: "left-pad@npm:1.0.0"
+`;
+    const berryBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(
+        {},
+        {
+          packageManager: "yarn@4.5.0",
+          dependencies: { "left-pad": "^1.0.0" },
+        },
+      ),
+      "yarn.lock": berryLock("1.0.0"),
+      "node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+    };
+    const started = await startTask(task, berryBase, params);
+    const result = await verifyTask(task, started, params, {
+      "yarn.lock": berryLock("1.0.1"),
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "node_modules has left-pad 1.0.0 but the lockfile says 1.0.1; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
   it("is partial when the npm lockfile installs nothing reachable for a workspace", async () => {
     const sparseLock = (aVersion: string): string =>
       `${JSON.stringify({
