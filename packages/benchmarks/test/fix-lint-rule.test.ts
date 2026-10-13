@@ -36,6 +36,12 @@ for (const file of ["src/a.js", "src/b.js"]) {
   if (!fs.existsSync(file)) continue;
   const source = fs.readFileSync(file, "utf8");
   const absolute = process.cwd() + "/" + file;
+  if (source.includes("fileless-error-a")) {
+    process.stdout.write("::error title=internalError/io::  Error A  \\n");
+  }
+  if (source.includes("fileless-error-b")) {
+    process.stdout.write("::error title=internalError/io::  Error B  \\n");
+  }
   if (source.includes("parse-error")) {
     process.stdout.write("::error title=parse,file=" + absolute + "::Parse error.\\n");
   } else if (source.includes("let ")) {
@@ -43,6 +49,10 @@ for (const file of ["src/a.js", "src/b.js"]) {
   }
 }
 `,
+};
+const filelessBiomeBase: Files = {
+  ...biomeBase,
+  "src/a.js": "let a = 1; /* fileless-error-a */\nexport { a };\n",
 };
 const eslintBase: Files = {
   ...base,
@@ -291,6 +301,29 @@ describe("fix-lint-rule", () => {
     expect(result.outcome).toBe("partial");
     expect(result.reasons).toContain(
       "Biome reported new parse or internal errors in src/b.js; violations of lint/style/useConst there are not counted.",
+    );
+  });
+
+  it("detects a fileless Biome fatal error being replaced by another", async () => {
+    const started = await startTask(task, filelessBiomeBase, {
+      rule: "style/useConst",
+    });
+    expect(started.data).toEqual({
+      violations: 1,
+      fatal: 1,
+      fatalFiles: ["(no file) internalError/io: Error A"],
+    });
+    const result = await verifyTask(
+      task,
+      started,
+      { rule: "style/useConst" },
+      {
+        "src/a.js": "const a = 1; /* fileless-error-b */\nexport { a };\n",
+      },
+    );
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "Biome reported new parse or internal errors in (no file) internalError/io: Error B; violations of lint/style/useConst there are not counted.",
     );
   });
 });

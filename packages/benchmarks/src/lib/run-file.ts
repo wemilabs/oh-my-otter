@@ -39,10 +39,12 @@ export async function readRunFileSnapshot(
     bytes = await readFile(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(
+      const missing = new Error(
         `No benchmark run found at ${RUN_FILE}; start one with "omot bench start <id>".`,
         { cause: error },
-      );
+      ) as NodeJS.ErrnoException;
+      missing.code = "ENOENT";
+      throw missing;
     }
     throw error;
   }

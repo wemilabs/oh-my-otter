@@ -1,6 +1,6 @@
 {
   "id": "fix-lint-rule",
-  "version": 4,
+  "version": 5,
   "title": "Fix every violation of one lint rule (ESLint or Biome)",
   "category": "lint",
   "estimatedScope": "medium",

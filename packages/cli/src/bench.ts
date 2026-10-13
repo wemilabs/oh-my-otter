@@ -636,43 +636,54 @@ async function cleanRun(
   }
   const file = path.join(directory, "run.json");
   const lock = `${file}.lock`;
+  const reportNoRun = async (): Promise<number> => {
+    const removedLock = await removeStaleRunFileLock(root);
+    if (!removedLock) {
+      try {
+        await access(lock);
+        io.stdout(
+          "Nothing to clean; a bench command holds .omot/run.json.lock.\n",
+        );
+        return 0;
+      } catch (lockError) {
+        if ((lockError as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw lockError;
+        }
+      }
+    } else {
+      try {
+        await rmdir(directory);
+      } catch (rmdirError) {
+        if (
+          !["ENOENT", "ENOTEMPTY"].includes(
+            (rmdirError as NodeJS.ErrnoException).code ?? "",
+          )
+        ) {
+          throw rmdirError;
+        }
+      }
+    }
+    io.stdout("Nothing to clean.\n");
+    return 0;
+  };
   try {
     await access(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      const removedLock = await removeStaleRunFileLock(root);
-      if (!removedLock) {
-        try {
-          await access(lock);
-          io.stdout(
-            "Nothing to clean; a bench command holds .omot/run.json.lock.\n",
-          );
-          return 0;
-        } catch (lockError) {
-          if ((lockError as NodeJS.ErrnoException).code !== "ENOENT") {
-            throw lockError;
-          }
-        }
-      } else {
-        try {
-          await rmdir(directory);
-        } catch (rmdirError) {
-          if (
-            !["ENOENT", "ENOTEMPTY"].includes(
-              (rmdirError as NodeJS.ErrnoException).code ?? "",
-            )
-          ) {
-            throw rmdirError;
-          }
-        }
-      }
-      io.stdout("Nothing to clean.\n");
-      return 0;
+      return reportNoRun();
     }
     throw error;
   }
 
-  const snapshot = await readRunFileSnapshot(root);
+  let snapshot: Awaited<ReturnType<typeof readRunFileSnapshot>>;
+  try {
+    snapshot = await readRunFileSnapshot(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return reportNoRun();
+    }
+    throw error;
+  }
   const run = snapshot.run;
   let branchInfo = run === null ? null : omotBranch(run);
   if (branchInfo && !(await branchExists(root, branchInfo.branch))) {

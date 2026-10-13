@@ -12,13 +12,33 @@ import os from "node:os";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { execa } from "execa";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { replaceRunFile } from "@oh-my-otter/benchmarks";
 import { main } from "../src/cli";
+
+const cleanSnapshotRace = vi.hoisted(() => ({ deleteOnNextRead: false }));
+
+vi.mock("@oh-my-otter/benchmarks", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@oh-my-otter/benchmarks")>();
+  const fs = await import("node:fs/promises");
+  const pathModule = await import("node:path");
+  return {
+    ...actual,
+    readRunFileSnapshot: async (root: string) => {
+      if (cleanSnapshotRace.deleteOnNextRead) {
+        cleanSnapshotRace.deleteOnNextRead = false;
+        await fs.rm(pathModule.join(root, ".omot/run.json"), { force: true });
+      }
+      return actual.readRunFileSnapshot(root);
+    },
+  };
+});
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  cleanSnapshotRace.deleteOnNextRead = false;
   await Promise.all(
     tempDirs
       .splice(0)
@@ -297,7 +317,7 @@ describe("bench start and verify", () => {
     const run = await runFile(root);
     expect(run).toMatchObject({
       schema_version: 3,
-      task: { id: "add-unit-test", version: 7 },
+      task: { id: "add-unit-test", version: 8 },
       params: { file: "src/math.mjs", function: "add" },
       agent: "claude-code",
       baseline: { commit: head },
@@ -325,7 +345,7 @@ describe("bench start and verify", () => {
       { cwd: root },
     );
     expect(verified.code).toBe(0);
-    expect(verified.stdout).toContain("PASS add-unit-test v7");
+    expect(verified.stdout).toContain("PASS add-unit-test v8");
     expect(verified.stdout).toContain("(attempt 1)");
     expect(verified.stdout).toContain("Baseline health recorded");
     expect(verified.stderr).toContain("Nothing was sent anywhere.");
@@ -466,7 +486,7 @@ test("add", () => assert.equal(add(1, 2), 3));
     const result = await invoke([...start, "--yes"], { cwd: root });
     expect(result.code).toBe(0);
     expect(await runFile(root)).toMatchObject({
-      task: { id: "add-unit-test", version: 7 },
+      task: { id: "add-unit-test", version: 8 },
     });
   });
 
@@ -839,6 +859,20 @@ describe("bench branches and clean", () => {
   it("reports nothing to clean when there is no run file", async () => {
     const root = await repo(cleanBranchFixture);
     const result = await invoke(["bench", "clean"], { cwd: root });
+    expect(result).toMatchObject({
+      code: 0,
+      stdout: "Nothing to clean.\n",
+    });
+  });
+
+  it("reports nothing to clean when the run disappears before its snapshot", async () => {
+    const root = await repo(cleanBranchFixture);
+    await mkdir(path.join(root, ".omot"));
+    await writeFile(path.join(root, ".omot/run.json"), "{}\n");
+    cleanSnapshotRace.deleteOnNextRead = true;
+
+    const result = await invoke(["bench", "clean"], { cwd: root });
+
     expect(result).toMatchObject({
       code: 0,
       stdout: "Nothing to clean.\n",

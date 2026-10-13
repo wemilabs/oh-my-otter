@@ -79,6 +79,17 @@ describe("Biome GitHub output", () => {
     });
   });
 
+  it("tracks fileless fatal errors by title and trimmed, capped message", () => {
+    const message = "m".repeat(121);
+    const output = `::error title=internalError/io::  ${message}  `;
+    expect(
+      parseBiomeGithub(result(output, 1), "lint/style/useConst", "/work/repo"),
+    ).toMatchObject({
+      fatal: 1,
+      fatalFiles: [`(no file) internalError/io: ${"m".repeat(120)}`],
+    });
+  });
+
   it("reports the first CLI error when Biome exits without workflow lines", () => {
     expect(() =>
       parseBiomeGithub(
