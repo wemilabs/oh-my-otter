@@ -94,8 +94,9 @@ delete it.
    strict schema (unknown fields are rejected) plus the plausibility checks
    below, and appends only the validated fields as one line in
    `reports.ndjson` on the orphan `dataset` branch. It re-checks the issue
-   body right before appending (an edited issue is skipped), records the
-   stored line verbatim in its comment, then closes and locks the issue.
+   body right before appending (an edited issue is skipped and closed as not
+   planned, asking for a fresh report issue), records the stored line
+   verbatim in its comment, then closes and locks the issue.
    The action never writes your username, the issue number, or the issue
    text. Aggregated results are published hourly at
    <https://ohmyotter.vercel.app/results>.
