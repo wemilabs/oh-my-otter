@@ -401,6 +401,18 @@ function yarnDescriptorHeader(
   return null;
 }
 
+function yarnEntryVersion(lines: string[], header: number): string | null {
+  for (let i = header + 1; i < lines.length; i += 1) {
+    const entry = lines[i] as string;
+    if (entry.trim() === "") continue;
+    if (!/^\s/.test(entry)) break;
+    // Handles both `version "1.0.1"` (classic) and `version: 1.0.1`.
+    const version = /^\s+version:?\s+"?([^"\s]+)"?\s*$/.exec(entry);
+    if (version !== null) return version[1] as string;
+  }
+  return null;
+}
+
 /** The version the `${pkg}@${spec}` (or `npm:`) entry resolves in yarn.lock. */
 function yarnLockedVersion(
   text: string,
@@ -410,17 +422,10 @@ function yarnLockedVersion(
   const lines = text.split(/\r?\n/);
   const header = yarnDescriptorHeader(lines, pkg, spec);
   if (header === null) return null;
-  for (let j = header + 1; j < lines.length; j += 1) {
-    const entry = lines[j] as string;
-    if (entry.trim() === "") continue;
-    if (!/^\s/.test(entry)) break;
-    // Handles both `version "1.0.1"` (classic) and `version: 1.0.1`.
-    const version = /^\s+version:?\s+"?([^"\s]+)"?\s*$/.exec(entry);
-    if (version === null) continue;
-    const resolved = lockValue(version[1] as string);
-    return semverStart.test(resolved) ? resolved : null;
-  }
-  return null;
+  const version = yarnEntryVersion(lines, header);
+  if (version === null) return null;
+  const resolved = lockValue(version);
+  return semverStart.test(resolved) ? resolved : null;
 }
 
 function yarnLockedSpec(
@@ -429,7 +434,10 @@ function yarnLockedSpec(
   spec: string,
 ): string | null {
   const lines = text.split(/\r?\n/);
-  return yarnDescriptorHeader(lines, pkg, spec) === null ? null : spec;
+  const header = yarnDescriptorHeader(lines, pkg, spec);
+  return header !== null && yarnEntryVersion(lines, header) !== null
+    ? spec
+    : null;
 }
 
 /** Parses a bun.lock (JSONC with trailing commas) into its two maps. */

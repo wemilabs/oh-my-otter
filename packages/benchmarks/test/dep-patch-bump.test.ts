@@ -1133,6 +1133,46 @@ packages:
       "yarn.lock has no zod entry reachable from packages/b; the bump was never installed (a clean install may reject it).",
     );
   });
+
+  it("reports a Yarn descriptor without a resolved version", async () => {
+    const zodParams = { package: "zod" };
+    const yarnBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(scripts, {
+        packageManager: "yarn@1.22.0",
+        workspaces: ["packages/*"],
+      }),
+      "packages/a/package.json": npmPackage(scripts, {
+        dependencies: { zod: "^4.6.5" },
+      }),
+      "packages/b/package.json": npmPackage(scripts, {
+        dependencies: { zod: "^4.6.5" },
+      }),
+      "yarn.lock": 'zod@^4.6.5:\n  version "4.6.5"\n  resolved "x"\n',
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.5" })}\n`,
+      "build.mjs": "console.log('built');\n",
+      "test/ok.test.mjs": passingTest,
+    };
+    const started = await startTask(task, yarnBase, zodParams);
+    const result = await verifyTask(task, started, zodParams, {
+      "packages/a/package.json": npmPackage(scripts, {
+        dependencies: { zod: "^4.6.7" },
+      }),
+      "yarn.lock": `zod@^4.6.7:
+  version "4.6.7"
+  resolved "y"
+
+zod@^4.6.5:
+  resolution: "zod@npm:4.6.7"
+  integrity: sha512-example
+`,
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.7" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "yarn.lock has no zod entry reachable from packages/b; the bump was never installed (a clean install may reject it).",
+    );
+  });
 });
 
 describe("lockfileVersions", () => {
