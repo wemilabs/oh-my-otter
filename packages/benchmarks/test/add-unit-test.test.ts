@@ -38,6 +38,7 @@ describe("boolean mutation positions", () => {
     ["const x = y as false;", true],
     ["x is true", true],
     ["type A = string | false;", true],
+    ["const s = useState<true>(x);", true],
     ["const value = { enabled: true };", false],
     ["const f = () => true;", false],
     ["const v = a || true;", false],
