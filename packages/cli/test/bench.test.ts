@@ -6,6 +6,7 @@ import {
   writeFile,
   mkdir,
   symlink,
+  utimes,
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -762,11 +763,33 @@ describe("bench branches and clean", () => {
     });
   });
 
+  it("removes an orphaned stale lock when there is no run file", async () => {
+    const root = await repo(cleanBranchFixture);
+    await mkdir(path.join(root, ".omot"));
+    const lock = path.join(root, ".omot/run.json.lock");
+    await writeFile(lock, "stale");
+    const stale = new Date(Date.now() - 61_000);
+    await utimes(lock, stale, stale);
+
+    const result = await invoke(["bench", "clean"], { cwd: root });
+    expect(result).toMatchObject({
+      code: 0,
+      stdout: "Nothing to clean.\n",
+    });
+    await expect(access(lock)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(path.join(root, ".omot"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
   it("removes the run and lock, removes an empty .omot, and prints the kept-branch hint", async () => {
     const root = await repo(cleanBranchFixture);
     await invoke([...start, "--branch", "bench/kept", "--yes"], { cwd: root });
     const gitignore = await readFile(path.join(root, ".gitignore"), "utf8");
-    await writeFile(path.join(root, ".omot/run.json.lock"), "stale");
+    const lock = path.join(root, ".omot/run.json.lock");
+    await writeFile(lock, "stale");
+    const stale = new Date(Date.now() - 61_000);
+    await utimes(lock, stale, stale);
 
     const result = await invoke(["bench", "clean", "--yes"], { cwd: root });
     expect(result.code).toBe(0);
@@ -905,6 +928,47 @@ describe("bench branches and clean", () => {
     expect(result.stderr).toContain(
       ".omot is a symbolic link; refusing to clean it.",
     );
+  });
+
+  it("refuses to delete a branch forged into run.json", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--branch", "bench/forged", "--yes"], {
+      cwd: root,
+    });
+    const run = await runFile(root);
+    run.baseline.branch = "main";
+    await writeFile(
+      path.join(root, ".omot/run.json"),
+      `${JSON.stringify(run, null, 2)}\n`,
+    );
+
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "Refusing to delete main: it is not the branch omot created for this run.",
+    );
+    await access(path.join(root, ".omot/run.json"));
+    expect(await git(root, ["branch", "--show-current"])).toBe("bench/forged");
+    expect(await git(root, ["branch", "--list", "main"])).toContain("main");
+  });
+
+  it("does not print a kept-branch hint for untrusted branch metadata", async () => {
+    const root = await repo(cleanBranchFixture);
+    await invoke([...start, "--branch", "bench/untrusted", "--yes"], {
+      cwd: root,
+    });
+    const run = await runFile(root);
+    run.baseline.branch = "main";
+    await writeFile(
+      path.join(root, ".omot/run.json"),
+      `${JSON.stringify(run, null, 2)}\n`,
+    );
+    const result = await invoke(["bench", "clean", "--yes"], { cwd: root });
+    expect(result.code).toBe(0);
+    expect(result.stderr).not.toContain("Branch main was created by omot");
   });
 
   it("deletes a branch after start appends the uncommitted .omot ignore line", async () => {

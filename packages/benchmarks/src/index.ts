@@ -49,6 +49,7 @@ export {
 export {
   RUN_FILE,
   appendVerification,
+  removeRunFile,
   readRunFile,
   replaceRunFile,
   updateRunFile,

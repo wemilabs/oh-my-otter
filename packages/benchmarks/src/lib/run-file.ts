@@ -170,6 +170,17 @@ async function acquireRunFileLock(root: string): Promise<() => Promise<void>> {
   }
 }
 
+export async function removeRunFile(root: string): Promise<void> {
+  const release = await acquireRunFileLock(root);
+  try {
+    await unlink(path.join(root, RUN_FILE)).catch((error) => {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    });
+  } finally {
+    await release();
+  }
+}
+
 export async function replaceRunFile(
   root: string,
   run: RunFile,

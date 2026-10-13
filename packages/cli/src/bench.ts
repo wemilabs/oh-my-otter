@@ -1,4 +1,4 @@
-import { access, lstat, readFile, rmdir, unlink } from "node:fs/promises";
+import { access, lstat, readFile, rmdir } from "node:fs/promises";
 import path from "node:path";
 import { Command } from "commander";
 import pc from "picocolors";
@@ -18,6 +18,7 @@ import {
   normalizeModel,
   parseParams,
   planGitignore,
+  removeRunFile,
   readRunFile,
   renderPrompt,
   resolveRepoRoot,
@@ -473,6 +474,7 @@ function omotBranch(run: RunFile): {
   branch: string;
   original: string;
   commit?: string;
+  source: "baseline" | "fix-failing-test";
 } | null {
   if (
     typeof run.baseline.branch === "string" &&
@@ -482,6 +484,7 @@ function omotBranch(run: RunFile): {
       branch: run.baseline.branch,
       original: run.baseline.original_branch,
       commit: run.baseline.commit,
+      source: "baseline",
     };
   }
   if (
@@ -504,16 +507,28 @@ function omotBranch(run: RunFile): {
     ...(typeof data.original_commit === "string"
       ? { commit: data.original_commit }
       : {}),
+    source: "fix-failing-test",
   };
 }
 
-async function deleteRunFile(file: string): Promise<void> {
-  for (const name of [file, `${file}.lock`]) {
-    try {
-      await unlink(name);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    }
+async function isOmotBranch(
+  root: string,
+  branch: NonNullable<ReturnType<typeof omotBranch>>,
+): Promise<boolean> {
+  if (branch.source === "fix-failing-test") {
+    return branch.branch.startsWith("omot/fix-failing-test-");
+  }
+  if (!branch.commit || branch.branch === branch.original) return false;
+  try {
+    await runGit(root, [
+      "merge-base",
+      "--is-ancestor",
+      branch.commit,
+      branch.branch,
+    ]);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -532,10 +547,32 @@ async function cleanRun(
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const file = path.join(directory, "run.json");
+  const lock = `${file}.lock`;
   try {
     await access(file);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      try {
+        await access(lock);
+      } catch (lockError) {
+        if ((lockError as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw lockError;
+        }
+        io.stdout("Nothing to clean.\n");
+        return 0;
+      }
+      await removeRunFile(root);
+      try {
+        await rmdir(directory);
+      } catch (rmdirError) {
+        if (
+          !["ENOENT", "ENOTEMPTY"].includes(
+            (rmdirError as NodeJS.ErrnoException).code ?? "",
+          )
+        ) {
+          throw rmdirError;
+        }
+      }
       io.stdout("Nothing to clean.\n");
       return 0;
     }
@@ -545,6 +582,14 @@ async function cleanRun(
   const run = await readRunFile(root).catch(() => null);
   let branchInfo = run === null ? null : omotBranch(run);
   if (branchInfo && !(await branchExists(root, branchInfo.branch))) {
+    branchInfo = null;
+  }
+  if (branchInfo && !(await isOmotBranch(root, branchInfo))) {
+    if (options.deleteBranch) {
+      throw new Error(
+        `Refusing to delete ${branchInfo.branch}: it is not the branch omot created for this run.`,
+      );
+    }
     branchInfo = null;
   }
 
@@ -625,7 +670,7 @@ async function cleanRun(
     );
   }
 
-  await deleteRunFile(file);
+  await removeRunFile(root);
   io.stdout("Removed .omot/run.json.\n");
   try {
     await rmdir(directory);
