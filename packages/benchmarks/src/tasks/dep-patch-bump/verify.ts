@@ -316,7 +316,11 @@ function pnpmDepEntry(
       baseIndent = indent;
       for (let j = i + 1; j < lines.length; j += 1) {
         const next = lines[j] as string;
-        if (next.trim() !== "" && indentOf(next) <= indent) {
+        if (
+          next.trim() !== "" &&
+          !next.trim().startsWith("#") &&
+          indentOf(next) <= indent
+        ) {
           end = j;
           break;
         }

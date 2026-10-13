@@ -717,6 +717,51 @@ packages:
     );
   });
 
+  it("keeps pnpm importer sections after a same-indent comment", async () => {
+    const zodParams = { package: "zod" };
+    const pnpmRootLock = (
+      specifier: string,
+      version: string,
+      withNote = false,
+    ): string => `lockfileVersion: '9.0'
+
+importers:
+  .:
+${withNote ? "  # note\n" : ""}    dependencies:
+      zod:
+        specifier: ${specifier}
+        version: ${version}
+
+packages:
+  zod@${version}:
+    resolution: {}
+`;
+    const pnpmBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(scripts, {
+        packageManager: "pnpm@9.15.0",
+        dependencies: { zod: "^4.6.5" },
+      }),
+      "pnpm-lock.yaml": pnpmRootLock("^4.6.5", "4.6.5"),
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.5" })}\n`,
+      "build.mjs": "console.log('built');\n",
+      "test/ok.test.mjs": passingTest,
+    };
+    const started = await startTask(task, pnpmBase, zodParams);
+    const result = await verifyTask(task, started, zodParams, {
+      "package.json": npmPackage(scripts, {
+        packageManager: "pnpm@9.15.0",
+        dependencies: { zod: "^4.6.7" },
+      }),
+      "pnpm-lock.yaml": pnpmRootLock("^4.6.7", "4.6.7", true),
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.7" })}\n`,
+    });
+    expect(result.outcome).toBe("pass");
+    expect(result.reasons).toContain(
+      "Installed zod 4.6.7 matches the lockfile.",
+    );
+  });
+
   it("uses the yarn entry for the declared range, not the whole lockfile", async () => {
     const yarnBase: Files = {
       ".gitignore": "node_modules/\n",
