@@ -4,7 +4,7 @@ Implementation plan for coding agent · October 10, 2026
 
 ## 1. What we are building
 
-**Oh My Otter** is an open-source benchmark and optimization toolkit for AI coding agents (for example Devin, Claude Code, Cursor, Codex, and Copilot). It is agent-neutral: any coding agent can be scanned for and benchmarked.
+**Oh My Otter** is an open-source benchmark and optimization toolkit for AI coding agents (for example Devin, Claude Code, Cursor, Codex, Droid, and Copilot). It is agent-neutral: any coding agent can be scanned for and benchmarked.
 
 It has three parts:
 
