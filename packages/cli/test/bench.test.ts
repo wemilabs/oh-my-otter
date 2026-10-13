@@ -132,6 +132,11 @@ const cleanBranchFixture = {
   ...fixture,
   ".gitignore": "node_modules\n.omot/\n",
 };
+const noGitignoreFixture = {
+  "package.json": fixture["package.json"],
+  "package-lock.json": fixture["package-lock.json"],
+  "src/math.mjs": fixture["src/math.mjs"],
+};
 const addTest = `import { test } from "node:test";
 import assert from "node:assert/strict";
 import { add } from "../src/math.mjs";
@@ -900,6 +905,92 @@ describe("bench branches and clean", () => {
     expect(result.stderr).toContain(
       ".omot is a symbolic link; refusing to clean it.",
     );
+  });
+
+  it("deletes a branch after start appends the uncommitted .omot ignore line", async () => {
+    const root = await repo(fixture);
+    await invoke([...start, "--branch", "bench/gitignore", "--yes"], {
+      cwd: root,
+    });
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("Deleted branch bench/gitignore");
+    expect(result.stdout).toContain("Removed .omot/run.json.");
+    expect(await readFile(path.join(root, ".gitignore"), "utf8")).toContain(
+      ".omot/",
+    );
+    expect(await git(root, ["branch", "--show-current"])).toBe("main");
+  });
+
+  it("deletes a branch when start creates an untracked .gitignore with only the omot line", async () => {
+    const root = await repo(noGitignoreFixture);
+    await invoke([...start, "--branch", "bench/new-ignore", "--yes"], {
+      cwd: root,
+    });
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(0);
+    expect(await readFile(path.join(root, ".gitignore"), "utf8")).toBe(
+      ".omot/\n",
+    );
+  });
+
+  it("still refuses to delete when .gitignore has other uncommitted changes", async () => {
+    const root = await repo(fixture);
+    await invoke([...start, "--branch", "bench/dirty-ignore", "--yes"], {
+      cwd: root,
+    });
+    await writeFile(
+      path.join(root, ".gitignore"),
+      "node_modules\n.omot/\ncoverage/\n",
+    );
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain(
+      "The working tree has uncommitted changes outside .omot/",
+    );
+    await access(path.join(root, ".omot/run.json"));
+  });
+
+  it("reports and cleans when no omot-created branch is recorded", async () => {
+    const root = await repo(fixture);
+    await invoke([...start, "--yes"], { cwd: root });
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("No omot-created branch to delete.");
+    expect(result.stdout).toContain("Removed .omot/run.json.");
+    await expect(
+      access(path.join(root, ".omot/run.json")),
+    ).rejects.toMatchObject({
+      code: "ENOENT",
+    });
+  });
+
+  it("reports and cleans when the recorded omot-created branch no longer exists", async () => {
+    const root = await repo(fixture);
+    await invoke([...start, "--branch", "bench/gone", "--yes"], {
+      cwd: root,
+    });
+    await git(root, ["switch", "main"]);
+    await git(root, ["branch", "-D", "bench/gone"]);
+    const result = await invoke(
+      ["bench", "clean", "--delete-branch", "--yes"],
+      { cwd: root },
+    );
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("No omot-created branch to delete.");
+    expect(result.stdout).toContain("Removed .omot/run.json.");
   });
 
   it("restores a detached original commit before deleting the created branch", async () => {

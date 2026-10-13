@@ -26,6 +26,7 @@ import {
   updateRunFile,
   TaskPreconditionError,
   runGit,
+  withoutOmotLines,
   type RunFile,
   type Task,
   type VerifyResult,
@@ -468,7 +469,7 @@ async function startTask(
   }
 }
 
-function fixFailingBranch(run: RunFile): {
+function omotBranch(run: RunFile): {
   branch: string;
   original: string;
   commit?: string;
@@ -542,7 +543,7 @@ async function cleanRun(
   }
 
   const run = await readRunFile(root).catch(() => null);
-  let branchInfo = run === null ? null : fixFailingBranch(run);
+  let branchInfo = run === null ? null : omotBranch(run);
   if (branchInfo && !(await branchExists(root, branchInfo.branch))) {
     branchInfo = null;
   }
@@ -554,9 +555,26 @@ async function cleanRun(
       "--porcelain",
       "--untracked-files=all",
     ]);
-    const outside = status
-      .split(/\r?\n/)
-      .filter((line) => line.trim() && !line.slice(3).startsWith(".omot/"));
+    const outside: string[] = [];
+    for (const line of status.split(/\r?\n/)) {
+      if (!line.trim() || line.slice(3).startsWith(".omot/")) continue;
+      if (line.slice(3) === ".gitignore") {
+        const current = await readFile(path.join(root, ".gitignore"), "utf8");
+        if (line.startsWith("?? ")) {
+          if (withoutOmotLines(current).trim() === "") continue;
+        } else {
+          try {
+            const baseline = await runGit(root, ["show", "HEAD:.gitignore"]);
+            if (withoutOmotLines(current) === withoutOmotLines(baseline)) {
+              continue;
+            }
+          } catch {
+            // An untracked or otherwise unavailable baseline is not omot-only.
+          }
+        }
+      }
+      outside.push(line);
+    }
     if (outside.length > 0) {
       throw new Error(
         `The working tree has uncommitted changes outside .omot/; commit or stash them before deleting ${branchInfo.branch}.`,
@@ -619,6 +637,10 @@ async function cleanRun(
     ) {
       throw error;
     }
+  }
+
+  if (options.deleteBranch && !branchInfo) {
+    io.stdout("No omot-created branch to delete.\n");
   }
 
   if (!options.deleteBranch && branchInfo) {

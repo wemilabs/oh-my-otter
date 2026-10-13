@@ -43,6 +43,7 @@ export {
   OMOT_IGNORE_LINE,
   applyGitignore,
   planGitignore,
+  withoutOmotLines,
   type GitignorePlan,
 } from "./lib/gitignore";
 export {
