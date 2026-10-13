@@ -11,10 +11,11 @@ import { getDataset } from "@/lib/dataset";
 export default async function Home() {
   const { dataset, aggregate } = await getDataset();
   const reports = dataset.reports.length;
+  const statsReports = dataset.status === "unavailable" ? null : reports;
   return (
     <>
       <Hero />
-      <StatsStrip reports={reports} />
+      <StatsStrip reports={statsReports} />
       <Features />
       <Steps />
       <ResultsTeaser

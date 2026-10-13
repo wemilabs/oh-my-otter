@@ -1,15 +1,45 @@
-import { mkdir, readFile, utimes, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  readdir,
+  symlink,
+  unlink,
+  utimes,
+  writeFile,
+} from "node:fs/promises";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   appendVerification,
   readRunFile,
+  replaceRunFile,
   updateRunFile,
   writeRunFile,
   type RunFile,
   type Verification,
 } from "../src/index";
 import { createRepo } from "./helpers";
+
+function probeFileSymlinkCreation(): boolean {
+  const root = mkdtempSync(path.join(os.tmpdir(), "omot-run-file-symlink-"));
+  const target = path.join(root, "target.txt");
+  writeFileSync(target, "");
+  try {
+    symlinkSync(target, path.join(root, "link.txt"), "file");
+    return true;
+  } catch (error) {
+    return (
+      process.platform !== "win32" ||
+      (error as NodeJS.ErrnoException).code !== "EPERM"
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const canCreateFileSymlinks = probeFileSymlinkCreation();
 
 const legacyRun = {
   schema_version: 1,
@@ -148,6 +178,83 @@ describe("run file migration", () => {
     expect(await readRunFile(root)).toMatchObject({
       baseline: { scan: { readiness_score: 50 } },
     });
+  });
+
+  it("leaves no temporary files after writing", async () => {
+    const root = await createRepo({ "a.txt": "a\n" });
+    const run: RunFile = {
+      schema_version: 3,
+      task: { id: "add-unit-test", version: 4 },
+      params: {},
+      agent: "cursor",
+      baseline: {
+        commit: "a".repeat(40),
+        started_at: "2026-10-12T16:00:00.000Z",
+      },
+      verifications: [],
+    };
+    await writeRunFile(root, run);
+    expect(await readdir(path.join(root, ".omot"))).toEqual(["run.json"]);
+  });
+
+  it.skipIf(process.platform === "win32" && !canCreateFileSymlinks)(
+    "refuses to replace a symlinked run file",
+    async () => {
+      const root = await createRepo({ "a.txt": "a\n" });
+      await mkdir(path.join(root, ".omot"));
+      const outside = path.join(root, "outside.json");
+      await writeFile(outside, "outside\n");
+      await symlink(outside, path.join(root, ".omot/run.json"), "file");
+      const run: RunFile = {
+        schema_version: 3,
+        task: { id: "add-unit-test", version: 4 },
+        params: {},
+        agent: "cursor",
+        baseline: {
+          commit: "a".repeat(40),
+          started_at: "2026-10-12T16:00:00.000Z",
+        },
+        verifications: [],
+      };
+      await expect(writeRunFile(root, run)).rejects.toThrow(
+        "run.json is a symbolic link",
+      );
+      expect(await readFile(outside, "utf8")).toBe("outside\n");
+    },
+  );
+
+  it("waits for a held lock before replacing the run", async () => {
+    const root = await createRepo({ "a.txt": "a\n" });
+    const run: RunFile = {
+      schema_version: 3,
+      task: { id: "add-unit-test", version: 4 },
+      params: {},
+      agent: "cursor",
+      baseline: {
+        commit: "a".repeat(40),
+        started_at: "2026-10-12T16:00:00.000Z",
+      },
+      verifications: [],
+    };
+    await writeRunFile(root, run);
+    const replacement: RunFile = {
+      ...run,
+      baseline: { ...run.baseline, commit: "b".repeat(40) },
+    };
+    const lock = path.join(root, ".omot/run.json.lock");
+    await writeFile(lock, "held");
+
+    let completed = false;
+    const replacing = replaceRunFile(root, replacement).then(() => {
+      completed = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(completed).toBe(false);
+    expect((await readRunFile(root)).baseline.commit).toBe("a".repeat(40));
+
+    await unlink(lock);
+    await replacing;
+    expect((await readRunFile(root)).baseline.commit).toBe("b".repeat(40));
   });
 
   it("appends attempts and keeps result equal to the latest verification", () => {

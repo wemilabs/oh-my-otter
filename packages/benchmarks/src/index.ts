@@ -49,6 +49,7 @@ export {
   RUN_FILE,
   appendVerification,
   readRunFile,
+  replaceRunFile,
   updateRunFile,
   writeRunFile,
 } from "./lib/run-file";

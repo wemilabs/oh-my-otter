@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      issues: read
+      issues: write
     outputs:
       status: ${{ steps.recheck.outputs.status }}
     steps:
@@ -122,23 +122,34 @@ jobs:
           ACTUAL_SHA=$(jq -j '.body // ""' "$RUNNER_TEMP/issue.json" | sha256sum | cut -d' ' -f1)
           STATE=$(jq -r '.state' "$RUNNER_TEMP/issue.json")
           INGESTED=$(jq '[.labels[].name] | index("ingested") != null' "$RUNNER_TEMP/issue.json")
-          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ] || [ "$STATE" != "open" ] || [ "$INGESTED" = "true" ]; then
+          if [ "$INGESTED" = "true" ]; then
+            echo "Issue already ingested; not appending" >&2
+            echo "status=already" >> "$GITHUB_OUTPUT"
+          elif [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ] || [ "$STATE" != "open" ]; then
             echo "Issue changed since validation; not appending" >&2
             echo "status=changed" >> "$GITHUB_OUTPUT"
-            exit 0
+          else
+            echo "status=ok" >> "$GITHUB_OUTPUT"
           fi
-          echo "status=ok" >> "$GITHUB_OUTPUT"
       - name: Append the report to reports.ndjson
         id: append
-        if: steps.recheck.outputs.status != 'changed'
+        if: steps.recheck.outputs.status == 'ok'
         env:
           LINE: ${{ needs.validate.outputs.line }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           set -e
           if [ -z "$LINE" ] || [ "$LINE" != "${LINE%%$'\n'*}" ] || [ "${LINE#\{}" = "$LINE" ]; then
             echo "Invalid report line" >&2
             exit 1
           fi
+          pushed=0
+          trap 'if [ "$pushed" != 1 ]; then gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --remove-label ingested || true; fi' EXIT
+          gh label create ingested --repo "$GH_REPO" --color 0E8A16 \
+            --description "Report ingested into the anonymous dataset" --force
+          gh issue edit "$ISSUE_NUMBER" --repo "$GH_REPO" --add-label ingested
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for attempt in 1 2 3 4 5; do
@@ -154,6 +165,7 @@ jobs:
             git add reports.ndjson
             git commit -qm "dataset: add report"
             if git push origin dataset; then
+              pushed=1
               exit 0
             fi
             echo "Push failed (attempt $attempt), retrying" >&2

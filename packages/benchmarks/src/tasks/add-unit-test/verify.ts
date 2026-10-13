@@ -1,7 +1,7 @@
 import { readText } from "../../context";
 import { isTestFile, summarizeList } from "../../lib/files";
 import {
-  countTestCases,
+  countTargetTestCases,
   importsModule,
   referencesIdentifier,
 } from "../../lib/imports";
@@ -93,10 +93,13 @@ export default defineTask({
         continue;
       }
       exercising.push(entry.path);
-      casesAfter += countTestCases(source);
+      const scope = { fromFile: entry.path, target: file };
+      casesAfter += countTargetTestCases(source, name, scope);
       if (entry.status !== "added") {
-        casesBefore += countTestCases(
+        casesBefore += countTargetTestCases(
           (await ctx.readBaseline(entry.path)) ?? "",
+          name,
+          scope,
         );
       }
     }
@@ -117,12 +120,12 @@ export default defineTask({
     }
     if (casesAfter > casesBefore) {
       reasons.push(
-        `Test cases in changed test files: ${casesBefore} → ${casesAfter}.`,
+        `Test cases that use ${name} in changed test files: ${casesBefore} → ${casesAfter}.`,
       );
     } else {
       failed = true;
       reasons.push(
-        `No new test cases: it()/test() calls in test files that use ${name} went ${casesBefore} → ${casesAfter}.`,
+        `No new test cases that use ${name}: changed test files went ${casesBefore} → ${casesAfter}.`,
       );
     }
 

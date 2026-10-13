@@ -35,12 +35,15 @@ export function SectionHeading({
   );
 }
 
-export function StatsStrip({ reports }: { reports: number }) {
+export function StatsStrip({ reports }: { reports: number | null }) {
   const stats = [
     ["14", "readiness checks"],
     ["6", "benchmark tasks"],
     ["0", "network calls from the CLI"],
-    [reports.toLocaleString("en-US"), "anonymous reports so far"],
+    [
+      reports === null ? "—" : reports.toLocaleString("en-US"),
+      "anonymous reports so far",
+    ],
   ];
   return (
     <section className="border-b border-border">

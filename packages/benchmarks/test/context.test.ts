@@ -1,6 +1,27 @@
+import { mkdir } from "node:fs/promises";
+import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createPrepareContext } from "../src/context";
+import { createPrepareContext, runGit } from "../src/context";
 import { createRepo, npmPackage } from "./helpers";
+
+function probeDirectorySymlinkCreation(): boolean {
+  const root = mkdtempSync(path.join(os.tmpdir(), "omot-context-symlink-"));
+  try {
+    symlinkSync(root, path.join(root, "link"), "dir");
+    return true;
+  } catch (error) {
+    return (
+      process.platform !== "win32" ||
+      (error as NodeJS.ErrnoException).code !== "EPERM"
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const canCreateDirectorySymlinks = probeDirectorySymlinkCreation();
 
 describe("prepare context scripts", () => {
   it("records combined command output on failures and memoizes baseline scripts", async () => {
@@ -61,4 +82,22 @@ describe("prepare context scripts", () => {
     });
     await expect(ctx.recordBaseline()).resolves.toBeNull();
   });
+
+  it.skipIf(process.platform === "win32" && !canCreateDirectorySymlinks)(
+    "fingerprints nested untracked directories without following symlink loops",
+    async () => {
+      const root = await createRepo({
+        "package.json": npmPackage({ test: `node -e "process.exit(0)"` }),
+      });
+      const nested = path.join(root, "nested");
+      await mkdir(nested);
+      await runGit(nested, ["init"]);
+      symlinkSync("..", path.join(nested, "loop"), "dir");
+
+      const ctx = createPrepareContext(root, { scripts: ["test"] });
+      await expect(ctx.recordBaseline()).resolves.toMatchObject({
+        test: { code: 0 },
+      });
+    },
+  );
 });

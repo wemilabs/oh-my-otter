@@ -22,8 +22,8 @@ import {
   renderPrompt,
   resolveRepoRoot,
   appendVerification,
+  replaceRunFile,
   updateRunFile,
-  writeRunFile,
   TaskPreconditionError,
   type RunFile,
   type Task,
@@ -351,7 +351,7 @@ async function startTask(
     },
     verifications: [],
   };
-  await writeRunFile(root, run);
+  await replaceRunFile(root, run);
   agentNote(options, fields, io);
   io.stderr(
     `Started ${pc.bold(task.manifest.id)} v${task.manifest.version} at ${commit.slice(0, 12)} (${describeAgent(fields)}). Baseline saved to ${RUN_FILE}.\n\n${PASTE_HEADING}\n\n`,
