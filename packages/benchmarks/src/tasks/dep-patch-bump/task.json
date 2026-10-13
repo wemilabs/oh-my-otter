@@ -1,6 +1,6 @@
 {
   "id": "dep-patch-bump",
-  "version": 4,
+  "version": 5,
   "title": "Bump a dependency within its major version",
   "category": "dependencies",
   "estimatedScope": "small",
