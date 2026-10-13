@@ -119,7 +119,11 @@ async function findLockfile(
   let current = dir;
   while (true) {
     let fallback: string | null = null;
+    const shrinkwrapPath =
+      current === "" ? "npm-shrinkwrap.json" : `${current}/npm-shrinkwrap.json`;
+    const hasShrinkwrap = await ctx.exists(shrinkwrapPath);
     for (const name of lockfileNames) {
+      if (name === "package-lock.json" && hasShrinkwrap) continue;
       const file = current === "" ? name : `${current}/${name}`;
       if (!(await ctx.exists(file))) continue;
       if (changed.has(file)) return file;
@@ -313,17 +317,29 @@ function pnpmDepEntry(
   } else if (importer !== ".") {
     return null;
   }
+  let found: DepEntry | undefined;
+  let specifier: string | undefined;
   for (let i = start; i < end; i += 1) {
     const line = lines[i] as string;
     if (line.trim() === "") continue;
     const indent = indentOf(line);
     if (indent <= baseIndent) break;
     const entry = yamlKeyValue(line);
-    if (entry === null || !dependencySections.includes(entry.key)) continue;
-    const found = depSectionEntry(lines, i + 1, indent, pkg);
-    if (found !== undefined) return found;
+    if (entry === null) continue;
+    if (entry.key === "specifiers") {
+      const recorded = depSectionEntry(lines, i + 1, indent, pkg);
+      if (recorded !== undefined) {
+        specifier = recorded.specifier ?? recorded.value;
+      }
+      continue;
+    }
+    if (!dependencySections.includes(entry.key) || found !== undefined)
+      continue;
+    found = depSectionEntry(lines, i + 1, indent, pkg);
   }
-  return null;
+  return found === undefined
+    ? null
+    : { ...found, specifier: found.specifier ?? specifier };
 }
 
 /** The version `pkg` resolves to for `importer` in a pnpm-lock.yaml. */
@@ -748,6 +764,14 @@ export default defineTask<Data>({
           if (locked !== null) {
             expected = [locked];
           } else {
+            const recordedSpec = lockedSpec(lock, text ?? "", importer, pkg);
+            if (recordedSpec === null) {
+              partial = true;
+              installReasons.add(
+                `${lock} has no ${pkg} entry reachable from ${dir === "" ? "the repo root" : dir}; the bump was never installed (a clean install may reject it).`,
+              );
+              continue;
+            }
             const before = lockfileVersions(await ctx.readBaseline(lock), pkg);
             const after = lockfileVersions(text, pkg);
             const added = after.filter((version) => !before.includes(version));

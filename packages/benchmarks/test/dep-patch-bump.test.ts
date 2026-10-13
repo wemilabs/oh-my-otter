@@ -256,6 +256,23 @@ describe("dep-patch-bump", () => {
     expect(result.outcome).toBe("fail");
   });
 
+  it("uses npm-shrinkwrap.json instead of a changed package-lock.json", async () => {
+    const started = await startTask(
+      task,
+      { ...base, "npm-shrinkwrap.json": lock("1.1.0") },
+      params,
+    );
+    const result = await verifyTask(task, started, params, {
+      "package.json": pkg("^1.3.0"),
+      "package-lock.json": lock("1.3.0"),
+      ...installed("1.3.0"),
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "package.json bumps left-pad but its lockfile npm-shrinkwrap.json was not updated; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
   it("does not count a build failure that was already present at baseline", async () => {
     const initial: Files = {
       ...base,
@@ -533,6 +550,63 @@ describe("dep-patch-bump per-workspace lockfiles", () => {
     expect(result.outcome).toBe("partial");
     expect(result.reasons).toContain(
       "node_modules has left-pad 1.0.0 but the lockfile says 1.0.1; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("reports an unchanged pnpm workspace with no importer entry", async () => {
+    const pnpmWorkspaceLock = (
+      aSpecifier: string,
+      aVersion: string,
+      bHasEntry: boolean,
+    ): string => {
+      const b = bHasEntry
+        ? `  packages/b:
+    dependencies:
+      left-pad:
+        specifier: ^1.0.0
+        version: 1.0.0
+`
+        : "  packages/b: {}\n";
+      return `lockfileVersion: '9.0'
+
+importers:
+
+  packages/a:
+    dependencies:
+      left-pad:
+        specifier: ${aSpecifier}
+        version: ${aVersion}
+
+${b}
+packages:
+  left-pad@${aVersion}:
+    resolution: {}
+`;
+    };
+    const pnpmWorkspaces: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(
+        {},
+        { packageManager: "pnpm@9.15.0", workspaces: ["packages/*"] },
+      ),
+      "pnpm-lock.yaml": pnpmWorkspaceLock("^1.0.0", "1.0.0", true),
+      "packages/a/package.json": dep("^1.0.0"),
+      "packages/b/package.json": dep("^1.0.0"),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+      "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.0" })}\n`,
+      "build.mjs": "console.log('built');\n",
+      "test/ok.test.mjs": passingTest,
+    };
+    const started = await startTask(task, pnpmWorkspaces, params);
+    const result = await verifyTask(task, started, params, {
+      "packages/a/package.json": dep("^1.0.1"),
+      "pnpm-lock.yaml": pnpmWorkspaceLock("^1.0.1", "1.0.1", false),
+      "packages/a/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
+      "packages/b/node_modules/left-pad/package.json": `${JSON.stringify({ name: "left-pad", version: "1.0.1" })}\n`,
+    });
+    expect(result.outcome).toBe("partial");
+    expect(result.reasons).toContain(
+      "pnpm-lock.yaml has no left-pad entry reachable from packages/b; the bump was never installed (a clean install may reject it).",
     );
   });
 
@@ -826,6 +900,61 @@ ${Object.entries(entries)
     expect(result.outcome).toBe("partial");
     expect(result.reasons).toContain(
       "packages/b/package.json declares left-pad ^1.0.1 but pnpm-lock.yaml still records ^1.0.0 for it; the bump was never installed (a clean install may reject it).",
+    );
+  });
+
+  it("reads legacy pnpm specifiers and accepts a matching updated range", async () => {
+    const zodParams = { package: "zod" };
+    const legacyLock = (specifier: string, version: string): string =>
+      `lockfileVersion: 5.4
+
+specifiers:
+  zod: ${specifier}
+
+dependencies:
+  zod: ${version}
+
+packages:
+  /zod/${version}:
+    resolution: {integrity: sha512-fixture}
+`;
+    const legacyBase: Files = {
+      ".gitignore": "node_modules/\n",
+      "package.json": npmPackage(scripts, {
+        packageManager: "pnpm@7.0.0",
+        dependencies: { zod: "^4.6.5" },
+      }),
+      "pnpm-lock.yaml": legacyLock("^4.6.5", "4.6.5"),
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.5" })}\n`,
+      "build.mjs": "console.log('built');\n",
+      "test/ok.test.mjs": passingTest,
+    };
+    const staleStarted = await startTask(task, legacyBase, zodParams);
+    const stale = await verifyTask(task, staleStarted, zodParams, {
+      "package.json": npmPackage(scripts, {
+        packageManager: "pnpm@7.0.0",
+        dependencies: { zod: "^4.6.7" },
+      }),
+      "pnpm-lock.yaml": legacyLock("^4.6.5", "4.6.7"),
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.7" })}\n`,
+    });
+    expect(stale.outcome).toBe("partial");
+    expect(stale.reasons).toContain(
+      "package.json declares zod ^4.6.7 but pnpm-lock.yaml still records ^4.6.5 for it; the bump was never installed (a clean install may reject it).",
+    );
+
+    const updatedStarted = await startTask(task, legacyBase, zodParams);
+    const updated = await verifyTask(task, updatedStarted, zodParams, {
+      "package.json": npmPackage(scripts, {
+        packageManager: "pnpm@7.0.0",
+        dependencies: { zod: "^4.6.7" },
+      }),
+      "pnpm-lock.yaml": legacyLock("^4.6.7", "4.6.7"),
+      "node_modules/zod/package.json": `${JSON.stringify({ name: "zod", version: "4.6.7" })}\n`,
+    });
+    expect(updated.outcome).toBe("pass");
+    expect(updated.reasons).toContain(
+      "Installed zod 4.6.7 matches the lockfile.",
     );
   });
 
