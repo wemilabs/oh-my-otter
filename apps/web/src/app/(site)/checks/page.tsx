@@ -24,7 +24,7 @@ export default async function ChecksPage() {
         </div>
       </section>
       <section>
-        <div className="mx-auto max-w-6xl px-gutter py-14">
+        <div className="mx-auto max-w-6xl px-gutter py-8">
           <CheckCatalog checks={checks} />
         </div>
       </section>
