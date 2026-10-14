@@ -46,6 +46,86 @@ test("the complete catalog is present without JavaScript", async ({
   await context.close();
 });
 
+test.describe("URL-bound filters", () => {
+  test("a q param seeds the search box and filters the cards", async ({
+    page,
+    baseURL,
+  }) => {
+    await page.goto(`${baseURL}/checks?q=gitignore`);
+    const search = page.getByRole("searchbox", { name: "Search checks" });
+    await expect(search).toHaveValue("gitignore");
+    await expect(page.locator('a[href^="/checks/"]')).toHaveCount(1);
+    await expect(
+      page.locator('a[href="/checks/gitignore-sane"]'),
+    ).toBeVisible();
+  });
+
+  test("a category param activates its button and filters the cards", async ({
+    page,
+    baseURL,
+  }) => {
+    const docsChecks = builtinChecks.filter(
+      (check) => check.category === "docs",
+    );
+    await page.goto(`${baseURL}/checks?category=docs`);
+    await expect(page.getByRole("button", { name: /docs/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator('a[href^="/checks/"]')).toHaveCount(
+      docsChecks.length,
+    );
+  });
+
+  test("q and category params combine", async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/checks?q=install-documented&category=docs`);
+    await expect(page.locator('a[href^="/checks/"]')).toHaveCount(1);
+  });
+
+  test("interactions write the filters into the URL", async ({
+    page,
+    baseURL,
+  }) => {
+    await page.goto(`${baseURL}/checks`);
+    const search = page.getByRole("searchbox", { name: "Search checks" });
+    await search.fill("gitignore");
+    await expect(page).toHaveURL(/[?&]q=gitignore/);
+
+    await page.getByRole("button", { name: /docs/i }).click();
+    await expect(page).toHaveURL(/[?&]category=docs/);
+
+    await page.getByRole("button", { name: /^all/i }).click();
+    await search.clear();
+    await expect(page).toHaveURL(`${baseURL}/checks`);
+  });
+
+  test("filters survive a reload", async ({ page, baseURL }) => {
+    await page.goto(`${baseURL}/checks?q=install-documented&category=docs`);
+    await page.reload();
+    const search = page.getByRole("searchbox", { name: "Search checks" });
+    await expect(search).toHaveValue("install-documented");
+    await expect(page.getByRole("button", { name: /docs/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator('a[href^="/checks/"]')).toHaveCount(1);
+  });
+
+  test("an unknown category param falls back to all", async ({
+    page,
+    baseURL,
+  }) => {
+    await page.goto(`${baseURL}/checks?category=bogus`);
+    await expect(page.getByRole("button", { name: /^all/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator('a[href^="/checks/"]')).toHaveCount(
+      builtinChecks.length,
+    );
+  });
+});
+
 test("a check card opens its details", async ({ page, baseURL }) => {
   const check = builtinChecks[0]!;
   await page.goto(`${baseURL}/checks`);
