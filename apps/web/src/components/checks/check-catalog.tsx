@@ -73,15 +73,21 @@ function Catalog({
           >
             Search checks
           </label>
-          <input
-            id="check-search"
-            type="search"
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            disabled={disabled}
-            placeholder="Search by name or purpose"
-            className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
-          />
+          <div className="relative">
+            <input
+              id="check-search"
+              type="search"
+              value={query}
+              onChange={(event) => onQueryChange(event.target.value)}
+              disabled={disabled}
+              placeholder="Search by name or purpose"
+              className="peer relative z-10 min-h-11 w-full border border-transparent bg-transparent px-3 text-sm outline-none placeholder:text-muted-foreground"
+            />
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 inset-y-1 rounded-md border border-input bg-background peer-focus-visible:ring-3 peer-focus-visible:ring-ring/50"
+            />
+          </div>
         </div>
         <div
           role="group"
