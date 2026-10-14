@@ -3,6 +3,7 @@
   "pages": [
     "index",
     "quickstart",
+    "run-a-benchmark",
     "cli",
     "ci",
     "plugins",

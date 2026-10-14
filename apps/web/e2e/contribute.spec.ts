@@ -16,6 +16,9 @@ test("contribute links to the proposal forms and starter issues", async ({
     page.getByRole("link", { name: "Open a bug report" }),
   ).toHaveAttribute("href", `${REPO_URL}/issues/new?template=bug.yml`);
   await expect(
+    page.getByRole("link", { name: "Read the step-by-step guide" }),
+  ).toHaveAttribute("href", "/docs/run-a-benchmark");
+  await expect(
     page.getByRole("link", { name: "Good first check issues" }),
   ).toHaveAttribute(
     "href",

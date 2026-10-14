@@ -3,7 +3,7 @@ title: Benchmarks
 description: Local benchmark tasks for evaluating coding agents.
 ---
 
-A benchmark task is a prompt you give any coding agent to work on a repository. After the agent finishes, `omot bench verify` checks the result locally and reports pass, partial, or fail. Each page below describes one task and its verification criteria.
+A benchmark task is a prompt you give any coding agent to work on a repository. After the agent finishes, `omot bench verify` checks the result locally and reports pass, partial, or fail. Each page below describes one task and its verification criteria. New to omot? Follow [Run a benchmark and submit it](../run-a-benchmark.md) for the full start, verify, and report flow.
 
 - [add-unit-test](./add-unit-test.md)
 - [dep-patch-bump](./dep-patch-bump.md)

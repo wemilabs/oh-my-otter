@@ -21,6 +21,30 @@ test("benchmark docs index renders and links from the sidebar", async ({
   ).toHaveAttribute("href", "/docs/benchmarks");
 });
 
+test("run-a-benchmark guide renders and links from the sidebar", async ({
+  page,
+  baseURL,
+}) => {
+  const response = await page.goto(`${baseURL}/docs/run-a-benchmark`);
+  expect(response?.status()).toBe(200);
+  await expect(
+    page.getByRole("heading", { name: "Run a benchmark and submit it" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Run a benchmark and submit it" }).first(),
+  ).toHaveAttribute("href", "/docs/run-a-benchmark");
+});
+
+test("benchmark docs index links to the run-a-benchmark guide", async ({
+  page,
+  baseURL,
+}) => {
+  await page.goto(`${baseURL}/docs/benchmarks`);
+  await expect(
+    page.getByRole("link", { name: "Run a benchmark and submit it" }).first(),
+  ).toHaveAttribute("href", "/docs/run-a-benchmark");
+});
+
 test("methodology links to the benchmark docs index", async ({
   page,
   baseURL,
