@@ -25,12 +25,6 @@ export function SiteFooter() {
               {link.label}
             </Link>
           ))}
-          <Link
-            href="/results/data.json"
-            className="inline-flex min-h-11 min-w-11 items-center px-1 hover:text-foreground"
-          >
-            Raw data
-          </Link>
           <a
             href={REPO_URL}
             className="inline-flex min-h-11 min-w-11 items-center px-1 hover:text-foreground"

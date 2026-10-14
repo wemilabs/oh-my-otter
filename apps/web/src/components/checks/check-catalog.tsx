@@ -86,7 +86,7 @@ function Catalog({
         <div
           role="group"
           aria-label="Filter checks by category"
-          className="flex flex-wrap gap-2"
+          className="flex flex-wrap gap-x-2"
         >
           {(["all", ...CATEGORIES] as const).map((value) => {
             const count =
@@ -98,10 +98,12 @@ function Catalog({
                 aria-pressed={category === value}
                 onClick={() => onCategoryChange(value)}
                 disabled={disabled}
-                className="min-h-11 rounded-md border border-border px-3 text-sm capitalize transition-colors hover:bg-accent aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                className="group inline-flex min-h-11 items-center text-sm capitalize outline-none"
               >
-                {value === "all" ? "All" : value}{" "}
-                <span className="font-mono text-xs opacity-70">{count}</span>
+                <span className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 transition-colors group-hover:bg-accent group-focus-visible:ring-3 group-focus-visible:ring-ring/50 group-aria-pressed:bg-primary group-aria-pressed:text-primary-foreground">
+                  {value === "all" ? "All" : value}{" "}
+                  <span className="font-mono text-xs opacity-70">{count}</span>
+                </span>
               </button>
             );
           })}

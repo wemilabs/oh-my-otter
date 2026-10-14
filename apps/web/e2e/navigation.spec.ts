@@ -57,3 +57,13 @@ test("client navigation /results -> task page is instant", async ({
     page.getByText("Results by readiness band").first(),
   ).toBeVisible();
 });
+
+test("footer links GitHub without a raw data link", async ({
+  page,
+  baseURL,
+}) => {
+  await page.goto(`${baseURL}/`);
+  const footer = page.locator("footer");
+  await expect(footer.getByRole("link", { name: "GitHub" })).toBeVisible();
+  await expect(footer.locator('a[href="/results/data.json"]')).toHaveCount(0);
+});
