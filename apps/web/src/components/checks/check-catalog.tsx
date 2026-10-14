@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Fuse from "fuse.js";
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useState } from "react";
 import type { CheckEntry } from "@/lib/checks";
 
 const CATEGORIES = ["setup", "verification", "docs", "hygiene"] as const;
@@ -45,15 +45,11 @@ function Catalog({
   onCategoryChange: (value: CategoryFilter) => void;
   disabled?: boolean;
 }) {
-  const fuse = useMemo(
-    () =>
-      new Fuse(checks, {
-        keys: ["id", "title", "why", "howToPass", "category"],
-        ignoreLocation: true,
-        threshold: 0.35,
-      }),
-    [checks],
-  );
+  const fuse = new Fuse(checks, {
+    keys: ["id", "title", "why", "howToPass", "category"],
+    ignoreLocation: true,
+    threshold: 0.35,
+  });
   const searched = query.trim()
     ? fuse.search(query.trim()).map(({ item }) => item)
     : checks;
