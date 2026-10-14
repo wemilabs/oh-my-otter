@@ -1,25 +1,55 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Fuse from "fuse.js";
-import { useMemo, useState } from "react";
+import { Suspense, useState } from "react";
 import type { CheckEntry } from "@/lib/checks";
 
 const CATEGORIES = ["setup", "verification", "docs", "hygiene"] as const;
 type CategoryFilter = "all" | (typeof CATEGORIES)[number];
 
-export function CheckCatalog({ checks }: { checks: CheckEntry[] }) {
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<CategoryFilter>("all");
-  const fuse = useMemo(
-    () =>
-      new Fuse(checks, {
-        keys: ["id", "title", "why", "howToPass", "category"],
-        ignoreLocation: true,
-        threshold: 0.35,
-      }),
-    [checks],
+function parseCategory(value: string | null): CategoryFilter {
+  return value && (CATEGORIES as readonly string[]).includes(value)
+    ? (value as CategoryFilter)
+    : "all";
+}
+
+function normalize(value: string): string {
+  return value.trim() ? value : "";
+}
+
+function updateParams(mutator: (params: URLSearchParams) => void) {
+  const url = new URL(window.location.href);
+  mutator(url.searchParams);
+  const qs = url.searchParams.toString();
+  window.history.replaceState(
+    null,
+    "",
+    url.pathname + (qs ? `?${qs}` : "") + url.hash,
   );
+}
+
+function Catalog({
+  checks,
+  query,
+  category,
+  onQueryChange,
+  onCategoryChange,
+  disabled,
+}: {
+  checks: CheckEntry[];
+  query: string;
+  category: CategoryFilter;
+  onQueryChange: (value: string) => void;
+  onCategoryChange: (value: CategoryFilter) => void;
+  disabled?: boolean;
+}) {
+  const fuse = new Fuse(checks, {
+    keys: ["id", "title", "why", "howToPass", "category"],
+    ignoreLocation: true,
+    threshold: 0.35,
+  });
   const searched = query.trim()
     ? fuse.search(query.trim()).map(({ item }) => item)
     : checks;
@@ -47,7 +77,8 @@ export function CheckCatalog({ checks }: { checks: CheckEntry[] }) {
             id="check-search"
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => onQueryChange(event.target.value)}
+            disabled={disabled}
             placeholder="Search by name or purpose"
             className="min-h-11 w-full rounded-md border border-input bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
           />
@@ -65,7 +96,8 @@ export function CheckCatalog({ checks }: { checks: CheckEntry[] }) {
                 key={value}
                 type="button"
                 aria-pressed={category === value}
-                onClick={() => setCategory(value)}
+                onClick={() => onCategoryChange(value)}
+                disabled={disabled}
                 className="group inline-flex min-h-11 items-center text-sm capitalize outline-none"
               >
                 <span className="inline-flex h-9 items-center gap-1 rounded-md border border-border px-3 transition-colors group-hover:bg-accent group-focus-visible:ring-3 group-focus-visible:ring-ring/50 group-aria-pressed:bg-primary group-aria-pressed:text-primary-foreground">
@@ -115,5 +147,60 @@ export function CheckCatalog({ checks }: { checks: CheckEntry[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+const noop = () => {};
+
+function UrlBoundCatalog({ checks }: { checks: CheckEntry[] }) {
+  const searchParams = useSearchParams();
+  const q = searchParams.get("q") ?? "";
+  const category = parseCategory(searchParams.get("category"));
+
+  const [input, setInput] = useState(q);
+  const [syncedQ, setSyncedQ] = useState(q);
+  if (q !== syncedQ) {
+    setSyncedQ(q);
+    if (normalize(input) !== q) setInput(q);
+  }
+
+  return (
+    <Catalog
+      checks={checks}
+      query={input}
+      category={category}
+      onQueryChange={(value) => {
+        setInput(value);
+        updateParams((params) => {
+          if (value.trim()) params.set("q", value);
+          else params.delete("q");
+        });
+      }}
+      onCategoryChange={(value) => {
+        updateParams((params) => {
+          if (value === "all") params.delete("category");
+          else params.set("category", value);
+        });
+      }}
+    />
+  );
+}
+
+export function CheckCatalog({ checks }: { checks: CheckEntry[] }) {
+  return (
+    <Suspense
+      fallback={
+        <Catalog
+          checks={checks}
+          query=""
+          category="all"
+          onQueryChange={noop}
+          onCategoryChange={noop}
+          disabled
+        />
+      }
+    >
+      <UrlBoundCatalog checks={checks} />
+    </Suspense>
   );
 }
