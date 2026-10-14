@@ -1,5 +1,12 @@
 # @oh-my-otter/checks
 
+## 0.5.2
+
+### Patch Changes
+
+- e51ea50: Fix the env-example pass message printing [object Object] instead of the example file name.
+- @oh-my-otter/core@0.5.2
+
 ## 0.5.1
 
 ### Patch Changes
