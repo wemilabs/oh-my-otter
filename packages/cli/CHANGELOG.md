@@ -1,5 +1,13 @@
 # oh-my-otter
 
+## 0.5.2
+
+### Patch Changes
+
+- Updated dependencies [e51ea50]
+  - @oh-my-otter/checks@0.5.2
+  - @oh-my-otter/core@0.5.2
+
 ## 0.5.1
 
 ### Patch Changes
