@@ -43,7 +43,7 @@ export function MobileNav() {
       {open ? (
         <nav
           id="mobile-nav"
-          className="absolute inset-x-0 top-full border-b border-border bg-background px-gutter-safe pb-4 shadow-sm"
+          className="absolute inset-x-0 top-full max-h-[calc(100dvh-3.5rem)] overflow-y-auto overscroll-contain border-b border-border bg-background px-gutter-safe pb-4 shadow-sm"
         >
           <ul className="divide-y divide-border">
             {MOBILE_NAV_LINKS.map((link) => (

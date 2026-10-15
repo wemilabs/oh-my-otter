@@ -132,6 +132,29 @@ test("the open menu ends with the theme toggle and Get started", async ({
   await expect(menu).toBeHidden();
 });
 
+test.describe("short landscape viewport", () => {
+  test.use({ viewport: { width: 667, height: 320 } });
+
+  test("the open menu scrolls to reach Get started", async ({
+    page,
+    baseURL,
+  }) => {
+    await page.goto(`${baseURL}/`);
+    const toggle = page.locator('button[aria-controls="mobile-nav"]');
+    await toggle.click();
+    const menu = page.locator("#mobile-nav");
+    const menuBox = await menu.boundingBox();
+    expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(320);
+    const getStarted = menu.getByRole("link", { name: "Get started" });
+    await getStarted.scrollIntoViewIfNeeded();
+    const box = await getStarted.boundingBox();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(320);
+    await getStarted.click();
+    await page.waitForURL(`${baseURL}/#quickstart`);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
 test.describe("desktop header", () => {
   test.use({ viewport: { width: 1280, height: 800 } });
 
