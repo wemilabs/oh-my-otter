@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Menu, X } from "lucide-react";
 import { MOBILE_NAV_LINKS } from "./links";
+import { ThemeToggle } from "./theme-toggle";
 
-export function MobileNav() {
+export function MobileNav({ githubStars }: { githubStars: ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [prevPath, setPrevPath] = useState(pathname);
@@ -29,7 +30,7 @@ export function MobileNav() {
       <button
         ref={buttonRef}
         type="button"
-        className="group -ml-1 inline-flex size-11 shrink-0 items-center justify-center"
+        className="group -mr-1 inline-flex size-11 shrink-0 items-center justify-center"
         aria-expanded={open}
         aria-controls="mobile-nav"
         aria-label={open ? "Close menu" : "Open menu"}
@@ -42,7 +43,7 @@ export function MobileNav() {
       {open ? (
         <nav
           id="mobile-nav"
-          className="absolute inset-x-0 top-full border-b border-border bg-background px-gutter-safe pb-4 shadow-sm"
+          className="absolute inset-x-0 top-full max-h-[calc(100dvh-3.5rem)] overflow-y-auto overscroll-contain border-b border-border bg-background px-gutter-safe pb-4 shadow-sm"
         >
           <ul className="divide-y divide-border">
             {MOBILE_NAV_LINKS.map((link) => (
@@ -58,6 +59,19 @@ export function MobileNav() {
               </li>
             ))}
           </ul>
+          <div className="flex items-center border-t border-border pt-2">
+            <ThemeToggle className="-ml-1" />
+            {githubStars}
+            <Link
+              href="/#quickstart"
+              onClick={() => setOpen(false)}
+              className="group ml-2 flex min-h-11 flex-1 items-center"
+            >
+              <span className="inline-flex h-9 w-full items-center justify-center rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity group-hover:opacity-85">
+                Get started
+              </span>
+            </Link>
+          </div>
         </nav>
       ) : null}
     </div>
