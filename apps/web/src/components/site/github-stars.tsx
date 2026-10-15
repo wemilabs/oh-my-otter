@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { cn } from "cn";
 import {
   formatStarCount,
   getStarCount,
@@ -20,12 +21,18 @@ function GitHubMark() {
   );
 }
 
-function GitHubButton({ stars }: { stars: number | null }) {
+function GitHubButton({
+  stars,
+  className,
+}: {
+  stars: number | null;
+  className?: string;
+}) {
   return (
     <a
       href={REPO_URL}
       aria-label={stars === null ? undefined : starsAccessibleLabel(stars)}
-      className="group mx-1 hidden min-h-11 items-center sm:inline-flex"
+      className={cn("group min-h-11 items-center", className)}
     >
       <span className="inline-flex h-9 items-center gap-2 rounded-md border border-border bg-card px-3.5 text-sm font-medium transition-colors group-hover:bg-accent">
         <GitHubMark />
@@ -41,14 +48,14 @@ function GitHubButton({ stars }: { stars: number | null }) {
   );
 }
 
-async function GitHubStarsCount() {
-  return <GitHubButton stars={await getStarCount()} />;
+async function GitHubStarsCount({ className }: { className?: string }) {
+  return <GitHubButton stars={await getStarCount()} className={className} />;
 }
 
-export function GitHubStars() {
+export function GitHubStars({ className }: { className?: string }) {
   return (
-    <Suspense fallback={<GitHubButton stars={null} />}>
-      <GitHubStarsCount />
+    <Suspense fallback={<GitHubButton stars={null} className={className} />}>
+      <GitHubStarsCount className={className} />
     </Suspense>
   );
 }
