@@ -2,12 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Menu, X } from "lucide-react";
 import { MOBILE_NAV_LINKS } from "./links";
 import { ThemeToggle } from "./theme-toggle";
 
-export function MobileNav() {
+export function MobileNav({ githubStars }: { githubStars: ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [prevPath, setPrevPath] = useState(pathname);
@@ -61,6 +61,7 @@ export function MobileNav() {
           </ul>
           <div className="flex items-center border-t border-border pt-2">
             <ThemeToggle className="-ml-1" />
+            {githubStars}
             <Link
               href="/#quickstart"
               onClick={() => setOpen(false)}

@@ -26,7 +26,7 @@ export function SiteHeader() {
           <span className="hidden md:inline-flex">
             <ThemeToggle />
           </span>
-          <GitHubStars />
+          <GitHubStars className="mx-1 hidden md:inline-flex" />
           <Link
             href="/#quickstart"
             className="group ml-1 hidden min-h-11 shrink-0 items-center md:inline-flex"
@@ -35,7 +35,9 @@ export function SiteHeader() {
               Get started
             </span>
           </Link>
-          <MobileNav />
+          <MobileNav
+            githubStars={<GitHubStars className="ml-1 inline-flex" />}
+          />
         </div>
       </div>
     </header>

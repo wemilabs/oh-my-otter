@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 
+const REPO_URL = "https://github.com/wemilabs/oh-my-otter";
+
 test.use({ viewport: { width: 375, height: 800 } });
 
 test("clicking the current route's link closes the menu", async ({
@@ -89,7 +91,34 @@ test("the closed header hides the theme toggle and Get started", async ({
     header.getByRole("button", { name: "Toggle color theme" }),
   ).toBeHidden();
   await expect(header.getByRole("link", { name: "Get started" })).toBeHidden();
+  await expect(header.locator(`a[href="${REPO_URL}"]`)).toBeHidden();
 });
+
+for (const width of [375, 700]) {
+  test.describe(`header controls at ${width}px`, () => {
+    test.use({ viewport: { width, height: 800 } });
+
+    test("only the logo and the menu button are visible", async ({
+      page,
+      baseURL,
+    }) => {
+      await page.goto(`${baseURL}/`);
+      const labels = await page
+        .locator("header")
+        .locator("a, button")
+        .evaluateAll((elements) =>
+          elements
+            .filter((element) => element.getClientRects().length > 0)
+            .map(
+              (element) =>
+                element.getAttribute("href") ??
+                element.getAttribute("aria-label"),
+            ),
+        );
+      expect(labels).toEqual(["/", "Open menu"]);
+    });
+  });
+}
 
 test("the open menu ends with the theme toggle and Get started", async ({
   page,
@@ -103,7 +132,9 @@ test("the open menu ends with the theme toggle and Get started", async ({
 
   const theme = menu.getByRole("button", { name: "Toggle color theme" });
   const getStarted = menu.getByRole("link", { name: "Get started" });
+  const github = menu.locator(`a[href="${REPO_URL}"]`);
   await expect(theme).toBeVisible();
+  await expect(github).toBeVisible();
   await expect(getStarted).toBeVisible();
   const lastLink = await menu.locator("ul li").last().boundingBox();
   const themeBox = await theme.boundingBox();
@@ -111,6 +142,8 @@ test("the open menu ends with the theme toggle and Get started", async ({
   const lastLinkBottom = lastLink!.y + lastLink!.height;
   expect(themeBox!.y).toBeGreaterThanOrEqual(lastLinkBottom);
   expect(getStartedBox!.y).toBeGreaterThanOrEqual(lastLinkBottom);
+  const githubBox = await github.boundingBox();
+  expect(githubBox!.y).toBeGreaterThanOrEqual(lastLinkBottom);
 
   const html = page.locator("html");
   const wasDark = await html.evaluate((element) =>
@@ -170,6 +203,7 @@ test.describe("desktop header", () => {
     await expect(
       header.getByRole("link", { name: "Get started" }),
     ).toBeVisible();
+    await expect(header.locator(`a[href="${REPO_URL}"]`)).toBeVisible();
     await expect(
       header.getByRole("button", { name: "Open menu" }),
     ).toBeHidden();
