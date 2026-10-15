@@ -9,7 +9,6 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur-md">
       <div className="relative mx-auto flex h-14 max-w-6xl items-center gap-4 px-gutter-safe">
-        <MobileNav />
         <Logo />
         <nav className="hidden items-center gap-1 text-sm text-muted-foreground md:flex">
           {NAV_LINKS.map((link) => (
@@ -24,16 +23,19 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="ml-auto flex items-center">
-          <ThemeToggle />
+          <span className="hidden md:inline-flex">
+            <ThemeToggle />
+          </span>
           <GitHubStars />
           <Link
             href="/#quickstart"
-            className="group ml-1 inline-flex min-h-11 shrink-0 items-center"
+            className="group ml-1 hidden min-h-11 shrink-0 items-center md:inline-flex"
           >
             <span className="inline-flex h-9 items-center rounded-md bg-primary px-3.5 text-sm font-medium text-primary-foreground transition-opacity group-hover:opacity-85">
               Get started
             </span>
           </Link>
+          <MobileNav />
         </div>
       </div>
     </header>
