@@ -46,7 +46,7 @@ test("browser Back after header logo navigation keeps the menu closed", async ({
   await expect(page.locator("#mobile-nav")).toBeVisible();
   await page
     .locator("header")
-    .getByRole("link", { name: "Oh My Otter" })
+    .getByRole("link", { name: "Oh My Otter", exact: true })
     .click();
   await page.waitForURL(`${baseURL}/`);
   await page.goBack();
@@ -64,7 +64,7 @@ test("the menu button is the right-most header control", async ({
   await page.goto(`${baseURL}/`);
   const header = page.locator("header");
   const menu = header.getByRole("button", { name: "Open menu" });
-  const logo = header.getByRole("link", { name: "Oh My Otter" });
+  const logo = header.getByRole("link", { name: "Oh My Otter", exact: true });
   const menuBox = await menu.boundingBox();
   const logoBox = await logo.boundingBox();
   expect(menuBox).not.toBeNull();
