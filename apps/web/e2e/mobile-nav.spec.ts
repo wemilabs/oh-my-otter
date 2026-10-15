@@ -116,6 +116,9 @@ for (const width of [375, 700]) {
             ),
         );
       expect(labels).toEqual(["/", "Open menu"]);
+      await expect(
+        page.locator("header").getByText("Oh My Otter", { exact: true }),
+      ).toBeVisible();
     });
   });
 }
